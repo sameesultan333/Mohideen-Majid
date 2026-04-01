@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+  <title>Masjid Admin</title>
+  <style>
+    :root {
+      --green:       #1E5638;
+      --green-med:   #2F6B4A;
+      --green-light: #4A9B6F;
+      --green-pale:  #E8F5EE;
+      --accent:      #5DBB87;
+      --red:         #E53E3E;
+      --orange:      #DD6B20;
+      --text:        #1A2E23;
+      --sub:         #6B8F7A;
+      --card:        #ffffff;
+      --bg:          #F0F4F2;
+      --border:      #D1E8DC;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── TOP BAR ── */
+    .topbar {
+      background: var(--green);
+      padding: 16px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .topbar-title { color: #fff; font-size: 17px; font-weight: 700; }
+    .topbar-role  { background: var(--accent); color: #fff; border-radius: 20px; padding: 3px 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+    .logout-btn   { background: rgba(255,255,255,0.15); color: #fff; border: none; border-radius: 8px; padding: 6px 14px; font-size: 13px; cursor: pointer; }
+
+    /* ── TABS ── */
+    .tabs {
+      display: flex;
+      overflow-x: auto;
+      background: var(--green-med);
+      padding: 0 8px;
+      gap: 4px;
+      scrollbar-width: none;
+    }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab {
+      color: rgba(255,255,255,0.6);
+      padding: 12px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      transition: all 0.2s;
+    }
+    .tab.active { color: #fff; border-bottom-color: var(--accent); }
+    .tab-badge  { background: var(--red); color: #fff; border-radius: 10px; padding: 1px 6px; font-size: 10px; margin-left: 4px; }
+
+    /* ── CONTENT ── */
+    .content   { padding: 16px; max-width: 520px; margin: auto; }
+    .section   { display: none; }
+    .section.active { display: block; }
+
+    /* ── CARD ── */
+    .card {
+      background: var(--card);
+      border-radius: 16px;
+      padding: 18px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    }
+    .card-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--green);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* ── FORM ── */
+    label       { font-size: 12px; color: var(--sub); font-weight: 600; display: block; margin-bottom: 4px; margin-top: 10px; }
+    input, textarea, select {
+      width: 100%;
+      padding: 11px 14px;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      font-size: 14px;
+      background: var(--bg);
+      color: var(--text);
+      outline: none;
+      transition: border 0.2s;
+    }
+    input:focus, textarea:focus, select:focus { border-color: var(--green-light); background: #fff; }
+    textarea { min-height: 90px; resize: vertical; }
+
+    /* ── PRAYER GRID ── */
+    .prayer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .prayer-grid .full { grid-column: 1 / -1; }
+
+    /* ── BUTTONS ── */
+    .btn {
+      width: 100%;
+      padding: 13px;
+      border: none;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 12px;
+      transition: opacity 0.2s;
+    }
+    .btn:active { opacity: 0.8; }
+    .btn-primary { background: var(--green); color: #fff; }
+    .btn-accent  { background: var(--accent); color: #fff; }
+    .btn-danger  { background: var(--red); color: #fff; }
+    .btn-sm      { padding: 7px 14px; font-size: 12px; width: auto; margin-top: 0; border-radius: 8px; }
+
+    /* ── LOGIN ── */
+    #loginPage {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .login-card {
+      background: var(--card);
+      border-radius: 20px;
+      padding: 32px 24px;
+      width: 100%;
+      max-width: 360px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+    .login-logo  { font-size: 52px; margin-bottom: 8px; }
+    .login-title { font-size: 20px; font-weight: 700; color: var(--green); margin-bottom: 4px; }
+    .login-sub   { font-size: 13px; color: var(--sub); margin-bottom: 24px; }
+
+    /* ── LIST ITEMS ── */
+    .list-item {
+      background: var(--green-pale);
+      border-radius: 12px;
+      padding: 12px 14px;
+      margin-bottom: 8px;
+      font-size: 13px;
+      line-height: 1.6;
+      position: relative;
+    }
+    .list-item strong { font-size: 14px; color: var(--green); }
+    .list-item .meta  { color: var(--sub); font-size: 11px; margin-top: 2px; }
+    .list-item .actions { display: flex; gap: 8px; margin-top: 8px; }
+
+    /* ── USER ITEM ── */
+    .user-item {
+      background: var(--card);
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 10px;
+    }
+    .user-name   { font-size: 15px; font-weight: 700; color: var(--green); }
+    .user-meta   { font-size: 12px; color: var(--sub); margin-top: 2px; line-height: 1.6; }
+    .role-badge  { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; margin-top: 6px; }
+    .role-superadmin { background: #FED7D7; color: #C53030; }
+    .role-admin      { background: #BEE3F8; color: #2B6CB0; }
+    .role-imam       { background: #C6F6D5; color: #276749; }
+    .role-member     { background: #EDF2F7; color: #4A5568; }
+
+    /* ── STATS ROW ── */
+    .stats-row    { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+    .stat-card    { background: var(--card); border-radius: 14px; padding: 16px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+    .stat-number  { font-size: 28px; font-weight: 700; color: var(--green); }
+    .stat-label   { font-size: 11px; color: var(--sub); font-weight: 600; margin-top: 2px; }
+
+    /* ── TOAST ── */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--green);
+      color: #fff;
+      padding: 12px 24px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 600;
+      z-index: 999;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+    .toast.show { opacity: 1; }
+    .toast.error { background: var(--red); }
+
+    /* ── Q&A ── */
+    .q-item { background: var(--card); border-radius: 12px; padding: 14px; margin-bottom: 10px; border: 1.5px solid var(--border); }
+    .q-text    { font-size: 14px; font-weight: 600; color: var(--text); }
+    .q-asker   { font-size: 11px; color: var(--sub); margin-top: 3px; }
+    .q-answer  { background: var(--green-pale); border-radius: 8px; padding: 10px; margin-top: 10px; font-size: 13px; }
+    .q-pending { border-left: 4px solid var(--orange); }
+    .q-answered{ border-left: 4px solid var(--accent); }
+
+    .pinned-badge { background: var(--orange); color: #fff; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 10px; margin-left: 6px; }
+
+    .empty { text-align: center; color: var(--sub); padding: 30px 0; font-size: 14px; }
+  </style>
+</head>
+<body>
+
+<!-- ── LOGIN PAGE ── -->
+<div id="loginPage">
+  <div class="login-card">
+    <div class="login-logo">M</div>
+    <div class="login-title">Mohideen Masjid</div>
+    <div class="login-sub">Admin Panel · நிர்வாக பலகை</div>
+    <label>Phone Number · தொலைபேசி</label>
+    <input id="loginPhone" type="tel" placeholder="Enter phone number">
+    <label>Password · கடவுச்சொல்</label>
+    <input id="loginPassword" type="password" placeholder="Enter password">
+    <div id="otpWrap" style="display:none;">
+      <label>OTP · ஒருமுறை குறியீடு</label>
+      <input id="loginOtp" type="text" inputmode="numeric" placeholder="Enter OTP">
+    </div>
+    <button class="btn btn-primary" id="loginBtn" onclick="login()">Login · உள்நுழைய</button>
+  </div>
+</div>
+
+<!-- ── MAIN APP ── -->
+<div id="mainApp" style="display:none;">
+
+  <!-- Top Bar -->
+  <div class="topbar">
+    <div class="topbar-title">Masjid Admin</div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <span class="topbar-role" id="roleLabel">—</span>
+      <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+  </div>
+
+  <!-- Tabs — shown/hidden by role -->
+  <div class="tabs" id="tabBar"></div>
+
+  <!-- Content -->
+  <div class="content">
+
+    <!-- DASHBOARD -->
+    <div class="section" id="sec-dashboard">
+      <div class="stats-row" id="statsRow"></div>
+      <div class="card">
+        <div class="card-title">Welcome · வணக்கம்</div>
+        <p id="welcomeMsg" style="font-size:14px;color:var(--sub);line-height:1.7;"></p>
+      </div>
+    </div>
+
+    <!-- PRAYER TIMINGS -->
+    <div class="section" id="sec-prayer">
+      <div class="card">
+        <div class="card-title">Early Times · அதிகாலை நேரங்கள்</div>
+        <div class="prayer-grid">
+          <div><label>Imsak</label><input id="eImsak" placeholder="04:50 AM"></div>
+          <div><label>Dhuha</label><input id="eDhuha" placeholder="06:45 AM"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Adhan Times · அதான் நேரங்கள்</div>
+        <div class="prayer-grid">
+          <div><label>Fajr · ஃபஜ்ர்</label><input id="aFajr" placeholder="05:00 AM"></div>
+          <div><label>Dhuhr · ழுஹர்</label><input id="aDhuhr" placeholder="12:15 PM"></div>
+          <div><label>Asr · அஸர்</label><input id="aAsr" placeholder="03:30 PM"></div>
+          <div><label>Maghrib · மஃரிப்</label><input id="aMaghrib" placeholder="06:10 PM"></div>
+          <div><label>Isha · இஷா</label><input id="aIsha" placeholder="07:30 PM"></div>
+        </div>
+      </div>
+      
+      <div class="card">
+        <div class="card-title">Iqamah Times · இகாமத் நேரங்கள்</div>
+        <div class="prayer-grid">
+          <div><label>Fajr · ஃபஜ்ர்</label><input id="pFajr" placeholder="05:30 AM"></div>
+          <div><label>Dhuhr · ழுஹர்</label><input id="pDhuhr" placeholder="12:45 PM"></div>
+          <div><label>Asr · அஸர்</label><input id="pAsr" placeholder="03:45 PM"></div>
+          <div><label>Maghrib · மஃரிப்</label><input id="pMaghrib" placeholder="06:20 PM"></div>
+          <div><label>Isha · இஷா</label><input id="pIsha" placeholder="07:45 PM"></div>
+          <div><label>Jumu'ah · ஜும்மா</label><input id="pJummah" placeholder="01:00 PM"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Special Timing · சிறப்பு நேரங்கள்</div>
+        <div class="prayer-grid">
+          <div><label>Taraweeh · தராவீஹ்</label><input id="sTaraweeh" placeholder="08:15 PM"></div>
+          <div><label>Ishraq · இஷ்ராக்</label><input id="sIshraq" placeholder="06:30 AM"></div>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" onclick="updatePrayer()">Update All Timings · அனைத்தையும் புதுப்பி</button>
+    </div>
+
+    <!-- ANNOUNCEMENTS -->
+    <div class="section" id="sec-announcements">
+      <div class="card">
+        <div class="card-title">New Announcement · அறிவிப்பு</div>
+        <label>Search · தேடல்</label>
+        <input id="annSearch" placeholder="Search title/body..." oninput="renderAnnouncements()">
+        <label>Title · தலைப்பு</label>
+        <input id="annTitle" placeholder="Announcement title">
+        <label>Body · விவரம்</label>
+        <textarea id="annBody" placeholder="Full announcement text..."></textarea>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer;">
+          <input type="checkbox" id="annPinned" style="width:auto;margin:0;"> Pin to top · மேலே நிலைநிறுத்து
+        </label>
+        <button class="btn btn-primary" onclick="postAnnouncement()">Post · இடுக</button>
+      </div>
+      <div class="card">
+        <div class="card-title">All Announcements</div>
+        <button class="btn btn-accent" style="margin-bottom:12px;" onclick="loadAnnouncements()">Refresh · புதுப்பி</button>
+        <div id="annList"><div class="empty">Loading...</div></div>
+      </div>
+    </div>
+
+    <!-- DONATIONS -->
+    <div class="section" id="sec-donations">
+      <div class="card">
+        <div class="card-title">Add Donation · நன்கொடை சேர்க்க</div>
+        <label>Donor Name · நன்கொடையாளர் பெயர்</label>
+        <input id="donorName" placeholder="Enter donor name">
+        <label>Amount (₹) · தொகை</label>
+        <input id="donorAmount" type="number" placeholder="500">
+        <label>Method · முறை</label>
+        <select id="donorMethod">
+          <option value="cash">Cash · பணம்</option>
+          <option value="upi">UPI</option>
+          <option value="bank">Bank Transfer</option>
+        </select>
+        <label>Note (optional) · குறிப்பு</label>
+        <input id="donorNote" placeholder="e.g. For Ramadan fund">
+        <button class="btn btn-primary" onclick="addDonation()">Add · சேர்க்க</button>
+      </div>
+      <div class="card">
+        <div class="card-title" id="donationSummaryTitle">Donation Records</div>
+        <button class="btn btn-accent" style="margin-bottom:12px;" onclick="loadDonations()">Refresh · புதுப்பி</button>
+        <div id="donationList"><div class="empty">Loading...</div></div>
+      </div>
+    </div>
+
+    <!-- USERS -->
+    <div class="section" id="sec-users">
+      <div class="card">
+        <div class="card-title">All Members · அனைத்து உறுப்பினர்கள்</div>
+        <input id="userSearch" placeholder="Search by name or phone..." oninput="filterUsers()" style="margin-bottom:12px;">
+        <button class="btn btn-accent" style="margin-bottom:12px;" onclick="loadUsers()">Refresh · புதுப்பி</button>
+        <div id="userList"><div class="empty">Loading...</div></div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /mainApp -->
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+  const BASE = "http://192.168.1.10:8000";
+  let TOKEN = localStorage.getItem("token") || "";
+  let USER_ROLE = localStorage.getItem("role") || "";
+  let USER_NAME = localStorage.getItem("name") || "";
+  let allUsers = [];
+  let LOGIN_STAGE = "PASSWORD"; // PASSWORD | OTP
+
+  // ── ROLE CONFIG ────────────────────────────────────────────────────────────────
+  const ROLE_TABS = {
+    superadmin: [
+      { id:"dashboard",     label:"Home"          },
+      { id:"prayer",        label:"Prayer"        },
+      { id:"announcements", label:"Announcements" },
+      { id:"donations",     label:"Donations"     },
+      { id:"users",         label:"Users"         },
+    ],
+    admin: [
+      { id:"dashboard",     label:"Home"          },
+      { id:"prayer",        label:"Prayer"        },
+      { id:"announcements", label:"Announcements" },
+      { id:"donations",     label:"Donations"     },
+      { id:"users",         label:"Users"         },
+    ],
+  };
+
+  const ROLE_WELCOME = {
+    superadmin: "Full control. You can manage users, roles, donations, prayer timings and announcements.\nஅனைத்து அணுகல் உள்ளது.",
+    admin:      "You can manage prayer timings, announcements, donations and view members.\nகொடை மற்றும் உறுப்பினர் நிர்வாகம் உங்கள் கட்டுப்பாட்டில் உள்ளது.",
+  };
+
+  // ── HELPERS ────────────────────────────────────────────────────────────────────
+  function toast(msg, error=false) {
+    const t = document.getElementById("toast");
+    t.textContent = msg;
+    t.className = "toast show" + (error ? " error" : "");
+    setTimeout(() => t.className = "toast", 2800);
+  }
+
+  function authHeaders() {
+    return { "Content-Type":"application/json", "Authorization":"Bearer "+TOKEN };
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return "";
+    return new Date(iso).toLocaleDateString("en-IN", { day:"numeric", month:"short", year:"numeric" });
+  }
+
+  function to12hFormat(timeStr, type) {
+    if (!timeStr) return "";
+    let parts = String(timeStr).trim().split(/\s+/);
+    let time = parts[0];
+    let modifier = parts[1];
+    
+    let [hours, minutes] = time.split(":");
+    if (!hours || !minutes) return timeStr;
+    
+    let h = parseInt(hours, 10);
+    if (isNaN(h)) return timeStr;
+    
+    if (!modifier && type) {
+      if (['asr', 'maghrib', 'isha', 'taraweeh', 'jummah'].includes(type) && h < 12) {
+        modifier = 'PM';
+      }
+    }
+    
+    if (h > 12) {
+      h -= 12;
+      modifier = 'PM';
+    } else if (h === 12 && !modifier) {
+      modifier = 'PM';
+    } else if (h === 0) {
+      h = 12;
+      modifier = 'AM';
+    }
+    
+    modifier = modifier || 'AM';
+    return `${h.toString().padStart(2, '0')}:${minutes} ${modifier}`;
+  }
+
+  // ── LOGIN ──────────────────────────────────────────────────────────────────────
+  async function login() {
+    const phone    = document.getElementById("loginPhone").value.trim();
+    const password = document.getElementById("loginPassword").value;
+    const otp      = document.getElementById("loginOtp")?.value?.trim();
+
+    if (!phone) { toast("Enter phone number", true); return; }
+
+    try {
+      if (LOGIN_STAGE === "PASSWORD") {
+        if (!password) { toast("Enter password", true); return; }
+
+        const res  = await fetch(`${BASE}/auth/login`, {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ phone, password })
+        });
+        const data = await res.json();
+
+        if (!res.ok) { toast(data.detail || "Login failed", true); return; }
+
+        // backend sends OTP (printed in console)
+        LOGIN_STAGE = "OTP";
+        document.getElementById("otpWrap").style.display = "block";
+        document.getElementById("loginPassword").disabled = true;
+        document.getElementById("loginPhone").disabled = true;
+        document.getElementById("loginBtn").textContent = "Verify OTP · உறுதிப்படுத்து";
+        toast(data.message || "OTP sent");
+        return;
+      }
+
+      // OTP stage
+      if (!otp) { toast("Enter OTP", true); return; }
+
+      const res  = await fetch(`${BASE}/auth/verify-login-otp`, {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ phone, otp })
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.access_token) { toast(data.detail || "OTP failed", true); return; }
+
+      TOKEN     = data.access_token;
+      USER_ROLE = data.user.role.toLowerCase();
+      USER_NAME = data.user.name;
+
+      if (USER_ROLE !== "admin" && USER_ROLE !== "superadmin") {
+        toast("Access denied", true);
+        logout();
+        return;
+      }
+
+      localStorage.setItem("token", TOKEN);
+      localStorage.setItem("role", USER_ROLE);
+      localStorage.setItem("name", USER_NAME);
+
+      document.getElementById("loginPage").style.display  = "none";
+      document.getElementById("mainApp").style.display    = "block";
+      document.getElementById("roleLabel").textContent    = USER_ROLE.toUpperCase();
+
+      buildTabs();
+      showSection("dashboard");
+      loadDashboard();
+    } catch(e) { toast("Cannot connect to server", true); }
+  }
+
+  function logout() {
+    TOKEN = ""; USER_ROLE = ""; USER_NAME = "";
+    localStorage.clear();
+    LOGIN_STAGE = "PASSWORD";
+    const otpWrap = document.getElementById("otpWrap");
+    if (otpWrap) otpWrap.style.display = "none";
+    const otpEl = document.getElementById("loginOtp");
+    if (otpEl) otpEl.value = "";
+    const btn = document.getElementById("loginBtn");
+    if (btn) btn.textContent = "Login · உள்நுழைய";
+    const phoneEl = document.getElementById("loginPhone");
+    const passEl  = document.getElementById("loginPassword");
+    if (phoneEl) phoneEl.disabled = false;
+    if (passEl)  passEl.disabled = false;
+    document.getElementById("mainApp").style.display  = "none";
+    document.getElementById("loginPage").style.display = "flex";
+    document.getElementById("loginPassword").value = "";
+  }
+
+  // ── TABS ───────────────────────────────────────────────────────────────────────
+  function buildTabs() {
+    const tabs    = ROLE_TABS[USER_ROLE] || ROLE_TABS["imam"];
+    const tabBar  = document.getElementById("tabBar");
+    tabBar.innerHTML = "";
+    tabs.forEach(t => {
+      const el = document.createElement("div");
+      el.className   = "tab";
+      el.id          = "tab-"+t.id;
+      el.innerHTML   = t.label;
+      el.onclick     = () => showSection(t.id);
+      tabBar.appendChild(el);
+    });
+  }
+
+  function showSection(id) {
+    document.querySelectorAll(".section").forEach(s => s.classList.remove("active"));
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    const sec = document.getElementById("sec-"+id);
+    const tab = document.getElementById("tab-"+id);
+    if (sec) sec.classList.add("active");
+    if (tab) tab.classList.add("active");
+
+    // auto-load on open
+    if (id === "announcements") loadAnnouncements();
+    if (id === "donations")     loadDonations();
+    if (id === "users")         loadUsers();
+  }
+
+  // ── DASHBOARD ─────────────────────────────────────────────────────────────────
+  async function loadDashboard() {
+    document.getElementById("welcomeMsg").textContent =
+      `${USER_NAME} — ${ROLE_WELCOME[USER_ROLE] || ""}`;
+
+    const stats = document.getElementById("statsRow");
+    if (USER_ROLE !== "admin" && USER_ROLE !== "superadmin") { stats.innerHTML = ""; return; }
+
+    // Load counts
+    try {
+      const [usersRes, donRes] = await Promise.all([
+        fetch(`${BASE}/users/`,        { headers: authHeaders() }),
+        fetch(`${BASE}/donations/summary`, { headers: authHeaders() }),
+      ]);
+      const users   = await usersRes.json();
+      const don     = await donRes.json();
+
+      stats.innerHTML = `
+        <div class="stat-card"><div class="stat-number">${Array.isArray(users)?users.length:"-"}</div><div class="stat-label">Members · உறுப்பினர்கள்</div></div>
+        <div class="stat-card"><div class="stat-number">₹${don.total_amount||0}</div><div class="stat-label">Total Donations · மொத்த நன்கொடை</div></div>
+        <div class="stat-card"><div class="stat-number">${don.total_donations||0}</div><div class="stat-label">Donations · நன்கொடைகள்</div></div>
+      `;
+    } catch(e) { stats.innerHTML = ""; }
+
+    loadPrayerTimings();
+  }
+
+  // ── PRAYER ────────────────────────────────────────────────────────────────────
+  async function loadPrayerTimings() {
+    try {
+      const res  = await fetch(`${BASE}/prayer/`);
+      const data = await res.json();
+      
+      // Early
+      document.getElementById("eImsak").value   = to12hFormat(data.early?.imsak, 'imsak');
+      document.getElementById("eDhuha").value   = to12hFormat(data.early?.dhuha, 'dhuha');
+
+      // Adhan
+      document.getElementById("aFajr").value    = to12hFormat(data.adhan?.fajr, 'fajr');
+      document.getElementById("aDhuhr").value   = to12hFormat(data.adhan?.dhuhr, 'dhuhr');
+      document.getElementById("aAsr").value     = to12hFormat(data.adhan?.asr, 'asr');
+      document.getElementById("aMaghrib").value = to12hFormat(data.adhan?.maghrib, 'maghrib');
+      document.getElementById("aIsha").value    = to12hFormat(data.adhan?.isha, 'isha');
+
+      // Prayer
+      document.getElementById("pFajr").value    = to12hFormat(data.prayer?.fajr, 'fajr');
+      document.getElementById("pDhuhr").value   = to12hFormat(data.prayer?.dhuhr, 'dhuhr');
+      document.getElementById("pAsr").value     = to12hFormat(data.prayer?.asr, 'asr');
+      document.getElementById("pMaghrib").value = to12hFormat(data.prayer?.maghrib, 'maghrib');
+      document.getElementById("pIsha").value    = to12hFormat(data.prayer?.isha, 'isha');
+      document.getElementById("pJummah").value  = to12hFormat(data.prayer?.jummah, 'jummah');
+
+      // Special
+      document.getElementById("sTaraweeh").value = to12hFormat(data.special?.taraweeh, 'taraweeh');
+      document.getElementById("sIshraq").value   = to12hFormat(data.special?.ishraq, 'ishraq');
+
+    } catch(e) {}
+  }
+
+  async function updatePrayer() {
+    const payload = {
+      imsak:         document.getElementById("eImsak").value,
+      dhuha:         document.getElementById("eDhuha").value,
+
+      fajr_adhan:    document.getElementById("aFajr").value,
+      dhuhr_adhan:   document.getElementById("aDhuhr").value,
+      asr_adhan:     document.getElementById("aAsr").value,
+      maghrib_adhan: document.getElementById("aMaghrib").value,
+      isha_adhan:    document.getElementById("aIsha").value,
+
+      fajr:          document.getElementById("pFajr").value,
+      dhuhr:         document.getElementById("pDhuhr").value,
+      asr:           document.getElementById("pAsr").value,
+      maghrib:       document.getElementById("pMaghrib").value,
+      isha:          document.getElementById("pIsha").value,
+      jummah:        document.getElementById("pJummah").value,
+
+      taraweeh:      document.getElementById("sTaraweeh").value,
+      ishraq:        document.getElementById("sIshraq").value,
+    };
+    try {
+      const res = await fetch(`${BASE}/prayer/update`, {
+        method:"POST", headers: authHeaders(), body: JSON.stringify(payload)
+      });
+      const d = await res.json();
+      if (res.ok) toast("✅ Timings updated · நேரம் புதுப்பிக்கப்பட்டது");
+      else        toast(d.detail || "Update failed", true);
+    } catch(e) { toast("Server error", true); }
+  }
+
+  // ── ANNOUNCEMENTS ────────────────────────────────────────────────────────────
+  async function postAnnouncement() {
+    const title  = document.getElementById("annTitle").value.trim();
+    const body   = document.getElementById("annBody").value.trim();
+    const pinned = document.getElementById("annPinned").checked;
+    if (!title || !body) { toast("Title and body required", true); return; }
+
+    const res = await fetch(`${BASE}/announcements/`, {
+      method:"POST", headers: authHeaders(),
+      body: JSON.stringify({ title, body, pinned })
+    });
+    const d = await res.json();
+    if (res.ok) {
+      toast("✅ Announcement posted · அறிவிப்பு இடப்பட்டது");
+      document.getElementById("annTitle").value = "";
+      document.getElementById("annBody").value  = "";
+      document.getElementById("annPinned").checked = false;
+      loadAnnouncements();
+    } else toast(d.detail || "Failed", true);
+  }
+
+  async function loadAnnouncements() {
+    const el = document.getElementById("annList");
+    try {
+      const res  = await fetch(`${BASE}/announcements/`);
+      const list = await res.json();
+      if (!list.length) { el.innerHTML = '<div class="empty">No announcements yet</div>'; return; }
+      el.innerHTML = list.map(a => `
+        <div class="list-item">
+          <strong>${a.title}</strong>${a.pinned ? '<span class="pinned-badge">📌 Pinned</span>' : ''}
+          <div>${a.body}</div>
+          <div class="meta">By ${a.posted_by} · ${fmtDate(a.created_at)}</div>
+          <div class="actions">
+            <button class="btn btn-danger btn-sm" onclick="deleteAnnouncement(${a.id})">Delete</button>
+          </div>
+        </div>`).join("");
+    } catch(e) { el.innerHTML = '<div class="empty">Failed to load</div>'; }
+  }
+
+  async function deleteAnnouncement(id) {
+    if (!confirm("Delete this announcement?")) return;
+    const res = await fetch(`${BASE}/announcements/${id}`, { method:"DELETE", headers: authHeaders() });
+    if (res.ok) { toast("Deleted"); loadAnnouncements(); }
+    else        { const d = await res.json(); toast(d.detail||"Failed", true); }
+  }
+
+  // ── DONATIONS ─────────────────────────────────────────────────────────────────
+  async function addDonation() {
+    const donor_name = document.getElementById("donorName").value.trim();
+    const amount     = document.getElementById("donorAmount").value.trim();
+    const method     = document.getElementById("donorMethod").value;
+    const note       = document.getElementById("donorNote").value.trim();
+    if (!donor_name || !amount) { toast("Name and amount required", true); return; }
+
+    const res = await fetch(`${BASE}/donations/`, {
+      method:"POST", headers: authHeaders(),
+      body: JSON.stringify({ donor_name, amount, method, note })
+    });
+    const d = await res.json();
+    if (res.ok) {
+      toast("✅ Donation added · நன்கொடை சேர்க்கப்பட்டது");
+      document.getElementById("donorName").value   = "";
+      document.getElementById("donorAmount").value = "";
+      document.getElementById("donorNote").value   = "";
+      loadDonations();
+    } else toast(d.detail||"Failed", true);
+  }
+
+  async function loadDonations() {
+    const el = document.getElementById("donationList");
+    try {
+      const [listRes, sumRes] = await Promise.all([
+        fetch(`${BASE}/donations/`,        { headers: authHeaders() }),
+        fetch(`${BASE}/donations/summary`, { headers: authHeaders() }),
+      ]);
+      const list = await listRes.json();
+      const sum  = await sumRes.json();
+
+      document.getElementById("donationSummaryTitle").innerHTML =
+        `Donations · நன்கொடைகள் &nbsp;<span style="background:var(--accent);color:#fff;padding:3px 12px;border-radius:20px;font-size:13px;">₹${sum.total_amount} total</span>`;
+
+      if (!list.length) { el.innerHTML = '<div class="empty">No donations yet</div>'; return; }
+      el.innerHTML = list.map(d => `
+        <div class="list-item">
+          <strong>${d.donor_name}</strong> — ₹${d.amount} <span style="background:var(--green-pale);padding:2px 8px;border-radius:8px;font-size:11px;">${d.method}</span>
+          ${d.note ? `<div style="color:var(--sub);font-size:12px;margin-top:3px;">${d.note}</div>` : ""}
+          <div class="meta">Recorded by ${d.recorded_by} · ${fmtDate(d.created_at)}</div>
+          ${USER_ROLE==="superadmin" ? `<div class="actions"><button class="btn btn-danger btn-sm" onclick="deleteDonation(${d.id})">Delete</button></div>` : ""}
+        </div>`).join("");
+    } catch(e) { el.innerHTML = '<div class="empty">Failed to load</div>'; }
+  }
+
+  async function deleteDonation(id) {
+    if (!confirm("Delete this donation record?")) return;
+    const res = await fetch(`${BASE}/donations/${id}`, { method:"DELETE", headers: authHeaders() });
+    if (res.ok) { toast("Deleted"); loadDonations(); }
+    else        { const d = await res.json(); toast(d.detail||"Failed", true); }
+  }
+
+  // ── USERS ─────────────────────────────────────────────────────────────────────
+  async function loadUsers() {
+    try {
+      const res = await fetch(`${BASE}/users/`, { headers: authHeaders() });
+      allUsers  = await res.json();
+      renderUsers(allUsers);
+    } catch(e) { document.getElementById("userList").innerHTML = '<div class="empty">Failed to load</div>'; }
+  }
+
+  function filterUsers() {
+    const q   = document.getElementById("userSearch").value.toLowerCase();
+    const filtered = allUsers.filter(u =>
+      u.name.toLowerCase().includes(q) || u.phone.includes(q)
+    );
+    renderUsers(filtered);
+  }
+
+  function renderUsers(list) {
+    const el = document.getElementById("userList");
+    if (!list.length) { el.innerHTML = '<div class="empty">No users found</div>'; return; }
+    el.innerHTML = list.map(u => `
+      <div class="user-item">
+        <div class="user-name">${u.name}</div>
+        <div class="user-meta">
+          📞 ${u.phone}<br/>
+          Address: ${u.address || "No address"}<br/>
+          👨‍👩‍👧 Family: ${u.family_name||"-"} · ${u.members||0} members<br/>
+          📅 Joined: ${fmtDate(u.created_at)}
+        </div>
+        <span class="role-badge role-${u.role}">${u.role.toUpperCase()}</span>
+        ${USER_ROLE === "superadmin" ? `
+        <div class="actions" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+          <select id="roleSelect-${u.id}" style="width:auto;padding:6px 10px;font-size:12px;">
+            <option value="member"     ${u.role==="member"     ?"selected":""}>Member</option>
+            <option value="imam"       ${u.role==="imam"       ?"selected":""}>Imam</option>
+            <option value="admin"      ${u.role==="admin"      ?"selected":""}>Admin</option>
+            <option value="superadmin" ${u.role==="superadmin" ?"selected":""}>Superadmin</option>
+          </select>
+          <button class="btn btn-accent btn-sm" onclick="changeRole(${u.id})">Update Role</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteUser(${u.id})">Delete</button>
+        </div>` : ""}
+      </div>`).join("");
+  }
+
+  async function changeRole(userId) {
+    const role = document.getElementById("roleSelect-"+userId).value;
+    const res  = await fetch(`${BASE}/users/${userId}/role`, {
+      method:"PUT", headers: authHeaders(), body: JSON.stringify({ role })
+    });
+    const d = await res.json();
+    if (res.ok) { toast(`✅ Role changed to ${role}`); loadUsers(); }
+    else        { toast(d.detail||"Failed", true); }
+  }
+
+  async function deleteUser(userId) {
+    if (!confirm("Permanently delete this user?")) return;
+    const res = await fetch(`${BASE}/users/${userId}`, { method:"DELETE", headers: authHeaders() });
+    if (res.ok) { toast("User deleted"); loadUsers(); }
+    else        { const d = await res.json(); toast(d.detail||"Failed", true); }
+  }
+
+  // ── AUTO LOGIN ──
+  if (TOKEN) {
+    document.getElementById("loginPage").style.display = "none";
+    document.getElementById("mainApp").style.display = "block";
+    document.getElementById("roleLabel").textContent = USER_ROLE.toUpperCase();
+
+    buildTabs();
+    showSection("dashboard");
+    loadDashboard();
+  }
+</script>
+</body>
+</html>
