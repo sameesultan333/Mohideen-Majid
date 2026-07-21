@@ -41,7 +41,7 @@ export default function EditAmountModal({
     fontFamily: "inherit", ...extra,
   });
 
-  const row = (children?: React.ReactNode): React.CSSProperties => ({
+  const row = (): React.CSSProperties => ({
     display: "flex", alignItems: "center", border: `1.5px solid ${COLORS.border}`,
     borderRadius: 11, height: 48, padding: "0 14px", background: "#FAFAF8",
   });

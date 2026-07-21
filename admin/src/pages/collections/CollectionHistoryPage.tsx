@@ -4,7 +4,7 @@
  */
 import { useEffect, useRef, useState, useCallback } from "react";
 import {
-  Banknote, Smartphone, Image as ImageIcon, X, Search,
+  Banknote, Image as ImageIcon, X, Search,
   ChevronLeft, ChevronRight, RefreshCw, Calendar, SlidersHorizontal,
   TrendingDown, Gift, WifiOff, Copy, CheckCheck, Wallet,
 } from "lucide-react";
@@ -173,7 +173,6 @@ function DetailPanel({ entry, onClose }: { entry: TimelineEntry | null; onClose:
 
   const imgUrl = buildImgUrl(entry.proof_image, BACKEND);
   const meta = TYPE_META[entry.entry_type];
-  const Icon = meta.icon;
   const pad = isMobile ? 16 : 24;
   const isExpense = entry.entry_type === "expense";
 
@@ -339,7 +338,6 @@ const pageBtnStyle = (disabled: boolean): React.CSSProperties => ({
 import React from "react";
 
 export default function CollectionHistoryPage() {
-  const BACKEND = (import.meta as any).env?.VITE_BACKEND_URL || "";
   const isMobile = useMediaQuery("(max-width: 768px)");
   const isNarrow = useMediaQuery("(max-width: 420px)");
 

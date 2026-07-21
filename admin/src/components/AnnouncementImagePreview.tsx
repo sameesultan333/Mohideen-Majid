@@ -1,5 +1,4 @@
 import React, { useEffect, useRef } from "react";
-import { COLORS } from "../theme/colors";
 
 // ─── Props ──────────────────────────────────────────────────────────────────
 

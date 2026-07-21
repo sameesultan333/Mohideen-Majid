@@ -335,7 +335,6 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ entry, familyMap, onClose, on
 
   const displayName = isFamily ? entry.family!.name : user?.name ?? "Unknown";
   const displayPhone = isFamily ? entry.family!.phone : user?.phone ?? "—";
-  const displayRole = isFamily ? "Family Head" : user?.role ?? "—";
 
   const familyId = isFamily ? entry.family!.id : user?.family_id;
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { COLORS, TYPOGRAPHY } from "../../theme/colors";
 import {
   getDonations,

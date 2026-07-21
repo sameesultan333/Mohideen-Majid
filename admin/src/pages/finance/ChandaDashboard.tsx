@@ -1239,7 +1239,6 @@ export default function ChandaDashboard() {
       await addFamily({
         chanda_no: formData.chandaNo, name: formData.name,
         phone: formData.phone, address: formData.address,
-        zone: formData.zone?.trim() || undefined,
         monthly_amount: formData.monthlyAmount,
         registration_date: formData.startMonth ? formData.startMonth + "-01" : undefined,
       });

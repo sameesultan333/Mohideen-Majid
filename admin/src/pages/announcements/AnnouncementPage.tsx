@@ -10,20 +10,6 @@ import AnnouncementModal from "../../components/AnnouncementModal";
 import DeleteAnnouncementModal from "../../components/DeleteAnnouncementModal";
 import AnnouncementImagePreview from "../../components/AnnouncementImagePreview";
 
-// ─── Media Query Hook ──────────────────────────────────────────────────────
-
-const useMediaQuery = (query: string) => {
-  const [matches, setMatches] = React.useState(false);
-  useEffect(() => {
-    const media = window.matchMedia(query);
-    if (media.matches !== matches) setMatches(media.matches);
-    const listener = () => setMatches(media.matches);
-    media.addEventListener("change", listener);
-    return () => media.removeEventListener("change", listener);
-  }, [matches, query]);
-  return matches;
-};
-
 // ─── Cache Helpers ──────────────────────────────────────────────────────────
 
 const CACHE_ANNOUNCEMENTS_KEY = "announcements_cache";
@@ -80,7 +66,6 @@ document.head.appendChild(keyframes);
 // ─── Component ─────────────────────────────────────────────────────────────
 
 const AnnouncementPage: React.FC = () => {
-  const isMobile = useMediaQuery("(max-width: 768px)");
 
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);

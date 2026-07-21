@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useLocation } from "react-router-dom";
 
-import Sidebar from "./Sidebar";
-import Header from "./Header";
+import Sidebar from "./layout/Sidebar";
+import Header from "./layout/Header";
 
 import "./layout.css";
 

@@ -115,7 +115,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#fff",
   },
   btnDangerHover: {
-    background: COLORS.dangerHover || "#B73434",
+    background: COLORS.danger || "#B73434",
   },
   btnDisabled: {
     opacity: 0.6,
@@ -145,7 +145,6 @@ const ArchiveFundModal: React.FC<ArchiveFundModalProps> = ({
   onClose,
   onConfirm,
   fundName,
-  fundId,
 }) => {
   const [loading, setLoading] = useState(false);
 
@@ -204,7 +203,7 @@ const ArchiveFundModal: React.FC<ArchiveFundModalProps> = ({
               ...(loading ? styles.btnDisabled : {}),
             }}
             onMouseEnter={(e) => {
-              if (!loading) e.currentTarget.style.background = COLORS.dangerHover || "#B73434";
+              if (!loading) e.currentTarget.style.background = COLORS.danger || "#B73434";
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = COLORS.danger;

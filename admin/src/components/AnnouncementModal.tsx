@@ -358,9 +358,7 @@ const AnnouncementModal: React.FC<AnnouncementModalProps> = ({ open, onClose, on
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [pinned, setPinned] = useState(false);
-  const [imageFile, setImageFile] = useState<File | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -400,9 +398,7 @@ const AnnouncementModal: React.FC<AnnouncementModalProps> = ({ open, onClose, on
       setTitle("");
       setBody("");
       setPinned(false);
-      setImageFile(null);
       setImageUrl(null);
-      setAudioFile(null);
       setAudioUrl(null);
       setError(null);
       setTargetUserId(null);
@@ -439,7 +435,6 @@ const AnnouncementModal: React.FC<AnnouncementModalProps> = ({ open, onClose, on
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setImageFile(file);
     setUploading(true);
     try {
       const url = await uploadFile(file, "image");
@@ -454,7 +449,6 @@ const AnnouncementModal: React.FC<AnnouncementModalProps> = ({ open, onClose, on
   const handleAudioChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setAudioFile(file);
     setUploading(true);
     try {
       const url = await uploadFile(file, "audio");
@@ -467,13 +461,11 @@ const AnnouncementModal: React.FC<AnnouncementModalProps> = ({ open, onClose, on
   };
 
   const removeImage = () => {
-    setImageFile(null);
     setImageUrl(null);
     if (imageInputRef.current) imageInputRef.current.value = "";
   };
 
   const removeAudio = () => {
-    setAudioFile(null);
     setAudioUrl(null);
     if (audioInputRef.current) audioInputRef.current.value = "";
   };
