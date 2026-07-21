@@ -44,6 +44,6 @@ psutil==6.1.1
 
 # Cloudinary (optional)
 cloudinary==1.41.0
-
+pandas==2.2.3
 # WebSockets
 websockets==13.1
