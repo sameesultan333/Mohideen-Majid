@@ -28,7 +28,7 @@ interface AnnouncementModalProps {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
-const _BACKEND_ROOT = (import.meta.env.VITE_API_URL || "").replace(/\/api\/?$/, "");
+const _BACKEND_ROOT = (import.meta.env.VITE_BACKEND_URL || "").replace(/\/api\/?$/, "");
 const toAbsUrl = (url: string | null | undefined): string | null => {
   if (!url) return null;
   if (url.startsWith("http")) return url;

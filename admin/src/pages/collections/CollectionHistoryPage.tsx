@@ -165,7 +165,7 @@ const TYPE_META = {
 // ── Detail panel ──────────────────────────────────────────────────────────────
 
 function DetailPanel({ entry, onClose }: { entry: TimelineEntry | null; onClose: () => void }) {
-  const BACKEND = (import.meta as any).env?.VITE_API_URL || "";
+  const BACKEND = (import.meta as any).env?.VITE_BACKEND_URL || "";
   const [lightbox, setLightbox] = useState<string | null>(null);
   const isMobile = useMediaQuery("(max-width: 640px)");
 
@@ -339,7 +339,7 @@ const pageBtnStyle = (disabled: boolean): React.CSSProperties => ({
 import React from "react";
 
 export default function CollectionHistoryPage() {
-  const BACKEND = (import.meta as any).env?.VITE_API_URL || "";
+  const BACKEND = (import.meta as any).env?.VITE_BACKEND_URL || "";
   const isMobile = useMediaQuery("(max-width: 768px)");
   const isNarrow = useMediaQuery("(max-width: 420px)");
 
@@ -404,7 +404,7 @@ export default function CollectionHistoryPage() {
 
   useEffect(() => {
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
-    const apiBase = (import.meta as any).env?.VITE_API_URL || "";
+    const apiBase = (import.meta as any).env?.VITE_BACKEND_URL || "";
     const host = apiBase ? new URL(apiBase).host : window.location.host;
     const token = localStorage.getItem("access_token") || "";
     const wsUrl = `${proto}://${host}/ws/finance${token ? `?token=${token}` : ""}`;

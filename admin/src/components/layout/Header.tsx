@@ -7,7 +7,7 @@ import { useNotifications, type NotifItem } from "../../context/NotificationCont
 
 import "../layout/layout.css";
 
-const BASE_URL = (import.meta as any).env?.VITE_API_URL?.replace(/\/api$/, "")
+const BASE_URL = (import.meta as any).env?.VITE_BACKEND_URL?.replace(/\/api$/, "")
   || (import.meta as any).env?.VITE_API_BASE_URL?.replace(/\/api$/, "")
   || "";
 

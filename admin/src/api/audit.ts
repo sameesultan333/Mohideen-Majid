@@ -93,6 +93,6 @@ export function auditExcelUrl(filters: AuditFilters = {}): string {
   Object.entries(filters).forEach(([k, v]) => {
     if (v !== undefined && v !== null && v !== '') params.set(k, String(v));
   });
-  const base = import.meta.env.VITE_API_URL || '';
+  const base = import.meta.env.VITE_BACKEND_URL || '';
   return `${base}/audit/export/excel?${params}`;
 }

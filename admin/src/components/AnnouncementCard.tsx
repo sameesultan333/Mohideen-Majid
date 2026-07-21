@@ -4,7 +4,7 @@ import { COLORS } from "../theme/colors";
 
 import type { Announcement } from "../types/announcement";
 
-const _BACKEND_ROOT = (import.meta.env.VITE_API_URL || "").replace(/\/api\/?$/, "");
+const _BACKEND_ROOT = (import.meta.env.VITE_BACKEND_URL || "").replace(/\/api\/?$/, "");
 
 function buildMediaUrl(url: string | null | undefined): string | null {
   if (!url) return null;

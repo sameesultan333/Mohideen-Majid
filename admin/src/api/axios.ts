@@ -13,8 +13,8 @@ import {
 } from './auth';
 
 // In dev, requests go through the Vite proxy (same origin → cookies work).
-// In production, set VITE_API_URL to the real backend URL.
-const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+// In production, set VITE_BACKEND_URL to the real backend URL.
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || '';
 
 const api = axios.create({
   baseURL: API_BASE_URL,

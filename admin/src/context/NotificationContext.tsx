@@ -207,7 +207,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
-    const apiBase = (import.meta as any).env?.VITE_API_URL || "";
+    const apiBase = (import.meta as any).env?.VITE_BACKEND_URL || "";
     const host = apiBase ? new URL(apiBase).host : window.location.host;
     const token = getAccessToken() || "";
     const url = `${proto}://${host}/ws/finance${token ? `?token=${token}` : ""}`;

@@ -136,7 +136,7 @@ function buildImgUrl(proof_image: string | null | undefined, backend: string): s
 }
 
 function PaymentModal({ p, onClose }: { p: any; onClose: () => void }) {
-  const BACKEND = (import.meta as any).env?.VITE_API_URL || "";
+  const BACKEND = (import.meta as any).env?.VITE_BACKEND_URL || "";
   const imgUrl = buildImgUrl(p.proof_image, BACKEND);
   const isCollector = p.created_by !== "user";
 
