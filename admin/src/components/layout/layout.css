@@ -1,0 +1,406 @@
+/* ==========================================================================
+   MOHIDEEN MASJID — LAYOUT
+   Mobile-first: sidebar is a slide-in drawer by default,
+   becomes a permanent static rail from 993px up.
+   ========================================================================== */
+
+:root {
+  --sidebar-w: 264px;
+}
+
+/* ==========================================================================
+   APP SHELL
+   ========================================================================== */
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+  width: 100%;
+  background: #F7F5EF;
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* ==========================================================================
+   BACKDROP (mobile only)
+   ========================================================================== */
+
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(12, 46, 39, 0.55);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.25s ease, visibility 0.25s ease;
+  z-index: 49;
+}
+
+.sidebar-backdrop.visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* ==========================================================================
+   SIDEBAR — mobile default: fixed off-canvas drawer
+   ========================================================================== */
+
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  width: 288px;
+  max-width: 84vw;
+  background: linear-gradient(180deg, #0C2E27 0%, #0F3D33 100%);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(-100%);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 50;
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.35);
+}
+
+.sidebar.open {
+  transform: translateX(0);
+}
+
+.sidebar-header {
+  height: 74px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 20px;
+  border-bottom: 1px solid #1A4A3E;
+  position: relative;
+}
+
+.sidebar-logo {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: rgba(169, 129, 46, 0.16);
+  border: 1px solid rgba(169, 129, 46, 0.4);
+  color: #A9812E;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.sidebar-title h2 {
+  margin: 0;
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 16px;
+  font-weight: 600;
+  color: #F7F5EF;
+  letter-spacing: -0.01em;
+}
+
+.sidebar-title p {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  color: #7FA398;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sidebar-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  margin-left: auto;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #7FA398;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.sidebar-close-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #F7F5EF;
+}
+
+.sidebar-menu {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sidebar-menu a {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-decoration: none;
+  color: #9FBDB3;
+  font-family: 'Manrope', system-ui, sans-serif;
+  font-size: 14.5px;
+  font-weight: 500;
+  padding: 12px 14px;
+  border-radius: 10px;
+  transition: background 0.2s ease, color 0.2s ease;
+  position: relative;
+}
+
+.sidebar-menu a:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #F7F5EF;
+}
+
+.sidebar-menu a.active {
+  background: rgba(169, 129, 46, 0.14);
+  color: #F0DDA6;
+  font-weight: 600;
+}
+
+.sidebar-menu a.active::before {
+  content: "";
+  position: absolute;
+  left: -12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 20px;
+  border-radius: 0 4px 4px 0;
+  background: #A9812E;
+}
+
+.sidebar-footer {
+  flex-shrink: 0;
+  padding: 16px;
+  border-top: 1px solid #1A4A3E;
+}
+
+.sidebar-footer button {
+  width: 100%;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px solid rgba(161, 58, 58, 0.35);
+  border-radius: 10px;
+  background: rgba(161, 58, 58, 0.12);
+  color: #E29B9B;
+  font-family: 'Manrope', system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.sidebar-footer button:hover {
+  background: #A13A3A;
+  color: #FFFFFF;
+  border-color: #A13A3A;
+}
+
+/* ==========================================================================
+   HEADER
+   ========================================================================== */
+
+.header {
+  height: 68px;
+  flex-shrink: 0;
+  background: #FFFFFF;
+  border-bottom: 1px solid #EAE6D9;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.header-menu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 10px;
+  background: #EEF8F5;
+  color: #0F5C4C;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.2s ease;
+}
+
+.header-menu-btn:hover {
+  background: #E9F5F0;
+}
+
+.header-titles {
+  min-width: 0;
+}
+
+.header-titles h1 {
+  margin: 0;
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #1C231F;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header-titles p {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: #93998F;
+  white-space: nowrap;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.header-icon-btn {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #E7E2D3;
+  border-radius: 10px;
+  background: #FFFFFF;
+  color: #5B6660;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.header-icon-btn:hover {
+  background: #EEF8F5;
+  border-color: #BFE0D4;
+  color: #0F5C4C;
+}
+
+.header-icon-dot {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #A9812E;
+}
+
+.user-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-left: 10px;
+  margin-left: 4px;
+  border-left: 1px solid #EAE6D9;
+}
+
+.user-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #A9812E;
+  color: #FFFFFF;
+  font-family: 'Manrope', system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.user-info {
+  display: none;
+}
+
+.user-info h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1C231F;
+}
+
+.user-info p {
+  margin: 1px 0 0;
+  font-size: 11.5px;
+  color: #93998F;
+}
+
+/* ==========================================================================
+   PAGE CONTENT
+   ========================================================================== */
+
+.page-content {
+  flex: 1;
+  padding: 20px 16px;
+  overflow-y: auto;
+}
+
+/* ==========================================================================
+   DESKTOP / LAPTOP — sidebar always open as a static rail
+   ========================================================================== */
+
+@media (min-width: 993px) {
+  .header-menu-btn {
+    display: none;
+  }
+
+  .header {
+    padding: 0 28px;
+    height: 74px;
+  }
+
+  .user-info {
+    display: block;
+  }
+
+  .page-content {
+    padding: 28px;
+  }
+
+  .sidebar-backdrop {
+    display: none;
+  }
+
+  .sidebar-close-btn {
+    display: none;
+  }
+
+  .sidebar {
+    position: sticky;
+    top: 0;
+    width: var(--sidebar-w);
+    max-width: var(--sidebar-w);
+    transform: none;
+    box-shadow: none;
+    flex-shrink: 0;
+  }
+}

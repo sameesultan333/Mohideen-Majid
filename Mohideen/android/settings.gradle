@@ -1,0 +1,33 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+
+        // 🔥 THIS IS THE MISSING LINK
+        maven { url("$rootDir/../node_modules/react-native/android") }
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    repositories {
+        google()
+        mavenCentral()
+
+        // 🔥 ALSO REQUIRED HERE
+        maven { url("$rootDir/../node_modules/react-native/android") }
+        maven { url("https://www.jitpack.io") }
+        maven { url("https://jitpack.io") }
+    }
+}
+
+rootProject.name = 'Mohideen'
+
+include ':app'
+
+// keep this
+apply from: file("../node_modules/@react-native-community/cli-platform-android/native_modules.gradle")
+applyNativeModulesSettingsGradle(settings)
+
+includeBuild('../node_modules/@react-native/gradle-plugin')

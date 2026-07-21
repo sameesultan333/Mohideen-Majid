@@ -1,0 +1,35 @@
+# systemd service for Mohideen backend (when running without Docker)
+# Install: sudo cp mohideen.service /etc/systemd/system/
+#          sudo systemctl daemon-reload
+#          sudo systemctl enable --now mohideen
+
+[Unit]
+Description=Mohideen Masjid API (Gunicorn + Uvicorn)
+After=network.target postgresql.service redis.service
+Wants=postgresql.service redis.service
+
+[Service]
+Type=notify
+User=mohideen
+Group=mohideen
+WorkingDirectory=/opt/mohideen/backend
+EnvironmentFile=/opt/mohideen/backend/.env
+ExecStart=/opt/mohideen/venv/bin/gunicorn app.main:app --config gunicorn.conf.py
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=30
+PrivateTmp=true
+NoNewPrivileges=true
+RestartSec=5
+Restart=always
+
+# Resource limits
+LimitNOFILE=65536
+
+# Logging — goes to journald; also written to /app/logs/ by the app
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mohideen-api
+
+[Install]
+WantedBy=multi-user.target

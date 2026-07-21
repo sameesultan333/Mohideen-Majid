@@ -1,0 +1,72 @@
+# ── Secrets — never commit these, in any subproject ──────────────────────────
+.env
+.env.local
+.env.*.local
+backend/.env
+backend/serviceAccountKey.json
+# Firebase Admin SDK service account keys — real credentials (private_key),
+# not to be confused with google-services.json (client config, different
+# risk profile). Pattern-matched since the filename includes a random
+# project-specific suffix (mohideen-masjid-firebase-adminsdk-fbsvc-*.json).
+*firebase-adminsdk*.json
+nginx/ssl/
+*.pem
+*.key
+*.crt
+
+# ── Node (root, admin/, Mohideen/ — node_modules is never committed at any depth) ─
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── Build output (admin's Vite dist, Mohideen's RN/Android/iOS build dirs) ───
+dist/
+dist-ssr/
+build/
+
+# ── Python (backend) ──────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ── Android (Mohideen) — most Android/Gradle/Xcode specifics live in
+#    Mohideen/.gitignore already; these are repo-root safety nets ───────────
+Mohideen/android/local.properties
+*.keystore
+!debug.keystore
+*.jks
+# Repo is public — Firebase's own guidance says google-services.json is safe
+# for a private/internal repo (its API key is restricted by package name +
+# signing cert), but keep it out of a public one. Provision it locally per
+# developer instead.
+Mohideen/android/app/google-services.json
+
+# ── Uploads (backend runtime data, not code) ──────────────────────────────────
+backend/uploads/
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Docker override ───────────────────────────────────────────────────────────
+docker-compose.override.yml
+
+# ── IDE / editor ───────────────────────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+*.swp
+.DS_Store
+
+# ── AI tooling — local session/config, not part of the app ───────────────────
+.claude/
+
+# ── Accidental/stray files (Windows `> nul` redirects create a real file
+#    named "nul" in git-bash/MSYS instead of discarding output) ──────────────
+nul
+
+# ── Local-only backups of removed/orphaned files — kept on disk for
+#    reference, deliberately not part of the deployed repo ──────────────────
+archive/

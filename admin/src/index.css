@@ -1,0 +1,336 @@
+/* ==========================================================================
+   MOHIDEEN MASJID — ADMIN DASHBOARD
+   Global styles / design tokens
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&display=swap');
+
+:root {
+  color-scheme: light; /* lock to light — no auto dark-mode reskin */
+
+  /* ---------- BRAND ---------- */
+  --primary: #146C5A;
+  --primary-hover: #0F5647;
+  --primary-light: #EEF8F5;
+
+  --accent: #B89230;
+  --accent-hover: #9E7C23;
+  --accent-light: #FBF6E8;
+
+  --navy: #183B56;
+
+  /* ---------- BACKGROUNDS ---------- */
+  --bg: #F6F8F7;
+  --surface: #FFFFFF;
+  --elevated: #FCFCFB;
+
+  --sidebar: #123B36;
+  --sidebar-hover: #195147;
+  --sidebar-active: #1E6456;
+
+  --header: #FFFFFF;
+
+  /* ---------- TEXT ---------- */
+  --text: #1B2B34;
+  --text-secondary: #5F6C76;
+  --text-muted: #98A4AD;
+  --white: #FFFFFF;
+
+  /* ---------- BORDERS ---------- */
+  --border: #E7ECE8;
+  --divider: #F1F3F2;
+
+  /* ---------- STATUS ---------- */
+  --success: #146C5A;
+  --warning: #D59B21;
+  --danger: #D14343;
+  --info: #3178F6;
+
+  /* ---------- CARDS ---------- */
+  --card: #FFFFFF;
+  --card-hover: #FCFCFB;
+
+  /* ---------- ICON BACKGROUNDS ---------- */
+  --icon-green: #ECF8F3;
+  --icon-gold: #FBF6E8;
+  --icon-blue: #EEF4FF;
+  --icon-red: #FFF2F2;
+  --icon-orange: #FFF5EA;
+
+  /* ---------- TABLE ---------- */
+  --table-header: #FAFBFB;
+  --table-hover: #F8FBF9;
+
+  /* ---------- BUTTONS ---------- */
+  --btn-primary: #146C5A;
+  --btn-primary-hover: #0F5647;
+  --btn-gold: #B89230;
+  --btn-gold-hover: #9E7C23;
+  --btn-danger: #D14343;
+  --btn-danger-hover: #B73434;
+
+  /* ---------- EFFECTS ---------- */
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, .04);
+  --shadow: 0 4px 12px rgba(16, 24, 40, .06);
+  --shadow-lg: 0 12px 30px rgba(16, 24, 40, .10);
+
+  /* ---------- RADIUS ---------- */
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 16px;
+
+  /* ---------- SPACING ---------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* ---------- TYPOGRAPHY ---------- */
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-heading: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Consolas, monospace;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ==========================================================================
+   RESET
+   ========================================================================== */
+
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+html {
+  font-size: 16px;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  overflow-x: hidden;
+  letter-spacing: 0.1px;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+ul,
+ol {
+  list-style: none;
+}
+
+/* ==========================================================================
+   TYPOGRAPHY
+   ========================================================================== */
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.25;
+}
+
+h1 { font-size: 28px; letter-spacing: -0.4px; }
+h2 { font-size: 22px; letter-spacing: -0.3px; }
+h3 { font-size: 18px; }
+h4 { font-size: 16px; }
+
+p {
+  color: var(--text-secondary);
+}
+
+code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+}
+
+/* ==========================================================================
+   SCROLLBAR (premium touch)
+   ========================================================================== */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d3ddd7;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
+}
+
+/* ==========================================================================
+   FOCUS STATES (accessibility, still on-brand)
+   ========================================================================== */
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* ==========================================================================
+   SHARED UTILITY CLASSES
+   ========================================================================== */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow .2s ease, transform .2s ease;
+}
+
+.card:hover {
+  box-shadow: var(--shadow);
+}
+
+.btn {
+  height: 44px;
+  padding: 0 20px;
+  border-radius: var(--radius);
+  font-size: 14px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background .2s ease, transform .1s ease;
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
+.btn-primary {
+  background: var(--btn-primary);
+  color: var(--white);
+}
+.btn-primary:hover { background: var(--btn-primary-hover); }
+
+.btn-gold {
+  background: var(--btn-gold);
+  color: var(--white);
+}
+.btn-gold:hover { background: var(--btn-gold-hover); }
+
+.btn-danger {
+  background: var(--btn-danger);
+  color: var(--white);
+}
+.btn-danger:hover { background: var(--btn-danger-hover); }
+
+.btn-outline {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.btn-outline:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-light);
+}
+
+.input {
+  width: 100%;
+  height: 44px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0 14px;
+  font-size: 14px;
+  background: var(--surface);
+  outline: none;
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+
+.input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-light);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.badge-success { background: var(--icon-green); color: var(--primary); }
+.badge-warning { background: var(--icon-orange); color: var(--warning); }
+.badge-danger  { background: var(--icon-red); color: var(--danger); }
+.badge-info    { background: var(--icon-blue); color: var(--info); }
+
+/* ==========================================================================
+   RESPONSIVE
+   ========================================================================== */
+
+@media (max-width: 1024px) {
+  html { font-size: 15px; }
+  h1 { font-size: 24px; }
+  h2 { font-size: 19px; }
+}
+
+@media (max-width: 640px) {
+  .btn { height: 42px; padding: 0 16px; font-size: 13px; }
+}

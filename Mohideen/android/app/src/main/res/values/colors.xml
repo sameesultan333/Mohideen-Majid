@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Adaptive icon background — matches the app's primary green -->
+    <color name="ic_launcher_background">#1B5E20</color>
+
+    <!-- Default FCM / local notification accent color -->
+    <color name="notification_color">#1B5E20</color>
+</resources>
