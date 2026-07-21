@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Landmark, Phone, ShieldCheck, ArrowRight, ArrowLeft, Eye, EyeOff } from "lucide-react";
-
+import { useNavigate } from "react-router-dom";
 import { COLORS, TYPOGRAPHY } from "../../theme/colors";
 import { adminLogin } from "../../api/auth";
 
 function LoginPage() {
+  const navigate = useNavigate();
   const [step, setStep] = useState<"phone" | "password">("phone");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
@@ -25,21 +26,30 @@ function LoginPage() {
   };
 
   const signIn = async () => {
-    setError("");
-    if (!password) {
-      setError("Enter your password");
-      return;
-    }
-    try {
-      setLoading(true);
-      await adminLogin(digitsOnly(phone), password);
-      window.location.href = "/dashboard";
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "Unable to sign in. Try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
+  setError("");
+
+  if (!password) {
+    setError("Enter your password");
+    return;
+  }
+
+  try {
+    setLoading(true);
+
+    await adminLogin(digitsOnly(phone), password);
+
+    // Navigate within the React app
+    navigate("/dashboard", { replace: true });
+
+  } catch (err: any) {
+    setError(
+      err?.response?.data?.detail ||
+      "Unable to sign in. Try again."
+    );
+  } finally {
+    setLoading(false);
+  }
+};
 
   const back = () => {
     setStep("phone");

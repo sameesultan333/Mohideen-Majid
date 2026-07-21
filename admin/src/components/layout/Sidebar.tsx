@@ -17,7 +17,7 @@ import {
   Banknote,
 } from "lucide-react";
 
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 
 import "../layout/layout.css";
 
@@ -44,6 +44,7 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ isOpen, onClose }: SidebarProps) {
+  const navigate = useNavigate();
   const { unreadCount, pendingRegCount, cashSubCount } = useNotifications();
   const isSuperAdmin = getCurrentUser()?.role === "superadmin";
 
@@ -51,7 +52,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
     try {
       await logout();
     } finally {
-      window.location.href = "/login";
+      navigate("/login", { replace: true });
     }
   }
 
