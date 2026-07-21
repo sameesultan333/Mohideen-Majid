@@ -3,9 +3,12 @@
  * Runs every 1 h via WorkManager (even when app is closed/killed).
  * Checks schedule version → downloads full times only if changed → reschedules alarms.
  */
+import { AppRegistry, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import PrayerNotificationService from './PrayerNotificationService';
 import { getFallbackBaseUrl } from '../config/server';
+
+const TASK_NAME = 'PrayerSyncTask';
 
 const CACHE_KEY   = 'prayer_times_cache';
 const VERSION_KEY = 'prayer_schedule_version';
@@ -58,6 +61,15 @@ async function PrayerSyncTask() {
   } catch (e) {
     console.warn('[PrayerSync] Sync failed (will retry next cycle):', e?.message);
   }
+}
+
+// Register the headless task — without this, PrayerSyncWorker.kt's hourly
+// WorkManager job (native) calls into PrayerSyncService, which looks up a
+// JS headless task named "PrayerSyncTask" and finds nothing registered,
+// so the sync silently never runs. This was the missing link: the native
+// side was fully wired correctly, this one line just wasn't here.
+if (Platform.OS === 'android') {
+  AppRegistry.registerHeadlessTask(TASK_NAME, () => PrayerSyncTask);
 }
 
 export default PrayerSyncTask;

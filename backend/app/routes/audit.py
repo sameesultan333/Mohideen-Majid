@@ -74,7 +74,7 @@ def _serialize(a: models.AuditLog) -> dict:
         "performed_by":         a.performed_by.name if a.performed_by else None,
         "user_fullname":        a.user_fullname or (a.performed_by.name if a.performed_by else None),
         "user_role":            a.user_role or (a.performed_by.role if a.performed_by else None),
-        "performed_at":         a.performed_at.isoformat() if a.performed_at else None,
+        "performed_at":         a.performed_at.isoformat() + "Z" if a.performed_at else None,
         "ip_address":           a.ip_address,
         "browser":              a.browser,
         "os_name":              a.os_name,

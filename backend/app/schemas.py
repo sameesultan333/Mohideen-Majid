@@ -1,8 +1,26 @@
 # backend/app/schemas.py
 
-from pydantic import BaseModel
-from typing import Optional, List, Literal
+from typing import Annotated, Optional, List, Literal
+
+from pydantic import BaseModel, PlainSerializer
 from datetime import datetime
+
+# Every timestamp column in this app is written with datetime.utcnow() —
+# naive (no tzinfo), but semantically always UTC. Pydantic v2 serializes a
+# naive datetime via its own Rust core (bypassing FastAPI's jsonable_encoder
+# entirely for response_model routes), producing an ISO string with no
+# 'Z'/offset suffix — which browsers and RN's `new Date(...)` then
+# misinterpret as already being in the viewer's local timezone, silently
+# shifting every displayed timestamp by the viewer's UTC offset. Use this
+# type instead of bare `datetime` on any response-model field so it's
+# correctly marked as UTC on the wire.
+UTCDateTime = Annotated[
+    datetime,
+    PlainSerializer(
+        lambda dt: dt.isoformat() + "Z" if dt.tzinfo is None else dt.isoformat(),
+        return_type=str,
+    ),
+]
 
 
 # ─────────────────────────────────────────────
@@ -63,8 +81,8 @@ class UserOut(BaseModel):
     address: Optional[str]
     is_active: bool
     phone_verified: bool
-    last_login: Optional[datetime]
-    created_at: Optional[datetime]
+    last_login: Optional[UTCDateTime]
+    created_at: Optional[UTCDateTime]
 
     class Config:
         from_attributes = True
@@ -112,8 +130,8 @@ class StaffOut(BaseModel):
     role: str
     is_active: bool
     phone_verified: bool
-    last_login: Optional[datetime] = None
-    created_at: Optional[datetime] = None
+    last_login: Optional[UTCDateTime] = None
+    created_at: Optional[UTCDateTime] = None
 
     class Config:
         from_attributes = True
@@ -183,7 +201,7 @@ class AnnouncementOut(BaseModel):
     body: str
     pinned: bool
     posted_by: str
-    created_at: datetime
+    created_at: UTCDateTime
     image_url: Optional[str] = None
     audio_url: Optional[str] = None
     target_user_id: Optional[int] = None
@@ -213,7 +231,7 @@ class HadithOut(BaseModel):
     source: Optional[str]
     posted_by: str
     date: Optional[str]
-    created_at: datetime
+    created_at: UTCDateTime
     voice_url: Optional[str]
     image_url: Optional[str]
 
@@ -247,7 +265,7 @@ class QuestionOut(BaseModel):
     question_text: Optional[str]
     question_voice_url: Optional[str]
     status: str
-    created_at: datetime
+    created_at: UTCDateTime
 
     class Config:
         from_attributes = True
@@ -267,7 +285,7 @@ class ReplyOut(BaseModel):
     user_id: int
     hadith_id: int
     parent_reply_id: Optional[int]
-    created_at: datetime
+    created_at: UTCDateTime
     user_role: Optional[str] = None
 
     class Config:
@@ -281,16 +299,16 @@ class FundCreate(BaseModel):
     name: str
     description: Optional[str] = None
     goal_amount: Optional[float] = None
-    start_date: Optional[datetime] = None
-    expected_end_date: Optional[datetime] = None
+    start_date: Optional[UTCDateTime] = None
+    expected_end_date: Optional[UTCDateTime] = None
     status: Optional[str] = "active"
 
 class FundUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     goal_amount: Optional[float] = None
-    start_date: Optional[datetime] = None
-    expected_end_date: Optional[datetime] = None
+    start_date: Optional[UTCDateTime] = None
+    expected_end_date: Optional[UTCDateTime] = None
     status: Optional[str] = None
     is_active: Optional[bool] = None
 
@@ -299,17 +317,17 @@ class FundOut(BaseModel):
     name: str
     description: Optional[str]
     goal_amount: Optional[float]
-    start_date: Optional[datetime]
-    expected_end_date: Optional[datetime]
-    completed_at: Optional[datetime]
+    start_date: Optional[UTCDateTime]
+    expected_end_date: Optional[UTCDateTime]
+    completed_at: Optional[UTCDateTime]
     status: str
     is_active: bool
     is_archived: bool
     created_by: Optional[str]
     created_by_id: Optional[int]
-    created_at: datetime
-    updated_at: Optional[datetime]
-    archived_at: Optional[datetime]
+    created_at: UTCDateTime
+    updated_at: Optional[UTCDateTime]
+    archived_at: Optional[UTCDateTime]
     archived_by: Optional[str]
 
     class Config:
@@ -324,7 +342,7 @@ class FundStats(BaseModel):
     goal_amount: Optional[float]
     progress_pct: Optional[float]
     donor_count: int
-    last_donation_at: Optional[datetime]
+    last_donation_at: Optional[UTCDateTime]
 
 class FundDetailOut(FundOut):
     stats: Optional[FundStats] = None
@@ -351,7 +369,7 @@ class DonationCreate(BaseModel):
     donor_type: Optional[str] = "walk_in"  # app_user|member|walk_in|anonymous
     phone: Optional[str] = None
     chanda_no: Optional[str] = None
-    donation_date: Optional[datetime] = None
+    donation_date: Optional[UTCDateTime] = None
     receipt_image: Optional[str] = None
 
 
@@ -362,7 +380,7 @@ class DonationOut(BaseModel):
     method: str
     note: Optional[str]
     recorded_by: str
-    created_at: datetime
+    created_at: UTCDateTime
     head_id: Optional[int]
     receipt_id: Optional[str]
     purpose_id: Optional[int] = None
@@ -371,7 +389,7 @@ class DonationOut(BaseModel):
     donor_type: Optional[str] = None
     phone: Optional[str] = None
     chanda_no: Optional[str] = None
-    donation_date: Optional[datetime] = None
+    donation_date: Optional[UTCDateTime] = None
     receipt_image: Optional[str] = None
 
     class Config:
@@ -402,7 +420,7 @@ class DonationPurposeOut(BaseModel):
     target_amount: Optional[float]
     is_active: bool
     is_archived: bool
-    created_at: datetime
+    created_at: UTCDateTime
     created_by_id: Optional[int]
 
     class Config:
@@ -425,7 +443,7 @@ class AddFamily(BaseModel):
     address: Optional[str] = None
     zone: Optional[str] = None
     monthly_amount: float
-    registration_date: Optional[datetime] = None
+    registration_date: Optional[UTCDateTime] = None
     historical_payments: Optional[dict] = None
 
 
@@ -436,7 +454,7 @@ class EditFamily(BaseModel):
     zone: Optional[str] = None
     monthly_amount: Optional[float] = None
     chanda_no: Optional[str] = None
-    registration_date: Optional[datetime] = None
+    registration_date: Optional[UTCDateTime] = None
 
 
 # ─────────────────────────────────────────────
@@ -455,8 +473,8 @@ class HeadOut(HeadBase):
     id: int
     is_active: bool
     is_registered: bool
-    created_at: datetime
-    registration_date: Optional[datetime] = None
+    created_at: UTCDateTime
+    registration_date: Optional[UTCDateTime] = None
 
     class Config:
         from_attributes = True
@@ -478,7 +496,7 @@ class CollectionOut(CollectionBase):
     is_advance: bool = False
     advance_payment_id: Optional[int] = None
     rate_snapshot: Optional[float] = None
-    created_at: datetime
+    created_at: UTCDateTime
 
     class Config:
         from_attributes = True
@@ -546,10 +564,10 @@ class PaymentOut(BaseModel):
     amount: float
     method: str
     created_by: Optional[str]
-    created_at: datetime
+    created_at: UTCDateTime
 
     collected_by: Optional[str]
-    collected_at: Optional[datetime]
+    collected_at: Optional[UTCDateTime]
 
     transaction_ref: Optional[str]
     proof_image: Optional[str]
@@ -557,7 +575,7 @@ class PaymentOut(BaseModel):
     status: Literal["pending", "verified", "rejected"]
 
     verified_by: Optional[str]
-    verified_at: Optional[datetime]
+    verified_at: Optional[UTCDateTime]
 
     receipt_id: Optional[str]
 
@@ -591,7 +609,7 @@ class ReceiptOut(BaseModel):
     amount: float
     purpose: str
 
-    date: datetime
+    date: UTCDateTime
 
     # 🔥 IMPORTANT (you asked)
     head_id: Optional[int]
@@ -606,7 +624,7 @@ class UserPaymentOut(BaseModel):
     amount: float
     purpose: str
     status: Literal["pending", "verified", "rejected"]
-    created_at: datetime
+    created_at: UTCDateTime
     receipt_id: Optional[str]
     months_covered: Optional[int]
     class Config:
@@ -652,7 +670,7 @@ class ExpenseCategoryOut(BaseModel):
     name: str
     description: Optional[str]
     is_active: bool
-    created_at: datetime
+    created_at: UTCDateTime
 
     class Config:
         from_attributes = True
@@ -667,7 +685,7 @@ class ExpenseCreate(BaseModel):
     category_id: Optional[int] = None     # preferred
     fund_id: Optional[int] = None
     vendor_name: Optional[str] = None
-    expense_date: Optional[datetime] = None
+    expense_date: Optional[UTCDateTime] = None
     note: Optional[str] = None
     receipt_image: Optional[str] = None
 
@@ -678,7 +696,7 @@ class ExpenseUpdate(BaseModel):
     category_id: Optional[int] = None
     fund_id: Optional[int] = None
     vendor_name: Optional[str] = None
-    expense_date: Optional[datetime] = None
+    expense_date: Optional[UTCDateTime] = None
     note: Optional[str] = None
     receipt_image: Optional[str] = None
     force: Optional[bool] = None          # superadmin override for approved expense edits
@@ -693,7 +711,7 @@ class ExpenseOut(BaseModel):
     fund_id: Optional[int] = None
     fund_name: Optional[str] = None
     vendor_name: Optional[str] = None
-    expense_date: Optional[datetime] = None
+    expense_date: Optional[UTCDateTime] = None
     note: Optional[str]
     receipt_image: Optional[str]
     receipt_id: Optional[str]
@@ -701,8 +719,8 @@ class ExpenseOut(BaseModel):
     created_by_id: Optional[int]
     approved_by: Optional[str]
     approved_by_id: Optional[int]
-    approved_at: Optional[datetime]
-    created_at: datetime
+    approved_at: Optional[UTCDateTime]
+    created_at: UTCDateTime
     is_deleted: bool = False
 
     class Config:
@@ -761,7 +779,7 @@ class AuditLogOut(BaseModel):
     old_values: Optional[dict]
     new_values: Optional[dict]
     performed_by_id: Optional[int]
-    performed_at: datetime
+    performed_at: UTCDateTime
     ip_address: Optional[str]
     note: Optional[str]
 
@@ -785,7 +803,7 @@ class FinanceTransactionOut(BaseModel):
     month: Optional[str]
     note: Optional[str]
     created_by_id: Optional[int]
-    created_at: datetime
+    created_at: UTCDateTime
 
     class Config:
         from_attributes = True
@@ -825,7 +843,7 @@ class UnifiedReceiptOut(BaseModel):
     family_id: Optional[int]
     issued_by_id: Optional[int]
     notes: Optional[str]
-    created_at: datetime
+    created_at: UTCDateTime
 
     class Config:
         from_attributes = True

@@ -6,13 +6,32 @@ import time as _time
 from app.logging_config import configure_logging
 configure_logging()
 
+from datetime import datetime as _datetime
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.encoders import ENCODERS_BY_TYPE
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from app.database import SessionLocal, engine
 from app import models
+
+# Every timestamp column in this app is written with datetime.utcnow() —
+# naive (no tzinfo), but semantically always UTC. FastAPI's default
+# datetime encoder just calls .isoformat() on it, which produces a string
+# with NO 'Z'/offset suffix (e.g. "2026-07-21T22:24:48"). Browsers and RN's
+# `new Date(...)` treat an ISO string with no timezone designator as LOCAL
+# time, not UTC — so every timestamp shown anywhere (audit log, payments,
+# prayer times, receipts, etc.) silently renders as if it were already in
+# the viewer's timezone, off by exactly their UTC offset. Registering this
+# override once, globally, fixes it everywhere without touching any of the
+# ~30 individual model columns or any frontend code.
+def _isoformat_as_utc(dt: _datetime) -> str:
+    return dt.isoformat() + "Z" if dt.tzinfo is None else dt.isoformat()
+
+
+ENCODERS_BY_TYPE[_datetime] = _isoformat_as_utc
 from app.routes import (
     admin,
     audit,

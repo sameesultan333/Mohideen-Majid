@@ -1124,7 +1124,7 @@ def list_pending_registrations(
             "role":          u.role,
             "status":        u.status,
             "address":       u.address,
-            "registered_at": u.registered_at.isoformat() if u.registered_at else None,
+            "registered_at": u.registered_at.isoformat() + "Z" if u.registered_at else None,
         }
         for u in users
     ]
@@ -1165,7 +1165,7 @@ def get_pending_registration(
             "phone":         user.phone,
             "role":          user.role,
             "status":        user.status,
-            "registered_at": user.registered_at.isoformat() if user.registered_at else None,
+            "registered_at": user.registered_at.isoformat() + "Z" if user.registered_at else None,
             "address":       user.address,
             "admin_notes":   user.admin_notes,
         },

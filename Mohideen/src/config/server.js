@@ -4,7 +4,7 @@ import axios from "axios";
 import { getToken, saveToken, saveRefreshToken, getRefreshToken, deleteToken, deleteRefreshToken } from "../utils/secureStorage";
 
 const WORKING_SERVER_KEY = "working_server_url";
-const DEFAULT_BASE_URL = "http://172.20.10.3:8000";
+const DEFAULT_BASE_URL = "https://mohideen-majid.onrender.com";
 const DEFAULT_TIMEOUT_MS = 3000;
 // File/image uploads (multipart FormData) need much more headroom than plain
 // JSON calls — 3s is enough to fail routinely on real mobile networks even

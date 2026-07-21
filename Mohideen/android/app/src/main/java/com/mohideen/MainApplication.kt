@@ -75,7 +75,7 @@ class MainApplication : Application(), ReactApplication {
     // Version key — bump CHANNEL_VERSION whenever sound/importance changes.
     // Android permanently caches channel settings; deleting and recreating is the
     // only way to apply new sounds without asking users to reinstall.
-    val CHANNEL_VERSION = 4
+    val CHANNEL_VERSION = 5
     val prefs = getSharedPreferences("channel_prefs", Context.MODE_PRIVATE)
     val installedVersion = prefs.getInt("channel_version", 0)
 

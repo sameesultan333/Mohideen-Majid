@@ -4,6 +4,15 @@ import App from './App';
 import { name as appName } from './app.json';
 import messaging from '@react-native-firebase/messaging';
 import { handlePrayerFcmMessage } from './src/utils/prayerFcm';
+// Side-effect-only imports — each of these calls AppRegistry.registerHeadlessTask
+// at module load time. index.js is the only entry point Android boots into for
+// BOTH a normal app launch and a headless invocation (BootReceiver → boot-reschedule,
+// hourly WorkManager → prayer sync), so if a headless task's file isn't imported
+// here, its registration never runs and the native side silently finds nothing
+// to invoke — which is exactly why background reschedule/sync were both dead
+// despite the Kotlin side being wired correctly.
+import './src/services/PrayerNotificationRescheduleTask';
+import './src/services/PrayerSyncTask';
 
 // 🔥 REQUIRED — DO NOT REMOVE
 messaging().setBackgroundMessageHandler(async remoteMessage => {

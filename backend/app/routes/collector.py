@@ -114,9 +114,9 @@ async def submit_cash(
         "id":               submission.id,
         "status":           submission.status,
         "submitted_amount": str(submission.submitted_amount),
-        "start_date":       submission.start_date.isoformat(),
-        "end_date":         submission.end_date.isoformat(),
-        "submitted_at":     submission.submitted_at.isoformat(),
+        "start_date":       submission.start_date.isoformat() + "Z",
+        "end_date":         submission.end_date.isoformat() + "Z",
+        "submitted_at":     submission.submitted_at.isoformat() + "Z",
         "message":          "Cash submission created. Awaiting admin approval.",
     }
 
@@ -354,7 +354,7 @@ async def update_family(
     if data.registration_date is not None:
         old_reg_date = family.registration_date
         family.registration_date = data.registration_date
-        changed["registration_date"] = data.registration_date.isoformat()
+        changed["registration_date"] = data.registration_date.isoformat() + "Z"
         # Backfill any pending months newly covered by the earlier start date.
         # Idempotent — _auto_generate_months_for_head only creates months
         # that don't already exist, never duplicates or removes existing ones.
@@ -412,17 +412,17 @@ def _serialize_submission(row: models.CollectorCashSubmission, admin_view: bool 
     out = {
         "id":               row.id,
         "collector_id":     row.collector_id,
-        "start_date":       row.start_date.isoformat() if row.start_date else None,
-        "end_date":         row.end_date.isoformat() if row.end_date else None,
+        "start_date":       row.start_date.isoformat() + "Z" if row.start_date else None,
+        "end_date":         row.end_date.isoformat() + "Z" if row.end_date else None,
         "submitted_amount": str(row.submitted_amount),
         "expected_amount":  str(row.expected_amount) if row.expected_amount else None,
         "approved_amount":  str(row.approved_amount) if row.approved_amount else None,
         "notes":            row.notes,
         "status":           row.status,
         "rejection_reason": row.rejection_reason,
-        "submitted_at":     row.submitted_at.isoformat() if row.submitted_at else None,
-        "approved_at":      row.approved_at.isoformat() if row.approved_at else None,
-        "rejected_at":      row.rejected_at.isoformat() if row.rejected_at else None,
+        "submitted_at":     row.submitted_at.isoformat() + "Z" if row.submitted_at else None,
+        "approved_at":      row.approved_at.isoformat() + "Z" if row.approved_at else None,
+        "rejected_at":      row.rejected_at.isoformat() + "Z" if row.rejected_at else None,
     }
     out["receiving_admin_name"] = row.receiving_admin.name if row.receiving_admin else None
     if admin_view and row.collector:
@@ -442,5 +442,5 @@ def _serialize_family(family: models.ApprovedHead) -> dict:
         "monthly_amount": family.monthly_amount,
         "is_registered":  family.is_registered,
         "is_active":      family.is_active,
-        "registration_date": family.registration_date.isoformat() if family.registration_date else None,
+        "registration_date": family.registration_date.isoformat() + "Z" if family.registration_date else None,
     }
