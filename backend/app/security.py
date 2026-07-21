@@ -193,6 +193,22 @@ def revoke_all_sessions(db: Session, user_id: int) -> None:
 # ✅ COOKIE HELPERS
 # ─────────────────────────────────────────────────────────────
 
+# The admin dashboard and API are deployed as separate Render services on
+# different origins (e.g. admindashboard-8x0p.onrender.com vs
+# mohideen-majid.onrender.com). A SameSite=Lax cookie is NEVER sent by the
+# browser on a cross-origin XHR/fetch request — only on top-level navigation.
+# POST /auth/refresh is an XHR call, so with Lax the refresh cookie silently
+# never reaches the server: login works (same-request Set-Cookie), but the
+# very next page reload's refresh call gets no cookie at all, 401s, and
+# ProtectedRoute redirects to /login even though the session is still valid.
+# SameSite=None is the only setting that works cross-origin, and browsers
+# require Secure=true whenever SameSite=None is used — which we already have
+# in production (COOKIE_SECURE=true). Locally (COOKIE_SECURE=false, same
+# origin via the Vite proxy) Lax is fine and is kept as-is.
+def _effective_samesite() -> str:
+    return "none" if COOKIE_SECURE else COOKIE_SAMESITE
+
+
 def set_refresh_cookie(response: Response, refresh_token: str, max_age_days: int = None) -> None:
     days = max_age_days if max_age_days is not None else MOBILE_SESSION_DAYS
     response.set_cookie(
@@ -200,7 +216,7 @@ def set_refresh_cookie(response: Response, refresh_token: str, max_age_days: int
         value=refresh_token,
         httponly=True,
         secure=COOKIE_SECURE,
-        samesite=COOKIE_SAMESITE,
+        samesite=_effective_samesite(),
         path="/",
         max_age=days * 86400,
         expires=days * 86400,
@@ -208,7 +224,7 @@ def set_refresh_cookie(response: Response, refresh_token: str, max_age_days: int
 
 
 def clear_refresh_cookie(response: Response) -> None:
-    response.delete_cookie(REFRESH_COOKIE_NAME)
+    response.delete_cookie(REFRESH_COOKIE_NAME, path="/", samesite=_effective_samesite())
 
 
 # ─────────────────────────────────────────────────────────────
