@@ -289,8 +289,16 @@ export default function DashboardPage() {
   // WebSocket live updates — use /ws/events (unified channel) so we don't
   // open a second /ws/finance connection alongside NotificationContext.
   useEffect(() => {
-    const proto = window.location.protocol === "https:" ? "wss" : "ws";
-    const host = window.location.host;
+    // Admin is deployed as a separate origin from the API (e.g.
+    // admindashboard-*.onrender.com vs mohideen-majid.onrender.com), so the
+    // socket must point at the backend host, not window.location.host —
+    // otherwise it tries to open a WebSocket against the static admin site
+    // itself, which has no /ws/events endpoint and always fails to connect.
+    const apiBase = (import.meta as any).env?.VITE_BACKEND_URL || "";
+    const proto = apiBase
+      ? (new URL(apiBase).protocol === "https:" ? "wss" : "ws")
+      : (window.location.protocol === "https:" ? "wss" : "ws");
+    const host = apiBase ? new URL(apiBase).host : window.location.host;
     const token = getAccessToken() || "";
     const wsUrl = `${proto}://${host}/ws/events${token ? `?token=${token}` : ""}`;
     let ws: WebSocket | null = null;

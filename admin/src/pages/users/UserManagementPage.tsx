@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { COLORS, TYPOGRAPHY } from "../../theme/colors";
 import { getUsers, assignFamily, resetUserPassword } from "../../api/users";
-import { getAccessToken } from "../../api/auth";
+import api from "../../api/axios";
 import { getFamilies, getFamilyMembers } from "../../api/families";
 import type { User, UserRole } from "../../types/users";
 import type { Family, FamilyMember } from "../../types/family";
@@ -603,20 +603,20 @@ const UserManagementPage: React.FC = () => {
     try {
       const form = new FormData();
       form.append("file", file);
-      const res = await fetch("/admin/upload-heads", {
-        method: "POST",
-        body: form,
-        headers: { Authorization: `Bearer ${getAccessToken() ?? ""}` },
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: res.statusText }));
-        throw new Error(err.detail ?? "Upload failed");
-      }
-      const data = await res.json();
+      // Use the shared `api` axios instance instead of a raw relative
+      // fetch(): admin is deployed on a different origin from the backend
+      // (e.g. admindashboard-*.onrender.com vs mohideen-majid.onrender.com),
+      // so a relative "/admin/upload-heads" URL was resolving against the
+      // admin's own static site, not the API — hence the confusing
+      // "Failed to execute 'json' on 'Response': Unexpected end of JSON
+      // input" (an empty/unexpected response from the wrong host). `api`
+      // already carries the correct base URL, auth header, and 401-refresh
+      // retry used everywhere else in this app.
+      const { data } = await api.post("/admin/upload-heads", form);
       setImportResult(data);
       fetchData();
     } catch (err: any) {
-      setImportError(err.message ?? "Upload failed");
+      setImportError(err?.response?.data?.detail ?? err.message ?? "Upload failed");
     } finally {
       setImportBusy(false);
       if (importFileRef.current) importFileRef.current.value = "";
