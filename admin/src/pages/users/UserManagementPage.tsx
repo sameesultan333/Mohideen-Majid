@@ -612,11 +612,30 @@ const UserManagementPage: React.FC = () => {
       // input" (an empty/unexpected response from the wrong host). `api`
       // already carries the correct base URL, auth header, and 401-refresh
       // retry used everywhere else in this app.
-      const { data } = await api.post("/admin/upload-heads", form);
+      //
+      // The explicit multipart Content-Type override (matching upload.ts /
+      // ExpensesPage.tsx) is required: `api`'s instance default is
+      // Content-Type: application/json, and axios only lets the browser set
+      // the multipart boundary when it does NOT see application/json on the
+      // request — otherwise it silently JSON.stringify()s the FormData
+      // instead of sending real multipart data, so `file` never arrives as
+      // an UploadFile server-side. That's what produced the 422 with
+      // {type:"missing", loc:["body","file"], ...} — which then crashed the
+      // page because that error object was rendered directly into JSX
+      // instead of being converted to a message string (fixed below too).
+      const { data } = await api.post("/admin/upload-heads", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
       setImportResult(data);
       fetchData();
     } catch (err: any) {
-      setImportError(err?.response?.data?.detail ?? err.message ?? "Upload failed");
+      const detail = err?.response?.data?.detail;
+      const message = Array.isArray(detail)
+        ? detail.map((d: any) => (typeof d === "string" ? d : d?.msg ?? JSON.stringify(d))).join("; ")
+        : typeof detail === "string"
+        ? detail
+        : err.message ?? "Upload failed";
+      setImportError(message);
     } finally {
       setImportBusy(false);
       if (importFileRef.current) importFileRef.current.value = "";
