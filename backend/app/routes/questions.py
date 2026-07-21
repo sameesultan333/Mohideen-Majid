@@ -1,12 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 from app.database import get_db
 from app.models import Question, Answer, Reply
 from app.schemas import QuestionCreate, AnswerCreate, ReplyCreate
 from app.security import get_current_user, require_admin_or_imam
+from app.services.audit_service import AuditAction, log_action
+from app.utils.content_cleanup import run_content_cleanup
 from app.websocket_manager import manager
+from app.utils.fcm import notify_user, notify_role
+from app.rate_limit import rate_limit
 
 router = APIRouter(prefix="/questions", tags=["Questions"])
 
@@ -15,11 +23,16 @@ router = APIRouter(prefix="/questions", tags=["Questions"])
 # 🟢 ASK QUESTION
 # -----------------------------
 @router.post("/")
-def ask_question(
+async def ask_question(
     payload: QuestionCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
+    await rate_limit(request, "question")
+    if not payload.has_content():
+        raise HTTPException(status_code=400, detail="At least one of text, voice, or image must be provided")
+    run_content_cleanup(db)
     question = Question(
         question_text=payload.question_text,
         question_voice_url=payload.question_voice_url,
@@ -30,8 +43,19 @@ def ask_question(
     )
 
     db.add(question)
+    db.flush()
+    await log_action(db, AuditAction.QUESTION_ASKED, "questions", question.id,
+                     actor=current_user, request=request,
+                     description="Question submitted for review")
     db.commit()
     db.refresh(question)
+
+    notify_role(
+        db, "imam",
+        title="❓ New Question Submitted",
+        body="A community member has submitted a question awaiting your reply.",
+        data={"type": "new_question", "question_id": str(question.id)},
+    )
 
     return {"message": "Question submitted successfully"}
 
@@ -44,6 +68,7 @@ def get_pending_questions(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_admin_or_imam)
 ):
+    run_content_cleanup(db)
     questions = db.query(Question).filter(
         Question.status == "pending"
     ).order_by(Question.created_at.desc()).all()
@@ -69,9 +94,14 @@ def get_pending_questions(
 async def answer_question(
     question_id: int,
     payload: AnswerCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_admin_or_imam)
 ):
+    await rate_limit(request, "answer")
+    if not payload.has_content():
+        raise HTTPException(status_code=400, detail="At least one of text, voice, or image must be provided")
+    run_content_cleanup(db)
     question = db.query(Question).filter(Question.id == question_id).first()
 
     if not question:
@@ -91,7 +121,7 @@ async def answer_question(
             else:
                 voice_url = None
 
-    print("✅ STORED VOICE URL:", voice_url)
+    logger.debug("[questions] stored voice url: %s", voice_url)
 
     # 🔥 CLEAN IMAGE URL
     image_url = payload.answer_image_url
@@ -104,7 +134,7 @@ async def answer_question(
             else:
                 image_url = None
 
-    print("✅ STORED IMAGE:", image_url)
+    logger.debug("[questions] stored image: %s", image_url)
 
     # ✅ SAVE ANSWER
     answer = Answer(
@@ -135,6 +165,15 @@ async def answer_question(
         }
     })
 
+    # Personal push to the user who asked (if not anonymous)
+    if question.user_id:
+        notify_user(
+            db, question.user_id,
+            title="💬 Your Question Was Answered",
+            body="An Imam has replied to your question. Tap to read the answer.",
+            data={"type": "question_answered", "question_id": str(question.id)},
+        )
+
     return {"message": "Answer posted successfully"}
 
 # -----------------------------
@@ -145,16 +184,30 @@ def get_active_qna(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
+    run_content_cleanup(db)
     questions = db.query(Question).filter(
         Question.is_active == True
     ).order_by(Question.created_at.desc()).limit(10).all()
 
+    # Bulk-load answers instead of one query per question (N+1) — this
+    # endpoint is polled every ~30s by every user, so the extra queries
+    # add up fast under real traffic.
+    question_ids = [q.id for q in questions]
+    latest_answer_by_question: dict[int, Answer] = {}
+    if question_ids:
+        all_answers = (
+            db.query(Answer)
+            .filter(Answer.question_id.in_(question_ids))
+            .order_by(Answer.created_at.desc())
+            .all()
+        )
+        for a in all_answers:
+            latest_answer_by_question.setdefault(a.question_id, a)
+
     response = []
 
     for q in questions:
-        answer = db.query(Answer).filter(
-            Answer.question_id == q.id
-        ).order_by(Answer.created_at.desc()).first()
+        answer = latest_answer_by_question.get(q.id)
 
         response.append({
             "id": q.id,

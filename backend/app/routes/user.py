@@ -1,10 +1,18 @@
 # backend/app/routes/users.py
 
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, Body
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 from app.database import SessionLocal
 from app import models, schemas
 from app.security import require_admin, require_superadmin
+
+
+class AssignFamilyBody(BaseModel):
+    head_id: int
+    name: Optional[str] = None
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -64,6 +72,63 @@ def change_role(
     return {"message": f"Role updated to {data.role}", "user_id": user_id}
 
 
+# ── REPAIR broken member links (one-time fix for old bad registrations) ─────────
+@router.post("/repair-member-links")
+def repair_member_links(
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_superadmin),
+):
+    """
+    Fixes members created with the old buggy registration flow where
+    head_phone was set to the member's own phone instead of their head's phone.
+    Only fixes members where family_id is NULL and head_phone == phone.
+    """
+    broken = (
+        db.query(models.User)
+        .filter(
+            models.User.role == "member",
+            models.User.family_id.is_(None),
+            models.User.head_phone == models.User.phone,
+        )
+        .all()
+    )
+    fixed = []
+    for u in broken:
+        # Can't auto-fix without knowing the real head — just flag them
+        fixed.append({
+            "id": u.id,
+            "name": u.name,
+            "phone": u.phone,
+            "issue": "family_id is NULL and head_phone equals own phone — needs manual assignment",
+        })
+    return {"broken_count": len(fixed), "records": fixed}
+
+
+# ── ASSIGN member to a head ─────────────────────────────────────────────────────
+@router.patch("/{user_id}/assign-family")
+def assign_family(
+    user_id: int,
+    data: AssignFamilyBody,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_superadmin),
+):
+    """Assign a member to a family head by head_id."""
+    u = db.query(models.User).filter_by(id=user_id).first()
+    if not u:
+        raise HTTPException(404, "User not found")
+    head = db.query(models.ApprovedHead).filter_by(id=data.head_id).first()
+    if not head:
+        raise HTTPException(404, "Head not found")
+    u.family_id = head.id
+    u.head_phone = head.phone
+    if data.name:
+        u.name = data.name
+    elif u.name == u.phone:
+        u.name = head.name  # fallback: use head name if member name is still phone number
+    db.commit()
+    return {"ok": True, "user_id": u.id, "family_id": head.id, "head_name": head.name}
+
+
 # ── DELETE user — superadmin only ───────────────────────────────────────────────
 @router.delete("/{user_id}")
 def delete_user(
@@ -79,5 +144,13 @@ def delete_user(
         raise HTTPException(status_code=404, detail="User not found")
 
     db.delete(u)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete this user — they have existing payments, questions, "
+                    "hadith, or other linked records. Deactivate the account instead.",
+        )
     return {"message": "User deleted"}

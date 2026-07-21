@@ -1,0 +1,49 @@
+# Web framework
+fastapi==0.128.0
+uvicorn[standard]==0.40.0
+gunicorn==23.0.0
+starlette==0.50.0
+python-multipart==0.0.20
+
+# Database
+sqlalchemy==2.0.41
+psycopg2-binary==2.9.10
+alembic==1.14.1
+
+# Redis
+redis[hiredis]==5.2.1
+
+# Auth / Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.2.1
+
+# Config
+python-dotenv==1.2.1
+pydantic==2.12.5
+pydantic_core==2.41.5
+pydantic-settings==2.7.0
+
+# Firebase
+firebase-admin==7.5.0
+
+# Task scheduling
+APScheduler==3.10.4
+
+# HTTP client
+httpx==0.28.1
+requests==2.32.5
+
+# Reports
+reportlab==4.2.5
+openpyxl==3.1.5
+pillow==12.0.0
+
+# Monitoring
+psutil==6.1.1
+
+# Cloudinary (optional)
+cloudinary==1.41.0
+
+# WebSockets
+websockets==13.1
