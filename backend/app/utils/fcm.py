@@ -227,11 +227,12 @@ def notify_user(db, user_id: int, title: str, body: str, data: dict | None = Non
 
 # ── Notify all users with a given role ───────────────────────────────────────
 
-def notify_role(db, role: str, title: str, body: str, data: dict | None = None) -> int:
-    """Broadcast to all active-device users with the given role."""
+def notify_role(db, role: str | list[str], title: str, body: str, data: dict | None = None) -> int:
+    """Broadcast to all active-device users with the given role(s)."""
     from app import models
 
-    users = db.query(models.User).filter_by(role=role, is_active=True).all()
+    roles = [role] if isinstance(role, str) else role
+    users = db.query(models.User).filter(models.User.role.in_(roles), models.User.is_active == True).all()
     sent = 0
     for u in users:
         sent += notify_user(db, u.id, title, body, data)

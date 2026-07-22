@@ -87,3 +87,10 @@ def deregister_device(
     )
     db.commit()
     return {"status": "deregistered"}
+
+
+def deactivate_all_tokens_for_user(db: Session, user_id: int) -> None:
+    """Deactivate every device/push token for a user in one shot — used by
+    self-service account deletion so no further notifications are ever sent.
+    Caller is responsible for committing."""
+    db.query(models.DeviceToken).filter_by(user_id=user_id).update({"is_active": False})

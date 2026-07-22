@@ -50,6 +50,7 @@ import HadithDetailScreen from "../screens/HadithDetailScreen"
 import NotificationSettingsScreen from "../screens/NotificationSettingsScreen"
 import ChangePasswordScreen from "../screens/ChangePasswordScreen"
 import ForceChangePasswordScreen from "../screens/ForceChangePasswordScreen"
+import DeleteAccountScreen from "../screens/DeleteAccountScreen"
 import AnnouncementCreateScreen from "../screens/AnnouncementCreateScreen"
 import PrayerManagementScreen from "../screens/PrayerManagementScreen"
 
@@ -118,6 +119,7 @@ const AppNavigator = () => {
       <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
       <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
       <Stack.Screen name="ForceChangePassword" component={ForceChangePasswordScreen} />
+      <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} />
       <Stack.Screen name="PendingApproval" component={PendingApprovalScreen} />
       <Stack.Screen name="CashSubmission" component={CashSubmissionScreen} />
       <Stack.Screen name="PostAnnouncement" component={AnnouncementCreateScreen} />

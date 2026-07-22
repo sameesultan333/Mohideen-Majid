@@ -78,26 +78,33 @@ export const activateFamily = async (
 
 /* ============================================================================
  * Deactivate Family
+ * Sensitive action — requires the acting admin's own current password.
  * ========================================================================== */
 
 export const deactivateFamily = async (
-  familyId: number
+  familyId: number,
+  password: string,
+  reason?: string
 ): Promise<{ message: string }> => {
   const { data } = await api.patch(
-    `/admin/families/${familyId}/deactivate`
+    `/admin/families/${familyId}/deactivate`,
+    { password, reason }
   );
   return data;
 };
 
 /* ============================================================================
- * Delete Family (Alias of Deactivate)
+ * Delete Family (Alias of Deactivate — also requires password now)
  * ========================================================================== */
 
 export const deleteFamily = async (
-  familyId: number
+  familyId: number,
+  password: string,
+  reason?: string
 ): Promise<{ message: string }> => {
   const { data } = await api.delete(
-    `/admin/families/${familyId}`
+    `/admin/families/${familyId}`,
+    { data: { password, reason } }
   );
   return data;
 };

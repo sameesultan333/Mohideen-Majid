@@ -205,6 +205,7 @@ export default function AnnouncementScreen({ navigation, route }) {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [imageStates, setImageStates] = useState({});
   const [readIds, setReadIds] = useState([]);
+  const [readIdsLoaded, setReadIdsLoaded] = useState(false);
   const [previewUri, setPreviewUri] = useState(null);
   const [currentUserId, setCurrentUserId] = useState(null);
   const currentUserIdRef = useRef(null);
@@ -246,8 +247,24 @@ export default function AnnouncementScreen({ navigation, route }) {
           setReadIds([]);
         }
       }
+      setReadIdsLoaded(true);
     });
   }, []);
+
+  // ─── Mark every currently-loaded announcement as read as soon as this
+  // screen is opened, so the header bell / bottom-nav badge clears
+  // immediately instead of requiring a tap on each individual card.
+  useEffect(() => {
+    if (!readIdsLoaded || announcements.length === 0) return;
+    setReadIds((prev) => {
+      const ids = announcements.map((a) => a.id);
+      const merged = Array.from(new Set([...prev, ...ids]));
+      if (merged.length === prev.length) return prev;
+      AsyncStorage.setItem("read_announcements", JSON.stringify(merged)).catch(() => {});
+      AsyncStorage.setItem("badge_Announcement", "0").catch(() => {});
+      return merged;
+    });
+  }, [announcements, readIdsLoaded]);
 
   // ─── Fetch / WebSocket ─────────────────────────────────────────────
   const fetchAnnouncements = useCallback(async () => {

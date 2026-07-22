@@ -90,6 +90,10 @@ const canAccessCollector = (role) => {
   const r = normalizeRole(role);
   return r === "collector" || SUPERADMIN_ROLES.includes(r);
 };
+// Deactivation hits /admin/families/{id}/deactivate, which the backend only
+// allows for admin/superadmin — plain collectors would get a 403, so the
+// button is hidden for them rather than shown-then-failing.
+const isSuperadmin = (role) => SUPERADMIN_ROLES.includes(normalizeRole(role));
 
 const H = {
   bg: "#FBF9F4",
@@ -716,8 +720,20 @@ export default function CollectorScreen({ navigation }) {
   const [editItem, setEditItem] = useState(null);
   const [editForm, setEditForm] = useState({ name: "", chanda_no: "", phone: "", monthly_amount: "", address: "", zone: "", registration_date: "" });
   const [editSaving, setEditSaving] = useState(false);
+  // Zone dropdown + Chanda-Due-Since month picker for the Add/Edit Family
+  // forms (separate from the collections-list filter's zone dropdown above).
+  const [zoneFieldModal, setZoneFieldModal] = useState(null); // 'add' | 'edit' | null
+  const [zoneFieldSearch, setZoneFieldSearch] = useState("");
+  const [dueSinceModal, setDueSinceModal] = useState(null); // 'add' | 'edit' | null
+  const [dueSinceDraft, setDueSinceDraft] = useState(new Date());
   const [cashHistory, setCashHistory] = useState([]);
   const [cashHistoryLoading, setCashHistoryLoading] = useState(false);
+  // Deactivate Member — superadmin only (backend requires admin/superadmin role)
+  const [showDeactivateConfirm, setShowDeactivateConfirm] = useState(false);
+  const [deactivatePassword, setDeactivatePassword] = useState("");
+  const [deactivateReason, setDeactivateReason] = useState("");
+  const [deactivateBusy, setDeactivateBusy] = useState(false);
+  const [deactivateError, setDeactivateError] = useState("");
 
   const FILTERS = useMemo(() => ([
     { key: "all", label: t("collector.filters.all") },
@@ -916,10 +932,44 @@ export default function CollectorScreen({ navigation }) {
     };
   }, [fetchMembers]);
 
+  // Chanda numbers must be unique across all families — index the already-
+  // loaded list so Add/Edit Family can reject a duplicate locally instead of
+  // only finding out after a round trip to the server.
+  const chandaNoIndex = useMemo(() => {
+    const map = new Map();
+    members.forEach((item) => {
+      const fam = item.member;
+      const cn = (fam?.chanda_no || "").trim().toUpperCase();
+      if (cn) map.set(cn, fam.id);
+    });
+    return map;
+  }, [members]);
+
+  const isChandaNoTaken = useCallback((value, excludeId) => {
+    const cn = (value || "").trim().toUpperCase();
+    if (!cn) return false;
+    const ownerId = chandaNoIndex.get(cn);
+    return ownerId !== undefined && ownerId !== excludeId;
+  }, [chandaNoIndex]);
+
+  const openDueSince = useCallback((which) => {
+    const src = which === "add" ? addForm.registration_date : editForm.registration_date;
+    let d = new Date();
+    if (src && /^\d{4}-(0[1-9]|1[0-2])$/.test(src)) {
+      const [y, m] = src.split("-").map(Number);
+      d = new Date(y, m - 1, 1);
+    }
+    setDueSinceDraft(d);
+    setDueSinceModal(which);
+  }, [addForm.registration_date, editForm.registration_date]);
+
   const addFamily = useCallback(async () => {
     const amt = parseFloat(addForm.monthly_amount);
     if (!addForm.name.trim() || !addForm.chanda_no.trim() || isNaN(amt) || amt <= 0) {
       return Alert.alert("Required fields missing", "Name, Chanda No and Monthly Amount are required.");
+    }
+    if (isChandaNoTaken(addForm.chanda_no)) {
+      return Alert.alert("Chanda number in use", `Chanda number "${addForm.chanda_no.trim()}" is already assigned to another family.`);
     }
     const dueSince = addForm.registration_date.trim();
     if (dueSince && !/^\d{4}-(0[1-9]|1[0-2])$/.test(dueSince)) {
@@ -951,10 +1001,13 @@ export default function CollectorScreen({ navigation }) {
     } finally {
       setAddSaving(false);
     }
-  }, [addForm, fetchMembers]);
+  }, [addForm, fetchMembers, isChandaNoTaken]);
 
   const saveEditFamily = useCallback(async () => {
     if (!editItem) return;
+    if (editForm.chanda_no.trim() && isChandaNoTaken(editForm.chanda_no, editItem.id)) {
+      return Alert.alert("Chanda number in use", `Chanda number "${editForm.chanda_no.trim()}" is already assigned to another family.`);
+    }
     const dueSince = editForm.registration_date.trim();
     if (dueSince && !/^\d{4}-(0[1-9]|1[0-2])$/.test(dueSince)) {
       return Alert.alert("Invalid month", "Chanda Due Since must be in YYYY-MM format, e.g. 2026-01.");
@@ -986,7 +1039,37 @@ export default function CollectorScreen({ navigation }) {
     } finally {
       setEditSaving(false);
     }
-  }, [editItem, editForm, fetchMembers]);
+  }, [editItem, editForm, fetchMembers, isChandaNoTaken]);
+
+  const confirmDeactivate = useCallback(async () => {
+    if (!editItem) return;
+    if (!deactivatePassword) {
+      setDeactivateError("Enter your password to confirm.");
+      return;
+    }
+    setDeactivateBusy(true);
+    setDeactivateError("");
+    try {
+      const res = await authApiFetch(`/admin/families/${editItem.id}/deactivate`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: deactivatePassword, reason: deactivateReason.trim() || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.detail || "Failed to deactivate family");
+      setShowDeactivateConfirm(false);
+      setShowEditFamily(false);
+      setDeactivatePassword("");
+      setDeactivateReason("");
+      setEditItem(null);
+      fetchMembers(true);
+      Alert.alert("Deactivated", `${data.message || "Family deactivated."}`);
+    } catch (err) {
+      setDeactivateError(err.message || "Failed to deactivate family");
+    } finally {
+      setDeactivateBusy(false);
+    }
+  }, [editItem, deactivatePassword, deactivateReason, fetchMembers]);
 
   const loadCashHistory = useCallback(async () => {
     setCashHistoryLoading(true);
@@ -1551,6 +1634,21 @@ export default function CollectorScreen({ navigation }) {
                     >
                       <Text allowFontScaling={false} style={[s.famEditTxt, { color: H.textMuted }]}>History</Text>
                     </TouchableOpacity>
+                    {isSuperadmin(role) && fam.is_active !== false && (
+                      <TouchableOpacity
+                        style={[s.famEditBtn, { backgroundColor: "#F8E9E9", borderColor: "#E8BBBB" }]}
+                        onPress={() => {
+                          setEditItem(fam);
+                          setDeactivateError("");
+                          setDeactivatePassword("");
+                          setDeactivateReason("");
+                          setShowDeactivateConfirm(true);
+                        }}
+                        activeOpacity={0.85}
+                      >
+                        <Text allowFontScaling={false} style={[s.famEditTxt, { color: "#A13A3A" }]}>Deactivate</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </View>
               );
@@ -1654,35 +1752,48 @@ export default function CollectorScreen({ navigation }) {
               <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
                 {[
                   { label: "Family Name *", key: "name", placeholder: "Full name", keyboard: "default" },
+                  { label: "Chanda Due Since", key: "registration_date", placeholder: "Select month", keyboard: "default" },
                   { label: "Chanda No *", key: "chanda_no", placeholder: "e.g. MM001", keyboard: "default" },
                   { label: "Monthly Amount (₹) *", key: "monthly_amount", placeholder: "0", keyboard: "numeric" },
                   { label: "Phone", key: "phone", placeholder: "10-digit mobile", keyboard: "phone-pad" },
                   { label: "Address", key: "address", placeholder: "Street, area", keyboard: "default" },
                   { label: "Zone", key: "zone", placeholder: "Select or type a zone", keyboard: "default" },
-                  { label: "Chanda Due Since", key: "registration_date", placeholder: "YYYY-MM, e.g. 2026-01", keyboard: "numbers-and-punctuation" },
                 ].map(({ label, key, placeholder, keyboard }) => (
                   <View key={key} style={{ marginBottom: 12 }}>
                     <Text allowFontScaling={false} style={s.secLabel}>{label}</Text>
-                    <TextInput
-                      style={s.refInput}
-                      value={addForm[key]}
-                      onChangeText={(v) => setAddForm((f) => ({ ...f, [key]: v }))}
-                      keyboardType={keyboard}
-                      placeholder={placeholder}
-                      placeholderTextColor={H.textMuted}
-                      autoCapitalize={key === "name" || key === "address" || key === "zone" ? "words" : "none"}
-                    />
-                    {key === "zone" && zones.length > 0 && (
-                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
-                        {zones.filter(z => !addForm.zone || z.toLowerCase().includes(addForm.zone.toLowerCase())).map(z => (
-                          <TouchableOpacity key={z} onPress={() => setAddForm(f => ({ ...f, zone: z }))}
-                            style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14,
-                              backgroundColor: addForm.zone === z ? H.headerDeep : H.card,
-                              borderWidth: 1, borderColor: addForm.zone === z ? H.headerDeep : H.cardBorder }}>
-                            <Text allowFontScaling={false} style={{ fontSize: 12, color: addForm.zone === z ? "#fff" : H.textDark }}>{z}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
+                    {key === "zone" ? (
+                      <TouchableOpacity
+                        style={[s.refInput, { justifyContent: "center" }]}
+                        onPress={() => { setZoneFieldSearch(""); setZoneFieldModal("add"); }}
+                      >
+                        <Text allowFontScaling={false} style={{ fontSize: 14, color: addForm.zone ? H.textDark : H.textMuted }}>
+                          {addForm.zone || placeholder}
+                        </Text>
+                      </TouchableOpacity>
+                    ) : key === "registration_date" ? (
+                      <TouchableOpacity
+                        style={[s.refInput, { justifyContent: "center" }]}
+                        onPress={() => openDueSince("add")}
+                      >
+                        <Text allowFontScaling={false} style={{ fontSize: 14, color: addForm.registration_date ? H.textDark : H.textMuted }}>
+                          {addForm.registration_date || placeholder}
+                        </Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TextInput
+                        style={s.refInput}
+                        value={addForm[key]}
+                        onChangeText={(v) => setAddForm((f) => ({ ...f, [key]: v }))}
+                        keyboardType={keyboard}
+                        placeholder={placeholder}
+                        placeholderTextColor={H.textMuted}
+                        autoCapitalize={key === "name" || key === "address" ? "words" : "none"}
+                      />
+                    )}
+                    {key === "chanda_no" && addForm.chanda_no.trim() !== "" && isChandaNoTaken(addForm.chanda_no) && (
+                      <Text allowFontScaling={false} style={{ fontSize: 11, color: H.warn, marginTop: 4 }}>
+                        This chanda number is already in use.
+                      </Text>
                     )}
                     {key === "registration_date" && (
                       <Text allowFontScaling={false} style={{ fontSize: 11, color: H.textMuted, marginTop: 4 }}>
@@ -1718,40 +1829,53 @@ export default function CollectorScreen({ navigation }) {
               <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
                 {[
                   { label: "Family Name", key: "name", placeholder: "Full name", keyboard: "default" },
+                  { label: "Chanda Due Since", key: "registration_date", placeholder: "Select month", keyboard: "default" },
                   { label: "Chanda No", key: "chanda_no", placeholder: "e.g. MM001", keyboard: "default" },
                   { label: "Monthly Amount (₹)", key: "monthly_amount", placeholder: "0", keyboard: "numeric" },
                   { label: "Phone", key: "phone", placeholder: "10-digit mobile", keyboard: "phone-pad" },
                   { label: "Address", key: "address", placeholder: "Street, area", keyboard: "default" },
                   { label: "Zone", key: "zone", placeholder: "Select or type a zone", keyboard: "default" },
-                  { label: "Chanda Due Since", key: "registration_date", placeholder: "YYYY-MM, e.g. 2026-01", keyboard: "numbers-and-punctuation" },
                 ].map(({ label, key, placeholder, keyboard }) => (
                   <View key={key} style={{ marginBottom: 12 }}>
                     <Text allowFontScaling={false} style={s.secLabel}>{label}</Text>
-                    <TextInput
-                      style={s.refInput}
-                      value={editForm[key]}
-                      onChangeText={(v) => setEditForm((f) => ({ ...f, [key]: v }))}
-                      keyboardType={keyboard}
-                      placeholder={placeholder}
-                      placeholderTextColor={H.textMuted}
-                      autoCapitalize={key === "name" || key === "address" || key === "zone" ? "words" : "none"}
-                    />
+                    {key === "zone" ? (
+                      <TouchableOpacity
+                        style={[s.refInput, { justifyContent: "center" }]}
+                        onPress={() => { setZoneFieldSearch(""); setZoneFieldModal("edit"); }}
+                      >
+                        <Text allowFontScaling={false} style={{ fontSize: 14, color: editForm.zone ? H.textDark : H.textMuted }}>
+                          {editForm.zone || placeholder}
+                        </Text>
+                      </TouchableOpacity>
+                    ) : key === "registration_date" ? (
+                      <TouchableOpacity
+                        style={[s.refInput, { justifyContent: "center" }]}
+                        onPress={() => openDueSince("edit")}
+                      >
+                        <Text allowFontScaling={false} style={{ fontSize: 14, color: editForm.registration_date ? H.textDark : H.textMuted }}>
+                          {editForm.registration_date || placeholder}
+                        </Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TextInput
+                        style={s.refInput}
+                        value={editForm[key]}
+                        onChangeText={(v) => setEditForm((f) => ({ ...f, [key]: v }))}
+                        keyboardType={keyboard}
+                        placeholder={placeholder}
+                        placeholderTextColor={H.textMuted}
+                        autoCapitalize={key === "name" || key === "address" ? "words" : "none"}
+                      />
+                    )}
+                    {key === "chanda_no" && editForm.chanda_no.trim() !== "" && isChandaNoTaken(editForm.chanda_no, editItem?.id) && (
+                      <Text allowFontScaling={false} style={{ fontSize: 11, color: H.warn, marginTop: 4 }}>
+                        This chanda number is already in use.
+                      </Text>
+                    )}
                     {key === "registration_date" && (
                       <Text allowFontScaling={false} style={{ fontSize: 11, color: H.textMuted, marginTop: 4 }}>
                         Changing this backfills any newly-covered pending months — existing collections are never removed or duplicated.
                       </Text>
-                    )}
-                    {key === "zone" && zones.length > 0 && (
-                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
-                        {zones.filter(z => !editForm.zone || z.toLowerCase().includes(editForm.zone.toLowerCase())).map(z => (
-                          <TouchableOpacity key={z} onPress={() => setEditForm(f => ({ ...f, zone: z }))}
-                            style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14,
-                              backgroundColor: editForm.zone === z ? H.headerDeep : H.card,
-                              borderWidth: 1, borderColor: editForm.zone === z ? H.headerDeep : H.cardBorder }}>
-                            <Text allowFontScaling={false} style={{ fontSize: 12, color: editForm.zone === z ? "#fff" : H.textDark }}>{z}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
                     )}
                   </View>
                 ))}
@@ -1769,6 +1893,194 @@ export default function CollectorScreen({ navigation }) {
             </View>
           </Pressable>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ── Deactivate Member confirmation ──────────────────────────────── */}
+      <Modal visible={showDeactivateConfirm} transparent animationType="fade" onRequestClose={() => setShowDeactivateConfirm(false)}>
+        <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", paddingHorizontal: 24 }} onPress={() => setShowDeactivateConfirm(false)}>
+          <Pressable style={{ backgroundColor: H.card, borderRadius: 18, padding: 20 }} onPress={() => {}}>
+            <Text allowFontScaling={false} style={{ fontSize: 16, fontWeight: "800", color: H.textDark, marginBottom: 4 }}>Deactivate Member</Text>
+            <Text allowFontScaling={false} style={{ fontSize: 12, color: H.textMuted, marginBottom: 14 }}>
+              {editItem?.name} will be hidden from active collection lists and can be restored within 30 days. Enter your password to confirm.
+            </Text>
+            <Text allowFontScaling={false} style={s.secLabel}>Your Password</Text>
+            <TextInput
+              style={s.refInput}
+              value={deactivatePassword}
+              onChangeText={setDeactivatePassword}
+              secureTextEntry
+              placeholder="Password"
+              placeholderTextColor={H.textMuted}
+            />
+            <Text allowFontScaling={false} style={[s.secLabel, { marginTop: 12 }]}>Reason (optional)</Text>
+            <TextInput
+              style={s.refInput}
+              value={deactivateReason}
+              onChangeText={setDeactivateReason}
+              placeholder="e.g. Moved out of area"
+              placeholderTextColor={H.textMuted}
+            />
+            {!!deactivateError && (
+              <Text allowFontScaling={false} style={{ fontSize: 12, color: H.warn, marginTop: 8 }}>{deactivateError}</Text>
+            )}
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
+              <TouchableOpacity
+                style={[s.submitBtn, { flex: 1, backgroundColor: H.bg, borderWidth: 1, borderColor: H.cardBorder }]}
+                onPress={() => setShowDeactivateConfirm(false)}
+                disabled={deactivateBusy}
+              >
+                <Text allowFontScaling={false} style={[s.submitBtnTxt, { color: H.textDark }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.submitBtn, { flex: 1, backgroundColor: "#A13A3A" }, deactivateBusy && { opacity: 0.6 }]}
+                onPress={confirmDeactivate}
+                disabled={deactivateBusy}
+              >
+                {deactivateBusy
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text allowFontScaling={false} style={[s.submitBtnTxt, { color: "#fff" }]}>Confirm</Text>
+                }
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* ── Zone dropdown for Add/Edit Family (replaces the old button grid) ── */}
+      <Modal visible={!!zoneFieldModal} transparent animationType="fade" onRequestClose={() => { setZoneFieldModal(null); setZoneFieldSearch(""); }}>
+        <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", paddingHorizontal: 24 }} onPress={() => { setZoneFieldModal(null); setZoneFieldSearch(""); }}>
+          <Pressable style={{ backgroundColor: H.card, borderRadius: 18, overflow: "hidden", maxHeight: 460 }} onPress={() => {}}>
+            <View style={{ paddingHorizontal: 18, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: H.cardBorder }}>
+              <Text allowFontScaling={false} style={{ fontSize: 14, fontWeight: "800", color: H.textDark, marginBottom: 10 }}>Select Zone</Text>
+              <TextInput
+                value={zoneFieldSearch}
+                onChangeText={setZoneFieldSearch}
+                placeholder="Search or type a new zone..."
+                placeholderTextColor={H.textMuted}
+                autoCapitalize="words"
+                style={{
+                  backgroundColor: H.bg, borderRadius: 10, borderWidth: 1, borderColor: H.cardBorder,
+                  paddingHorizontal: 12, paddingVertical: 8, fontSize: 13, color: H.textDark,
+                }}
+              />
+            </View>
+            <ScrollView style={{ maxHeight: 340 }} keyboardShouldPersistTaps="handled">
+              {zones
+                .filter(z => !zoneFieldSearch.trim() || z.toLowerCase().includes(zoneFieldSearch.trim().toLowerCase()))
+                .map((z) => {
+                  const current = zoneFieldModal === "add" ? addForm.zone : editForm.zone;
+                  return (
+                    <TouchableOpacity
+                      key={z}
+                      style={[s.zoneOption, current === z && s.zoneOptionActive]}
+                      onPress={() => {
+                        if (zoneFieldModal === "add") setAddForm((f) => ({ ...f, zone: z }));
+                        else setEditForm((f) => ({ ...f, zone: z }));
+                        setZoneFieldModal(null);
+                        setZoneFieldSearch("");
+                      }}
+                    >
+                      <Text allowFontScaling={false} style={[s.zoneOptionTxt, current === z && s.zoneOptionTxtActive]}>{z}</Text>
+                      {current === z ? <Text allowFontScaling={false} style={{ color: H.gold, fontSize: 14 }}>✓</Text> : null}
+                    </TouchableOpacity>
+                  );
+                })}
+              {zoneFieldSearch.trim() !== "" && !zones.some(z => z.toLowerCase() === zoneFieldSearch.trim().toLowerCase()) && (
+                <TouchableOpacity
+                  style={s.zoneOption}
+                  onPress={() => {
+                    const v = zoneFieldSearch.trim();
+                    if (zoneFieldModal === "add") setAddForm((f) => ({ ...f, zone: v }));
+                    else setEditForm((f) => ({ ...f, zone: v }));
+                    setZoneFieldModal(null);
+                    setZoneFieldSearch("");
+                  }}
+                >
+                  <Text allowFontScaling={false} style={[s.zoneOptionTxt, { fontStyle: "italic" }]}>Use "{zoneFieldSearch.trim()}"</Text>
+                </TouchableOpacity>
+              )}
+              {zones.length === 0 && !zoneFieldSearch.trim() && (
+                <Text allowFontScaling={false} style={{ padding: 18, textAlign: "center", color: H.textMuted, fontSize: 12 }}>
+                  No zones yet — type above to add one
+                </Text>
+              )}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* ── Chanda Due Since month/year picker for Add/Edit Family ─────────
+          Custom JS-only spinner modal, matching the existing collected-date
+          picker below rather than the native DateTimePicker (see file header
+          notes on that removal). Lives as a top-level sibling, not nested
+          inside a ScrollView, for the same reason. */}
+      <Modal visible={!!dueSinceModal} transparent animationType="fade" onRequestClose={() => setDueSinceModal(null)}>
+        <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", alignItems: "center" }}
+          onPress={() => setDueSinceModal(null)}>
+          <Pressable style={{
+            backgroundColor: "#fff", borderRadius: 18, padding: 24,
+            width: 280, alignItems: "center",
+            shadowColor: "#000", shadowOpacity: 0.18, shadowRadius: 16, elevation: 10,
+          }} onPress={() => {}}>
+            <Text allowFontScaling={false} style={{ fontSize: 16, fontWeight: "700", color: "#1C231F", marginBottom: 20 }}>
+              Chanda Due Since
+            </Text>
+            {(() => {
+              const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+              const mo = dueSinceDraft.getMonth();
+              const y = dueSinceDraft.getFullYear();
+              const today = new Date();
+              const clamp = (d) => (d > today ? new Date(today.getFullYear(), today.getMonth(), 1) : d);
+              const bump = (field, delta) => {
+                const nd = new Date(dueSinceDraft);
+                if (field === "m") nd.setMonth(mo + delta);
+                else nd.setFullYear(y + delta);
+                setDueSinceDraft(clamp(nd));
+              };
+              const SpinCol = ({ label, onUp, onDown }) => (
+                <View style={{ alignItems: "center", flex: 1 }}>
+                  <TouchableOpacity onPress={onUp} style={{ padding: 8 }}>
+                    <Text allowFontScaling={false} style={{ fontSize: 22, color: "#0F5C4C", fontWeight: "700" }}>▲</Text>
+                  </TouchableOpacity>
+                  <Text allowFontScaling={false} style={{ fontSize: 20, fontWeight: "800", color: "#1C231F", minWidth: 76, textAlign: "center" }}>{label}</Text>
+                  <TouchableOpacity onPress={onDown} style={{ padding: 8 }}>
+                    <Text allowFontScaling={false} style={{ fontSize: 22, color: "#0F5C4C", fontWeight: "700" }}>▼</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+              return (
+                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 20 }}>
+                  <SpinCol label={months[mo]} onUp={() => bump("m", 1)} onDown={() => bump("m", -1)} />
+                  <Text allowFontScaling={false} style={{ fontSize: 20, color: "#C8C0A8", marginHorizontal: 4 }}>/</Text>
+                  <SpinCol label={String(y)} onUp={() => bump("y", 1)} onDown={() => bump("y", -1)} />
+                </View>
+              );
+            })()}
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <TouchableOpacity
+                onPress={() => {
+                  if (dueSinceModal === "add") setAddForm((f) => ({ ...f, registration_date: "" }));
+                  else setEditForm((f) => ({ ...f, registration_date: "" }));
+                  setDueSinceModal(null);
+                }}
+                style={{ borderRadius: 12, paddingVertical: 12, paddingHorizontal: 20, borderWidth: 1, borderColor: "#0F5C4C" }}
+              >
+                <Text allowFontScaling={false} style={{ color: "#0F5C4C", fontWeight: "700", fontSize: 14 }}>Clear</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  const val = `${dueSinceDraft.getFullYear()}-${String(dueSinceDraft.getMonth() + 1).padStart(2, "0")}`;
+                  if (dueSinceModal === "add") setAddForm((f) => ({ ...f, registration_date: val }));
+                  else setEditForm((f) => ({ ...f, registration_date: val }));
+                  setDueSinceModal(null);
+                }}
+                style={{ backgroundColor: "#0F5C4C", borderRadius: 12, paddingVertical: 12, paddingHorizontal: 28 }}
+              >
+                <Text allowFontScaling={false} style={{ color: "#fff", fontWeight: "700", fontSize: 14 }}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       <Modal visible={!!selected} transparent animationType="slide" onRequestClose={closeModal}>

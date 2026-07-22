@@ -5,6 +5,7 @@ import messaging, { onMessage } from "@react-native-firebase/messaging";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import AppNavigator from "./src/navigation/AppNavigator";
+import { navigationRef } from "./src/navigation/navigationRef";
 import { initializeI18n } from "./src/localization";
 import { syncPrayerTimesToLocalScheduler } from "./src/utils/prayerScheduleSync";
 
@@ -79,7 +80,7 @@ export default function App() {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <AppNavigator />
     </NavigationContainer>
   );

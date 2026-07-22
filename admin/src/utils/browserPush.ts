@@ -11,6 +11,12 @@ const FIREBASE_CONFIG = {
 };
 
 const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY || "";
+// Every other API call in this app goes through the `api` axios instance,
+// which targets VITE_BACKEND_URL — these two used a bare relative fetch()
+// instead, which only worked in dev because Vite happens to proxy /user to
+// the backend. In production the admin site and backend are on different
+// origins, so these silently 404'd and no web-push token was ever registered.
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || "";
 
 let _messaging: Messaging | null = null;
 
@@ -51,7 +57,7 @@ export async function requestBrowserToken(): Promise<string | null> {
  */
 export async function registerBrowserToken(token: string, authHeader: string): Promise<void> {
   try {
-    await fetch("/user/register-device", {
+    await fetch(`${API_BASE_URL}/user/register-device`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: authHeader },
       body: JSON.stringify({ token, platform: "web", device_name: navigator.userAgent.slice(0, 80) }),
@@ -66,7 +72,7 @@ export async function registerBrowserToken(token: string, authHeader: string): P
  */
 export async function deregisterBrowserToken(token: string, authHeader: string): Promise<void> {
   try {
-    await fetch("/user/deregister-device", {
+    await fetch(`${API_BASE_URL}/user/deregister-device`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json", Authorization: authHeader },
       body: JSON.stringify({ token, platform: "web" }),

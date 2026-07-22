@@ -3,6 +3,10 @@
     <!-- Adaptive icon background — matches the app's primary green -->
     <color name="ic_launcher_background">#1B5E20</color>
 
-    <!-- Default FCM / local notification accent color -->
-    <color name="notification_color">#1B5E20</color>
+    <!-- Notification accent color (setColor). The status-bar icon itself is
+         forced monochrome white by Android, but this tints the small icon and
+         app-name in the pulled-down notification shade. Gold (#D4AF37) matches
+         the app's green+gold theme and keeps good contrast on both light and
+         dark notification backgrounds (dark green would vanish in dark mode). -->
+    <color name="notification_color">#D4AF37</color>
 </resources>

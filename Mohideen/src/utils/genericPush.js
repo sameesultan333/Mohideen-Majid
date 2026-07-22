@@ -27,7 +27,7 @@ export function showGenericPush(title, body, data = {}) {
     soundName: 'default',
     vibrate: true,
     smallIcon: 'ic_notification',
-    color: '#1B5E20',
+    color: '#D4AF37',
     userInfo: data,
   });
 }

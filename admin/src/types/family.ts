@@ -40,6 +40,12 @@ export interface Family {
 
   /** Record creation timestamp */
   created_at?: string | null;
+
+  /** When the family was deactivated (null if currently active) */
+  deactivated_at?: string | null;
+
+  /** When the 30-day restore window expires and the family is permanently archived */
+  deactivated_until?: string | null;
 }
 
 /* ============================================================================

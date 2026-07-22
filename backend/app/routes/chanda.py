@@ -54,7 +54,7 @@ def get_members(
     db: Session = Depends(get_db),
     user=Depends(require_collector),
 ):
-    heads = db.query(models.ApprovedHead).all()
+    heads = db.query(models.ApprovedHead).filter(models.ApprovedHead.is_deleted.is_(False)).all()
     target_month = month or get_current_month()
     head_ids = [h.id for h in heads]
     if not head_ids:
@@ -603,7 +603,12 @@ def get_report(
     user=Depends(require_admin),
 ):
     collections = db.query(models.ChandaCollection).filter_by(month=month).all()
-    total_due = sum(collection.amount_due for collection in collections)
+    # "Expected" (amount_due) excludes families deactivated before paying —
+    # already-paid amounts always count regardless of current active status.
+    total_due = sum(
+        collection.amount_due for collection in collections
+        if collection.status == "paid" or (collection.head and collection.head.is_active)
+    )
     total_paid = sum(collection.total_paid for collection in collections)
     pending = len([collection for collection in collections if collection.status != "paid"])
 
@@ -810,7 +815,7 @@ def get_defaulters(
     db: Session = Depends(get_db),
     user=Depends(require_admin),
 ):
-    heads = db.query(models.ApprovedHead).all()
+    heads = db.query(models.ApprovedHead).filter(models.ApprovedHead.is_deleted.is_(False)).all()
     result = []
     for head in heads:
         collections = db.query(models.ChandaCollection).filter_by(head_id=head.id).all()

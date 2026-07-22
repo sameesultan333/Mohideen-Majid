@@ -46,6 +46,13 @@ class ChangePasswordRequest(BaseModel):
     confirm_new_password: str
 
 
+class ConfirmPassword(BaseModel):
+    """Re-verify the ACTING admin's own current password before a sensitive,
+    hard-to-reverse action (e.g. deactivating a family)."""
+    password: str
+    reason: Optional[str] = None
+
+
 class AdminResetPasswordRequest(BaseModel):
     new_password: str = "12345678"
 

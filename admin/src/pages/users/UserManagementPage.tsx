@@ -1,8 +1,10 @@
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { COLORS, TYPOGRAPHY } from "../../theme/colors";
-import { getUsers, assignFamily, resetUserPassword } from "../../api/users";
+import { getUsers, assignFamily, resetUserPassword, deleteUser } from "../../api/users";
 import api from "../../api/axios";
-import { getFamilies, getFamilyMembers } from "../../api/families";
+import { getFamilies, getFamilyMembers, activateFamily, getZones } from "../../api/families";
+import { getCurrentUser } from "../../api/auth";
+import DeleteStaffDialog from "../../components/DeleteStaffDialog";
 import type { User, UserRole } from "../../types/users";
 import type { Family, FamilyMember } from "../../types/family";
 
@@ -126,6 +128,15 @@ const fmtDateTime = (s?: string | null) => {
     " " + d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
 };
 
+// Days remaining until the stored expiry timestamp (e.g. deactivated_until),
+// clamped at 0 — computed directly from the stored value rather than
+// re-deriving "deactivated_at + 30 days" here.
+const daysUntil = (s?: string | null) => {
+  if (!s) return 0;
+  const ms = new Date(s).getTime() - Date.now();
+  return Math.max(0, Math.ceil(ms / (1000 * 60 * 60 * 24)));
+};
+
 // ─── Role Chip ────────────────────────────────────────────────────────────────
 
 function RoleChip({ role }: { role: string }) {
@@ -146,11 +157,12 @@ function RoleChip({ role }: { role: string }) {
 
 interface EditFamilyDialogProps {
   family: Family;
+  existingFamilies: Family[];
   onClose: () => void;
   onSaved: (updated: Family) => void;
 }
 
-const EditFamilyDialog: React.FC<EditFamilyDialogProps> = ({ family, onClose, onSaved }) => {
+const EditFamilyDialog: React.FC<EditFamilyDialogProps> = ({ family, existingFamilies, onClose, onSaved }) => {
   const [form, setForm] = useState({
     chanda_no:    family.chanda_no ?? "",
     name:         family.name ?? "",
@@ -162,6 +174,14 @@ const EditFamilyDialog: React.FC<EditFamilyDialogProps> = ({ family, onClose, on
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [zones, setZones] = useState<string[]>([]);
+  const [zonesError, setZonesError] = useState(false);
+  // The zone <input> starts pre-filled with the family's current zone (unlike
+  // Add Family, which starts blank) — browsers filter the <datalist> popup by
+  // the input's current text, so a pre-filled value narrows suggestions down
+  // to just itself, which looks like "only one zone available." Track the
+  // displayed text separately so we can clear it on focus (revealing every
+  // zone) and restore it on blur if nothing was picked.
+  const [zoneInput, setZoneInput] = useState(family.zone ?? "");
 
   useEffect(() => {
     let cancelled = false;
@@ -169,11 +189,21 @@ const EditFamilyDialog: React.FC<EditFamilyDialogProps> = ({ family, onClose, on
       try {
         const { getZones } = await import("../../api/families");
         const z = await getZones();
-        if (!cancelled) setZones(z);
-      } catch (_) {}
+        if (!cancelled) { setZones(z); setZonesError(false); }
+      } catch (_) {
+        if (!cancelled) setZonesError(true);
+      }
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // Chanda numbers must be unique across all families — catch a duplicate
+  // locally before it round-trips to the server's own uniqueness check.
+  const chandaTaken = useMemo(() => {
+    const cn = form.chanda_no.trim().toUpperCase();
+    if (!cn) return false;
+    return existingFamilies.some(f => f.id !== family.id && (f.chanda_no || "").trim().toUpperCase() === cn);
+  }, [form.chanda_no, existingFamilies, family.id]);
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }));
@@ -182,6 +212,7 @@ const EditFamilyDialog: React.FC<EditFamilyDialogProps> = ({ family, onClose, on
     setError("");
     const amount = parseFloat(form.monthly_amount);
     if (!form.chanda_no.trim()) return setError("Chanda number is required.");
+    if (chandaTaken) return setError(`Chanda number "${form.chanda_no.trim()}" is already assigned to another family.`);
     if (!form.name.trim())      return setError("Name is required.");
     if (isNaN(amount) || amount <= 0) return setError("Monthly amount must be a positive number.");
 
@@ -234,6 +265,11 @@ const EditFamilyDialog: React.FC<EditFamilyDialogProps> = ({ family, onClose, on
         </div>
         <div style={S.panelBody}>
           {field("Chanda Number *", "chanda_no", "e.g. CH-001")}
+          {chandaTaken && (
+            <div style={{ marginTop: -8, marginBottom: 12, fontSize: 12, color: COLORS.danger }}>
+              This chanda number is already in use.
+            </div>
+          )}
           {field("Family Name *",   "name",      "Full name")}
           {field("Phone",           "phone",     "10-digit number")}
           {field("Monthly Amount (₹) *", "monthly_amount", "e.g. 500")}
@@ -243,8 +279,11 @@ const EditFamilyDialog: React.FC<EditFamilyDialogProps> = ({ family, onClose, on
               Zone
             </label>
             <input
-              value={form.zone}
-              onChange={set("zone")}
+              list="zone-options-edit-family"
+              value={zoneInput}
+              onFocus={() => setZoneInput("")}
+              onChange={(e) => { setZoneInput(e.target.value); set("zone")(e); }}
+              onBlur={() => { if (!zoneInput) setZoneInput(form.zone); }}
               placeholder="Select or type a zone"
               style={{
                 width: "100%", boxSizing: "border-box",
@@ -253,29 +292,12 @@ const EditFamilyDialog: React.FC<EditFamilyDialogProps> = ({ family, onClose, on
                 outline: "none",
               }}
             />
-            {zones.length > 0 && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-                {zones
-                  .filter(z => !form.zone || z.toLowerCase().includes(form.zone.toLowerCase()))
-                  .map(z => (
-                    <button
-                      key={z}
-                      type="button"
-                      onClick={() => setForm(f => ({ ...f, zone: z }))}
-                      style={{
-                        padding: "4px 12px",
-                        borderRadius: 14,
-                        border: `1px solid ${form.zone === z ? COLORS.primary : COLORS.border}`,
-                        background: form.zone === z ? COLORS.primary : COLORS.backgroundAlt,
-                        color: form.zone === z ? "#fff" : COLORS.textSecondary,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: "pointer",
-                      }}
-                    >
-                      {z}
-                    </button>
-                  ))}
+            <datalist id="zone-options-edit-family">
+              {zones.map(z => <option key={z} value={z} />)}
+            </datalist>
+            {zonesError && (
+              <div style={{ fontSize: 11, color: COLORS.danger, marginTop: 4 }}>
+                Couldn't load the zone list — you can still type a zone manually.
               </div>
             )}
           </div>
@@ -307,6 +329,124 @@ const EditFamilyDialog: React.FC<EditFamilyDialogProps> = ({ family, onClose, on
   );
 };
 
+// ─── Deactivate Family Dialog ──────────────────────────────────────────────────
+// Sensitive/destructive action — requires the ACTING admin's own current
+// password (never the family/head's password). Restoring (elsewhere in this
+// file) intentionally does NOT require a password — only deactivation does.
+
+interface DeactivateFamilyDialogProps {
+  family: Family;
+  onClose: () => void;
+  onDeactivated: (updated: Family) => void;
+}
+
+const DeactivateFamilyDialog: React.FC<DeactivateFamilyDialogProps> = ({ family, onClose, onDeactivated }) => {
+  const [password, setPassword] = useState("");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleConfirm = async () => {
+    setError("");
+    if (!password) return setError("Your current password is required.");
+    try {
+      setBusy(true);
+      const { deactivateFamily } = await import("../../api/families");
+      await deactivateFamily(family.id, password, reason.trim() || undefined);
+      const now = new Date();
+      const until = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+      onDeactivated({ ...family, is_active: false, deactivated_at: now.toISOString(), deactivated_until: until.toISOString() });
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || "Incorrect password — please try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={S.overlay} onClick={onClose}>
+      <div style={{ ...S.panel, maxWidth: 440 }} onClick={e => e.stopPropagation()}>
+        <div style={S.panelHeader}>
+          <div style={S.panelTitle}>Deactivate Member</div>
+          <button style={S.panelClose} onClick={onClose}>✕</button>
+        </div>
+        <div style={S.panelBody}>
+          <div style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 14 }}>
+            <strong style={{ color: COLORS.text }}>{family.name}</strong> ({family.chanda_no})
+          </div>
+
+          <div style={{ padding: "10px 12px", borderRadius: 8,
+                        background: COLORS.warningLight ?? "#FFF8E6",
+                        border: `1px solid ${COLORS.warning ?? "#A97300"}`,
+                        fontSize: 12.5, color: COLORS.text, marginBottom: 16, lineHeight: 1.5 }}>
+            ⚠️ This member will no longer contribute to future expected Chanda collections.
+            Historical payments and financial records will remain unchanged.
+            The member can be restored within 30 days.
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: COLORS.textSecondary, marginBottom: 4 }}>
+              Reason (optional)
+            </label>
+            <input
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="e.g. Left Mohalla, duplicate registration…"
+              style={{
+                width: "100%", boxSizing: "border-box",
+                padding: "9px 12px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
+                fontSize: 14, color: COLORS.text, background: COLORS.background,
+                outline: "none",
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: COLORS.textSecondary, marginBottom: 4 }}>
+              Your Password *
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Confirm with your current password"
+              autoFocus
+              style={{
+                width: "100%", boxSizing: "border-box",
+                padding: "9px 12px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
+                fontSize: 14, color: COLORS.text, background: COLORS.background,
+                outline: "none",
+              }}
+            />
+          </div>
+
+          {error && (
+            <div style={{ padding: "8px 12px", borderRadius: 8, background: COLORS.dangerLight,
+                          color: COLORS.danger, fontSize: 13, marginBottom: 12 }}>
+              {error}
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+            <button onClick={onClose} disabled={busy}
+              style={{ flex: 1, padding: "10px", borderRadius: 10, border: `1px solid ${COLORS.border}`,
+                       background: COLORS.backgroundAlt, color: COLORS.text,
+                       fontWeight: 600, fontSize: 14, cursor: "pointer" }}>
+              Cancel
+            </button>
+            <button onClick={handleConfirm} disabled={busy || !password}
+              style={{ flex: 2, padding: "10px", borderRadius: 10, border: "none",
+                       background: busy || !password ? COLORS.textMuted : COLORS.danger,
+                       color: "#fff", fontWeight: 700, fontSize: 14, cursor: busy || !password ? "default" : "pointer" }}>
+              {busy ? "Deactivating…" : "Deactivate Member"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── Detail Panel ─────────────────────────────────────────────────────────────
 
 interface DetailEntry {
@@ -323,9 +463,13 @@ interface DetailPanelProps {
   isMobile: boolean;
   onResetPassword?: (u: User) => void;
   onEditFamily?: (f: Family) => void;
+  onDeactivateFamily?: (f: Family) => void;
+  onRestoreFamily?: (f: Family) => void;
+  onDeleteUser?: (u: User) => void;
+  canManageFamily?: boolean;
 }
 
-const DetailPanel: React.FC<DetailPanelProps> = ({ entry, familyMap, onClose, onSelectMember, isMobile, onResetPassword, onEditFamily }) => {
+const DetailPanel: React.FC<DetailPanelProps> = ({ entry, familyMap, onClose, onSelectMember, isMobile, onResetPassword, onEditFamily, onDeactivateFamily, onRestoreFamily, onDeleteUser, canManageFamily }) => {
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
 
@@ -403,23 +547,19 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ entry, familyMap, onClose, on
                   🔑 Reset Password
                 </button>
               )}
-            </div>
-          )}
-
-          {isFamily && family?.user_id && onResetPassword && (
-            <div style={S.section}>
-              <div style={S.sectionTitle}>Account</div>
-              <button
-                onClick={() => onResetPassword({ ...({} as User), id: family.user_id!, name: family.name })}
-                style={{ marginTop: 4, width: "100%", padding: "10px", borderRadius: 10,
-                          border: `1px solid ${COLORS.danger}`, background: COLORS.dangerLight,
-                          color: COLORS.danger, fontWeight: 700, fontSize: 13, cursor: "pointer",
-                          transition: "background 0.2s" }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#FECACA"; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = COLORS.dangerLight; }}
-              >
-                🔑 Reset Head's Password
-              </button>
+              {onDeleteUser && (
+                <button
+                  onClick={() => onDeleteUser(user)}
+                  style={{ marginTop: 8, width: "100%", padding: "10px", borderRadius: 10,
+                            border: `1px solid ${COLORS.danger}`, background: "none",
+                            color: COLORS.danger, fontWeight: 700, fontSize: 13, cursor: "pointer",
+                            transition: "background 0.2s" }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = COLORS.dangerLight; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "none"; }}
+                >
+                  🗑 Delete Account
+                </button>
+              )}
             </div>
           )}
 
@@ -446,12 +586,56 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ entry, familyMap, onClose, on
                 ["Monthly Amount", `₹${family.monthly_amount.toLocaleString("en-IN")}`],
                 ["Registered", fmtDate(family.registration_date ?? family.created_at)],
                 ["Status", family.is_active ? "Active" : "Inactive"],
+                ...(!family.is_active ? [
+                  ["Deactivated", fmtDate(family.deactivated_at)],
+                  ["Days Remaining", family.deactivated_until
+                    ? `${daysUntil(family.deactivated_until)} day${daysUntil(family.deactivated_until) === 1 ? "" : "s"}`
+                    : "—"],
+                ] : []),
               ].map(([label, val]) => (
                 <div key={String(label)} style={S.infoRow}>
                   <span style={S.infoLabel}>{label}</span>
                   <span style={S.infoValue}>{val}</span>
                 </div>
               ))}
+
+              {canManageFamily && family.is_active && onDeactivateFamily && (
+                <button
+                  onClick={() => onDeactivateFamily(family)}
+                  style={{ marginTop: 12, width: "100%", padding: "10px", borderRadius: 10,
+                            border: `1px solid ${COLORS.danger}`, background: COLORS.dangerLight,
+                            color: COLORS.danger, fontWeight: 700, fontSize: 13, cursor: "pointer",
+                            transition: "background 0.2s" }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#FECACA"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = COLORS.dangerLight; }}
+                >
+                  Deactivate Member
+                </button>
+              )}
+              {canManageFamily && !family.is_active && onRestoreFamily && (
+                <button
+                  onClick={() => onRestoreFamily(family)}
+                  style={{ marginTop: 12, width: "100%", padding: "10px", borderRadius: 10,
+                            border: `1px solid ${COLORS.success}`, background: COLORS.successLight,
+                            color: COLORS.success, fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                >
+                  ↺ Restore Member
+                </button>
+              )}
+
+              {family.user_id && onResetPassword && (
+                <button
+                  onClick={() => onResetPassword({ ...({} as User), id: family.user_id!, name: family.name })}
+                  style={{ marginTop: 12, width: "100%", padding: "10px", borderRadius: 10,
+                            border: `1px solid ${COLORS.danger}`, background: COLORS.dangerLight,
+                            color: COLORS.danger, fontWeight: 700, fontSize: 13, cursor: "pointer",
+                            transition: "background 0.2s" }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#FECACA"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = COLORS.dangerLight; }}
+                >
+                  🔑 Reset Head's Password
+                </button>
+              )}
             </div>
           )}
 
@@ -507,6 +691,8 @@ const UserManagementPage: React.FC = () => {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<"all" | UserRole | "no_family">("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
+  const [zoneFilter, setZoneFilter] = useState<string>("all");
+  const [zones, setZones] = useState<string[]>([]);
 
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [detail, setDetail] = useState<{ type: "user" | "family"; user?: User; family?: Family } | null>(null);
@@ -516,7 +702,12 @@ const UserManagementPage: React.FC = () => {
   const [fixBusy, setFixBusy] = useState(false);
 
   const [editingFamily, setEditingFamily] = useState<Family | null>(null);
+  const [deactivatingFamily, setDeactivatingFamily] = useState<Family | null>(null);
+  const currentRole = getCurrentUser()?.role;
+  const canManageFamily = currentRole === "admin" || currentRole === "superadmin";
   const [resetTarget, setResetTarget] = useState<User | null>(null);
+  const [deletingUser, setDeletingUser] = useState<User | null>(null);
+  const [deleteUserError, setDeleteUserError] = useState<string | null>(null);
   const [resetPassword, setResetPassword] = useState("12345678");
   const [resetBusy, setResetBusy] = useState(false);
   const [resetMsg, setResetMsg] = useState<string | null>(null);
@@ -593,6 +784,12 @@ const UserManagementPage: React.FC = () => {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getZones().then((z) => { if (!cancelled) setZones(z); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const handleImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -673,7 +870,12 @@ const UserManagementPage: React.FC = () => {
 
   const familyMatches = (f: Family) => {
     if (!q) return true;
-    return f.name.toLowerCase().includes(q) || (f.phone ?? "").includes(q) || f.chanda_no.toLowerCase().includes(q);
+    return (
+      f.name.toLowerCase().includes(q) ||
+      (f.phone ?? "").includes(q) ||
+      f.chanda_no.toLowerCase().includes(q) ||
+      (f.address ?? "").toLowerCase().includes(q)
+    );
   };
 
   const userMatches = (u: User) => {
@@ -688,13 +890,14 @@ const UserManagementPage: React.FC = () => {
         if (roleFilter !== "all" && roleFilter !== "head" && roleFilter !== "member") return false;
         if (statusFilter === "active" && !f.is_active) return false;
         if (statusFilter === "inactive" && f.is_active) return false;
+        if (zoneFilter !== "all" && f.zone !== zoneFilter) return false;
         if (q) {
           const members = membersByFamily.get(f.id) ?? [];
           return familyMatches(f) || members.some(userMatches);
         }
         return true;
       }),
-    [families, roleFilter, statusFilter, q, membersByFamily]
+    [families, roleFilter, statusFilter, zoneFilter, q, membersByFamily]
   );
 
   const filteredStaff = useMemo(
@@ -1317,12 +1520,18 @@ const UserManagementPage: React.FC = () => {
       <div style={S.toolbar}>
         <input
           style={S.searchInput}
-          placeholder="Search name, phone, chanda…"
+          placeholder="Search name, phone, chanda, address…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onFocus={(e) => e.currentTarget.style.boxShadow = `0 0 0 3px ${COLORS.primaryLight}`}
           onBlur={(e) => e.currentTarget.style.boxShadow = "none"}
         />
+        <select style={S.filterSelect} value={zoneFilter} onChange={(e) => setZoneFilter(e.target.value)}>
+          <option value="all">All Zones</option>
+          {zones.map((z) => (
+            <option key={z} value={z}>{z}</option>
+          ))}
+        </select>
         <select style={S.filterSelect} value={roleFilter} onChange={(e) => setRoleFilter(e.target.value as any)}>
           <option value="all">All Roles</option>
           <option value="superadmin">Super Admin</option>
@@ -1358,13 +1567,29 @@ const UserManagementPage: React.FC = () => {
           onSelectMember={(u) => setDetail({ type: "user", user: u, family: u.family_id ? familyMap.get(u.family_id) : undefined })}
           isMobile={isMobile}
           onResetPassword={detail?.user?.role !== "superadmin" ? (u) => { setResetTarget(u); setResetPassword("12345678"); setResetMsg(null); } : undefined}
+          onDeleteUser={detail?.user?.role !== "superadmin" ? (u) => { setDeletingUser(u); setDeleteUserError(null); } : undefined}
           onEditFamily={(f) => setEditingFamily(f)}
+          onDeactivateFamily={(f) => setDeactivatingFamily(f)}
+          onRestoreFamily={async (f) => {
+            try {
+              await activateFamily(f.id);
+              const updated = { ...f, is_active: true, deactivated_at: null, deactivated_until: null };
+              setFamilies(prev => prev.map(x => x.id === updated.id ? updated : x));
+              if (detail?.family?.id === updated.id) {
+                setDetail(d => d ? { ...d, family: updated } : d);
+              }
+            } catch (err: any) {
+              alert(err?.response?.data?.detail ?? "Failed to restore family");
+            }
+          }}
+          canManageFamily={canManageFamily}
         />
       )}
 
       {editingFamily && (
         <EditFamilyDialog
           family={editingFamily}
+          existingFamilies={families}
           onClose={() => setEditingFamily(null)}
           onSaved={(updated) => {
             // Update familyMap and the open detail panel in-place
@@ -1373,6 +1598,20 @@ const UserManagementPage: React.FC = () => {
               setDetail(d => d ? { ...d, family: updated } : d);
             }
             setEditingFamily(null);
+          }}
+        />
+      )}
+
+      {deactivatingFamily && (
+        <DeactivateFamilyDialog
+          family={deactivatingFamily}
+          onClose={() => setDeactivatingFamily(null)}
+          onDeactivated={(updated) => {
+            setFamilies(prev => prev.map(f => f.id === updated.id ? { ...f, ...updated } : f));
+            if (detail?.family?.id === updated.id) {
+              setDetail(d => d ? { ...d, family: { ...d.family!, ...updated } } : d);
+            }
+            setDeactivatingFamily(null);
           }}
         />
       )}
@@ -1454,6 +1693,37 @@ const UserManagementPage: React.FC = () => {
               </>
             )}
           </div>
+        </div>
+      )}
+
+      {deletingUser && (
+        <DeleteStaffDialog
+          open={!!deletingUser}
+          onClose={() => { setDeletingUser(null); setDeleteUserError(null); }}
+          onConfirm={async () => {
+            if (!deletingUser) return;
+            setDeleteUserError(null);
+            try {
+              await deleteUser(deletingUser.id);
+              setUsers(prev => prev.filter(u => u.id !== deletingUser.id));
+              if (detail?.user?.id === deletingUser.id) setDetail(null);
+              setDeletingUser(null);
+            } catch (err: any) {
+              setDeleteUserError(err?.response?.data?.detail || "Failed to delete account.");
+              throw err;
+            }
+          }}
+          staffName={deletingUser.name || "Unnamed"}
+          staffRole={deletingUser.role}
+          title="Delete Account"
+        />
+      )}
+      {deleteUserError && deletingUser && (
+        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
+                      background: COLORS.dangerLight, color: COLORS.danger, padding: "10px 18px",
+                      borderRadius: 10, fontSize: 13, fontWeight: 600, zIndex: 9200,
+                      boxShadow: COLORS.shadowLg }}>
+          {deleteUserError}
         </div>
       )}
     </div>

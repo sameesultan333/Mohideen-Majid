@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 import axios from "axios";
 import { getToken, saveToken, saveRefreshToken, getRefreshToken, deleteToken, deleteRefreshToken } from "../utils/secureStorage";
+import { resetToLogin } from "../navigation/navigationRef";
 
 const WORKING_SERVER_KEY = "working_server_url";
 const DEFAULT_BASE_URL = "https://mohideen-majid.onrender.com";
@@ -204,8 +205,23 @@ async function tryRefreshToken() {
 }
 
 /**
+ * Single choke point for "this session is no longer valid" — clears both
+ * stored tokens and resets navigation straight to Login (discarding the back
+ * stack) with a param LoginScreen reads to show a friendly explanation,
+ * instead of leaving the user stranded on whatever authenticated screen they
+ * were on showing a raw "Not authenticated"/"Unable to load" error.
+ */
+async function clearSessionAndRedirect() {
+  await deleteToken();
+  await deleteRefreshToken();
+  resetToLogin({ sessionExpired: true });
+}
+
+/**
  * Like apiAxios but automatically attaches the stored JWT as Authorization header.
- * On 401, attempts one token refresh then retries. If refresh fails, clears tokens.
+ * On 401, attempts one token refresh then retries. If refresh fails (or there
+ * was no token to attach in the first place), the session is treated as
+ * invalid: tokens are cleared and the app returns to Login.
  */
 /**
  * Like apiFetch but auto-attaches the JWT and retries once after a token refresh on 401.
@@ -213,10 +229,11 @@ async function tryRefreshToken() {
  */
 export async function authApiFetch(path, init = {}) {
   const token = await getToken();
-  const headers = {
-    ...(init.headers || {}),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
+  if (!token) {
+    await clearSessionAndRedirect();
+    throw new Error('Session expired — please log in again');
+  }
+  const headers = { ...(init.headers || {}), Authorization: `Bearer ${token}` };
   const res = await apiFetch(path, { ...init, headers });
   if (res.status !== 401) return res;
   try {
@@ -224,18 +241,18 @@ export async function authApiFetch(path, init = {}) {
     const retryHeaders = { ...(init.headers || {}), Authorization: `Bearer ${newToken}` };
     return apiFetch(path, { ...init, headers: retryHeaders });
   } catch {
-    await deleteToken();
-    await deleteRefreshToken();
+    await clearSessionAndRedirect();
     throw new Error('Session expired — please log in again');
   }
 }
 
 export async function authApiAxios(config) {
   const token = await getToken();
-  const headers = {
-    ...(config.headers || {}),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
+  if (!token) {
+    await clearSessionAndRedirect();
+    throw new Error('Session expired — please log in again');
+  }
+  const headers = { ...(config.headers || {}), Authorization: `Bearer ${token}` };
   try {
     return await apiAxios({ ...config, headers });
   } catch (error) {
@@ -245,8 +262,7 @@ export async function authApiAxios(config) {
       const retryHeaders = { ...(config.headers || {}), Authorization: `Bearer ${newToken}` };
       return await apiAxios({ ...config, headers: retryHeaders });
     } catch {
-      await deleteToken();
-      await deleteRefreshToken();
+      await clearSessionAndRedirect();
       throw error;
     }
   }

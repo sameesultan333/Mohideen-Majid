@@ -37,6 +37,9 @@ class IqamahWorker(context: Context, params: WorkerParameters) : Worker(context,
         val soundUri = android.net.Uri.parse(
             "android.resource://${applicationContext.packageName}/raw/start_prayer"
         )
+        // CATEGORY_ALARM so iqamah sounds through Do Not Disturb too; the
+        // channel's AudioAttributes (USAGE_NOTIFICATION) still govern the
+        // volume stream. See IqamahSchedulerModule.showAdhanNow.
         val notification = NotificationCompat.Builder(applicationContext, "prayer_iqamah")
             .setSmallIcon(R.drawable.ic_notification)
             .setColor(applicationContext.getColor(R.color.notification_color))

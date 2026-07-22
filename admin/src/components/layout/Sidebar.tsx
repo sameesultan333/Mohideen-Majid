@@ -24,6 +24,21 @@ import "../layout/layout.css";
 import { logout, getCurrentUser } from "../../api/auth";
 import { useNotifications } from "../../context/NotificationContext";
 
+// Each notification kind is only actionable from one specific page — a
+// generic total on the Chanda link meant an unread expense/donation/account
+// -deletion item (nothing to do with Chanda) left a badge that never
+// cleared no matter how many times you opened Chanda. Route each kind's
+// unread count to its own nav item instead.
+function useUnreadByKind() {
+  const { items, unreadIds } = useNotifications();
+  const count = (kind: string) =>
+    items.filter(n => n.kind === kind && unreadIds.has(n.id)).length;
+  return {
+    chanda: count("pending_verification"),
+    expenses: count("expense_approval"),
+  };
+}
+
 const NAV_ITEMS = [
   { to: "/dashboard",   label: "Dashboard",        icon: LayoutDashboard },
   { to: "/prayer",      label: "Prayer Timings",   icon: Clock3          },
@@ -45,7 +60,8 @@ interface SidebarProps {
 
 export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   const navigate = useNavigate();
-  const { unreadCount, pendingRegCount, cashSubCount } = useNotifications();
+  const { pendingRegCount, cashSubCount } = useNotifications();
+  const unreadByKind = useUnreadByKind();
   const isSuperAdmin = getCurrentUser()?.role === "superadmin";
 
   async function handleLogout() {
@@ -87,7 +103,8 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
         <nav className="sidebar-menu">
           {NAV_ITEMS.map(({ to, label, icon: Icon }) => {
             let badge = 0;
-            if (to === "/chanda" && unreadCount > 0) badge = unreadCount;
+            if (to === "/chanda") badge = unreadByKind.chanda;
+            if (to === "/expenses") badge = unreadByKind.expenses;
             if (to === "/pending-registrations" && pendingRegCount > 0) badge = pendingRegCount;
             if (to === "/cash-submissions" && cashSubCount > 0) badge = cashSubCount;
             return (

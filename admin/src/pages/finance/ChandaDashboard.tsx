@@ -17,6 +17,7 @@ import {
   type FinanceDashboard, type MemberWithCollection, type DefaulterItem,
 } from "../../api/chanda";
 import { getAccessToken } from "../../api/auth";
+import { getZones } from "../../api/families";
 import { useNotifications } from "../../context/NotificationContext";
 
 // ─── helpers ─────────────────────────────────────────────────
@@ -1110,6 +1111,8 @@ export default function ChandaDashboard() {
 
   const [search, setSearch]             = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [zoneFilter, setZoneFilter]     = useState<string>("all");
+  const [zones, setZones]               = useState<string[]>([]);
 
   const [addOpen, setAddOpen]     = useState(false);
   const [addLoading, setAddLoading] = useState(false);
@@ -1159,6 +1162,12 @@ export default function ChandaDashboard() {
 
   useEffect(() => { loadData(); }, [month]);
 
+  useEffect(() => {
+    let cancelled = false;
+    getZones().then((z) => { if (!cancelled) setZones(z); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   // Clear the sidebar badge the moment this page mounts —
   // the admin is actively looking at Chanda, so nothing is "unread".
   const { markAllRead } = useNotifications();
@@ -1184,7 +1193,8 @@ export default function ChandaDashboard() {
           try {
             const msg = JSON.parse(e.data);
             if (msg.type === "dashboard_updated" || msg.type === "monthly_amount_updated" ||
-                msg.type === "payment_verified"   || msg.type === "payment_collected") {
+                msg.type === "payment_verified"   || msg.type === "payment_collected" ||
+                msg.type === "family_updated"     || msg.type === "family_created") {
               loadDataRef.current(true);
             }
           } catch (_) {}
@@ -1206,14 +1216,17 @@ export default function ChandaDashboard() {
     const q = search.trim().toLowerCase();
     return members.filter(item => {
       const m = item.member;
+      if (m.is_active === false) return false;
       const status = item.collections[0]?.status ?? "pending";
       if (statusFilter !== "all" && status !== statusFilter) return false;
+      if (zoneFilter !== "all" && m.zone !== zoneFilter) return false;
       if (q && !m.name.toLowerCase().includes(q) &&
           !m.chanda_no.toLowerCase().includes(q) &&
-          !(m.phone ?? "").includes(q)) return false;
+          !(m.phone ?? "").includes(q) &&
+          !(m.address ?? "").toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [members, search, statusFilter]);
+  }, [members, search, statusFilter, zoneFilter]);
 
   const d = dashboard;
   const chanda = d?.chanda;
@@ -1239,6 +1252,7 @@ export default function ChandaDashboard() {
       await addFamily({
         chanda_no: formData.chandaNo, name: formData.name,
         phone: formData.phone, address: formData.address,
+        zone: formData.zone || undefined,
         monthly_amount: formData.monthlyAmount,
         registration_date: formData.startMonth ? formData.startMonth + "-01" : undefined,
       });
@@ -1531,12 +1545,12 @@ export default function ChandaDashboard() {
               <Search size={13} color="#93998F" style={{
                 position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)",
               }} />
-              <input placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)}
+              <input placeholder="Search name, chanda no, phone, address…" value={search} onChange={e => setSearch(e.target.value)}
                 style={{
                   height: 38, paddingLeft: 30, paddingRight: search ? 30 : 10,
                   border: "1.5px solid #E7E2D3", borderRadius: 9,
                   fontSize: 13, color: "#1C231F", background: "#fff", outline: "none",
-                  width: isMobile ? 140 : 200,
+                  width: isMobile ? 160 : 280,
                 }} />
               {search && (
                 <button onClick={() => setSearch("")} style={{
@@ -1544,6 +1558,22 @@ export default function ChandaDashboard() {
                   background: "none", border: "none", cursor: "pointer", padding: 0,
                 }}><X size={12} color="#93998F" /></button>
               )}
+            </div>
+            <div style={{ position: "relative" }}>
+              <select value={zoneFilter} onChange={e => setZoneFilter(e.target.value)}
+                style={{
+                  height: 38, padding: "0 28px 0 10px", border: "1.5px solid #E7E2D3",
+                  borderRadius: 9, fontSize: 13, color: "#1C231F",
+                  background: "#fff", outline: "none", appearance: "none", cursor: "pointer",
+                }}>
+                <option value="all">All Zones</option>
+                {zones.map((z) => (
+                  <option key={z} value={z}>{z}</option>
+                ))}
+              </select>
+              <ChevronDown size={12} color="#93998F" style={{
+                position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", pointerEvents: "none",
+              }} />
             </div>
             <div style={{ position: "relative" }}>
               <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as StatusFilter)}
@@ -1763,6 +1793,7 @@ export default function ChandaDashboard() {
       />
 
       <AddFamilyModal open={addOpen} loading={addLoading}
+        existingChandaNos={members.map(m => m.member.chanda_no)}
         onClose={() => setAddOpen(false)} onSave={handleAddFamily} />
 
       {editFamily && (

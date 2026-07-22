@@ -8,6 +8,7 @@ Jobs:
   - Daily  (configurable CHANDA_REMINDER_HOUR, default 09:00) → FCM chanda reminders
   - Daily  02:00   → session cleanup (expired inactive sessions)
   - Daily  03:00   → audit log cleanup (entries older than 2 years)
+  - Daily  04:00   → permanently archive families past their 30-day restore window
 """
 
 from __future__ import annotations
@@ -208,6 +209,44 @@ def job_prayer_notifications():
         db.close()
 
 
+def job_family_archive_expired():
+    """Permanently archive families whose 30-day restore window has passed.
+
+    This NEVER physically deletes the ApprovedHead row (ChandaCollection/
+    PaymentEntry history must keep resolving against it) — it only flips
+    is_deleted=True, which hides the family from every list/query in the
+    app from that point on. Mirrors the existing expenses.is_deleted
+    soft-delete convention used elsewhere in this codebase.
+    """
+    from app.database import SessionLocal
+    from app import models
+    from app.routes.finance import write_audit
+    from app.services.audit_service import AuditAction
+
+    db = SessionLocal()
+    try:
+        now = datetime.utcnow()
+        expired = db.query(models.ApprovedHead).filter(
+            models.ApprovedHead.is_active.is_(False),
+            models.ApprovedHead.deactivated_until.isnot(None),
+            models.ApprovedHead.deactivated_until <= now,
+            models.ApprovedHead.is_deleted.is_(False),
+        ).all()
+        for head in expired:
+            head.is_deleted = True
+            head.deleted_at = now
+            write_audit(db, "approved_heads", head.id, AuditAction.FAMILY_ARCHIVED,
+                        new_values={"is_deleted": True},
+                        note=f"Auto-archived {head.name} ({head.chanda_no}) after 30-day restore window")
+        db.commit()
+        log.info(f"[scheduler] family archive: permanently archived {len(expired)} expired families")
+    except Exception as e:
+        log.error(f"[scheduler] family_archive_expired failed: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
 def job_audit_cleanup():
     """Delete audit logs older than 2 years."""
     from app.database import SessionLocal
@@ -292,6 +331,14 @@ def create_scheduler():
         job_audit_cleanup,
         CronTrigger(hour=3, minute=0),
         id="audit_cleanup",
+        replace_existing=True,
+    )
+
+    # Daily 04:00 IST — permanently archive families past their 30-day restore window
+    scheduler.add_job(
+        job_family_archive_expired,
+        CronTrigger(hour=4, minute=0),
+        id="family_archive_expired",
         replace_existing=True,
     )
 

@@ -1,0 +1,20 @@
+diff --git a/node_modules/react-native-push-notification/android/src/main/java/com/dieam/reactnativepushnotification/modules/RNPushNotificationHelper.java b/node_modules/react-native-push-notification/android/src/main/java/com/dieam/reactnativepushnotification/modules/RNPushNotificationHelper.java
+index 248ff08..09f2a9c 100644
+--- a/node_modules/react-native-push-notification/android/src/main/java/com/dieam/reactnativepushnotification/modules/RNPushNotificationHelper.java
++++ b/node_modules/react-native-push-notification/android/src/main/java/com/dieam/reactnativepushnotification/modules/RNPushNotificationHelper.java
+@@ -173,7 +173,14 @@ public class RNPushNotificationHelper {
+ 
+         Log.d(LOG_TAG, String.format("Setting a notification with id %s at time %s",
+                 bundle.getString("id"), Long.toString(fireDate)));
+-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
++        // On API 31+ (Android 12), setExact()/setExactAndAllowWhileIdle() throw
++        // SecurityException unless SCHEDULE_EXACT_ALARM is granted, which on
++        // API 33+ is off by default and requires the user to enable it via
++        // Settings. Fall back to an inexact alarm rather than crashing.
++        boolean canScheduleExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S
++                || getAlarmManager().canScheduleExactAlarms();
++
++        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT && canScheduleExact) {
+             if (allowWhileIdle && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                 getAlarmManager().setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, fireDate, pendingIntent);
+             } else {

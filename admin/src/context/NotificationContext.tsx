@@ -24,7 +24,7 @@ const SEEN_KEY = "notif_seen_ids";
 
 export interface NotifItem {
   id: string;                 // "pay_123" | "exp_45" | "col_67"
-  kind: "pending_verification" | "expense_approval" | "recent_collection" | "recent_donation";
+  kind: "pending_verification" | "expense_approval" | "recent_collection" | "recent_donation" | "account_deletion";
   ref_id: number;
   title: string;
   subtitle: string;
@@ -130,9 +130,11 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       setLoading(true);
       const list = await fetchNotifications();
 
-      // Any actionable item not seen before counts as unread.
+      // Any actionable item not seen before counts as unread. recent_collection
+      // and recent_donation are activity-feed entries with no resolve action —
+      // they'd otherwise sit unread forever with nothing for the admin to do.
       const newIds = list
-        .filter(n => n.kind !== "recent_collection" && !seenIdsRef.current.has(n.id))
+        .filter(n => n.kind !== "recent_collection" && n.kind !== "recent_donation" && !seenIdsRef.current.has(n.id))
         .map(n => n.id);
 
       // Record everything as seen now.
@@ -204,13 +206,19 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   // WebSocket
   const refreshRef = useRef(refresh);
   useEffect(() => { refreshRef.current = refresh; });
+  const fetchBadgeCountsRef = useRef(fetchBadgeCounts);
+  useEffect(() => { fetchBadgeCountsRef.current = fetchBadgeCounts; });
 
   useEffect(() => {
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
     const apiBase = (import.meta as any).env?.VITE_BACKEND_URL || "";
     const host = apiBase ? new URL(apiBase).host : window.location.host;
     const token = getAccessToken() || "";
-    const url = `${proto}://${host}/ws/finance${token ? `?token=${token}` : ""}`;
+    // /ws/finance only ever carried the "finance" channel — every "admin"
+    // channel event (new registrations, staff created, role changes) was
+    // silently invisible here regardless of what the backend published.
+    // /ws/events is the unified stream that carries every channel.
+    const url = `${proto}://${host}/ws/events${token ? `?token=${token}` : ""}`;
 
     let ws: WebSocket | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -235,6 +243,12 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
                "payment_collected", "dashboard_updated"].includes(msg.type)
             ) {
               refreshRef.current();
+            } else if (
+              ["registration_pending", "registration_approved", "registration_rejected"].includes(msg.type)
+            ) {
+              // Pending-registration count previously only updated on the 60s
+              // poll — this makes a new self-registration show up immediately.
+              fetchBadgeCountsRef.current();
             }
           } catch { /* ignore */ }
         };

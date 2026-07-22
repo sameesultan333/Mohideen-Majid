@@ -202,6 +202,7 @@ export default function HadithFeedScreen({ navigation, route }) {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [readIds, setReadIds] = useState([]);
+  const [readIdsLoaded, setReadIdsLoaded] = useState(false);
 
   const wsRef = useRef(null);
 
@@ -217,8 +218,24 @@ export default function HadithFeedScreen({ navigation, route }) {
       if (saved) {
         try { setReadIds(JSON.parse(saved)); } catch { setReadIds([]); }
       }
+      setReadIdsLoaded(true);
     });
   }, []);
+
+  // ─── Mark every currently-loaded hadith as read as soon as the feed is
+  // opened, so the Deen tab badge clears immediately instead of requiring
+  // a tap on each individual card. Waits for the stored read-ids to load
+  // first so this merge never clobbers ids read in a previous session.
+  useEffect(() => {
+    if (!readIdsLoaded || hadiths.length === 0) return;
+    setReadIds((prev) => {
+      const ids = hadiths.map((h) => h.id);
+      const merged = Array.from(new Set([...prev, ...ids]));
+      if (merged.length === prev.length) return prev;
+      AsyncStorage.setItem("read_hadiths", JSON.stringify(merged)).catch(() => {});
+      return merged;
+    });
+  }, [hadiths, readIdsLoaded]);
 
   // ─── Fetch (cache-first) ─────────────────────────────────────────────
   const fetchHadiths = useCallback(async (isRefresh = false) => {

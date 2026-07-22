@@ -53,6 +53,16 @@ class ApprovedHead(Base):
     collector_id     = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at       = Column(DateTime, default=datetime.utcnow)
 
+    # Deactivation / 30-day restore window / permanent archive.
+    # Row is NEVER physically deleted — is_deleted just hides it everywhere
+    # while ChandaCollection/PaymentEntry history keeps resolving against it.
+    deactivated_at      = Column(DateTime, nullable=True)
+    deactivated_until   = Column(DateTime, nullable=True)
+    deactivated_by_id   = Column(Integer, ForeignKey("users.id"), nullable=True)
+    deactivation_reason = Column(Text, nullable=True)
+    is_deleted          = Column(Boolean, default=False, nullable=False)
+    deleted_at          = Column(DateTime, nullable=True)
+
     collections = relationship("ChandaCollection", back_populates="head", cascade="all, delete-orphan")
     payments    = relationship("PaymentEntry",      back_populates="head",  foreign_keys="PaymentEntry.head_id")
 
@@ -107,6 +117,12 @@ class User(Base):
     approved_at     = Column(DateTime, nullable=True)
     # Security: admin-reset passwords require user to set a new one on next login
     must_change_password = Column(Boolean, default=False, nullable=False)
+
+    # Self-service account deletion (soft delete — never physically removed,
+    # so payment/donation/audit history linked to this user id stays intact)
+    is_deleted      = Column(Boolean, nullable=False, default=False)
+    deleted_at      = Column(DateTime, nullable=True)
+    deletion_reason = Column(Text, nullable=True)
 
     questions = relationship("Question",  back_populates="asker")
     donations = relationship("Donation",  back_populates="donor_user", foreign_keys="Donation.user_id")

@@ -18,6 +18,7 @@ interface AddFamilyData {
 interface Props {
   open: boolean;
   loading?: boolean;
+  existingChandaNos?: string[];
   onClose(): void;
   onSave(data: AddFamilyData): void;
 }
@@ -35,6 +36,7 @@ const LB: React.CSSProperties = {
 export default function AddFamilyModal({
   open,
   loading = false,
+  existingChandaNos = [],
   onClose,
   onSave,
 }: Props) {
@@ -49,11 +51,14 @@ export default function AddFamilyModal({
     existingFamily: false,
   });
   const [zones, setZones] = useState<string[]>([]);
+  const [zonesError, setZonesError] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    getZones().then(z => { if (!cancelled) setZones(z); }).catch(() => {});
+    getZones()
+      .then(z => { if (!cancelled) { setZones(z); setZonesError(false); } })
+      .catch(() => { if (!cancelled) setZonesError(true); });
     return () => { cancelled = true; };
   }, [open]);
 
@@ -67,6 +72,23 @@ export default function AddFamilyModal({
       ...prev,
       [key]: value,
     }));
+  };
+
+  // Chanda numbers must be unique across all families — catch a duplicate
+  // locally before it round-trips to the server's own uniqueness check.
+  const chandaTaken = form.chandaNo.trim() !== "" &&
+    existingChandaNos.some(cn => cn.trim().toUpperCase() === form.chandaNo.trim().toUpperCase());
+
+  // Existing chanda numbers are plain incrementing digits (e.g. "1489",
+  // "1628") — generate picks one past the current highest. Purely a
+  // convenience default; the field stays editable if the admin wants a
+  // specific number instead.
+  const generateChandaNo = () => {
+    const nums = existingChandaNos
+      .map(cn => parseInt(cn.trim(), 10))
+      .filter(n => !isNaN(n));
+    const next = nums.length > 0 ? Math.max(...nums) + 1 : 1001;
+    update("chandaNo", String(next));
   };
 
   // box-sizing: border-box is the fix that matters most here — without it,
@@ -184,11 +206,38 @@ export default function AddFamilyModal({
             forcing the whole modal taller than the viewport. */}
         <div style={{ padding: 24, overflowY: "auto", minHeight: 0, flex: 1 }}>
           <label style={LB}>Chanda Number</label>
-          <input
-            style={inputStyle}
-            value={form.chandaNo}
-            onChange={(e) => update("chandaNo", e.target.value)}
-          />
+          <div style={{ display: "flex", gap: 8, marginBottom: chandaTaken ? 6 : 16 }}>
+            <input
+              style={{ ...inputStyle, marginBottom: 0, flex: 1 }}
+              placeholder="Type a number or generate one"
+              value={form.chandaNo}
+              onChange={(e) => update("chandaNo", e.target.value)}
+            />
+            <button
+              type="button"
+              onClick={generateChandaNo}
+              style={{
+                flexShrink: 0,
+                height: 46,
+                padding: "0 16px",
+                borderRadius: 10,
+                border: `1px solid ${COLORS.primary}`,
+                background: COLORS.primaryLight,
+                color: COLORS.primary,
+                fontWeight: 700,
+                fontSize: 13,
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >
+              Generate
+            </button>
+          </div>
+          {chandaTaken && (
+            <div style={{ fontSize: 12, color: COLORS.danger, marginBottom: 16 }}>
+              This chanda number is already in use.
+            </div>
+          )}
 
           <label style={LB}>Head Name</label>
           <input
@@ -221,34 +270,18 @@ export default function AddFamilyModal({
 
           <label style={LB}>Zone</label>
           <input
-            style={inputStyle}
-            placeholder="Search or type a zone"
+            list="zone-options-add-family"
+            style={{ ...inputStyle, marginBottom: zonesError ? 6 : 16 }}
+            placeholder="Select or type a zone"
             value={form.zone}
             onChange={(e) => update("zone", e.target.value)}
           />
-          {zones.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: -10, marginBottom: 16 }}>
-              {zones
-                .filter(z => !form.zone || z.toLowerCase().includes(form.zone.toLowerCase()))
-                .map(z => (
-                  <button
-                    type="button"
-                    key={z}
-                    onClick={() => update("zone", z)}
-                    style={{
-                      padding: "5px 11px",
-                      borderRadius: 999,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      border: `1px solid ${form.zone === z ? COLORS.primary : COLORS.border}`,
-                      background: form.zone === z ? COLORS.primary : COLORS.backgroundAlt,
-                      color: form.zone === z ? "#fff" : COLORS.textSecondary,
-                    }}
-                  >
-                    {z}
-                  </button>
-                ))}
+          <datalist id="zone-options-add-family">
+            {zones.map(z => <option key={z} value={z} />)}
+          </datalist>
+          {zonesError && (
+            <div style={{ fontSize: 11, color: COLORS.danger, marginBottom: 16 }}>
+              Couldn't load the zone list — you can still type a zone manually.
             </div>
           )}
 
@@ -321,7 +354,7 @@ export default function AddFamilyModal({
           </button>
 
           <button
-            disabled={loading}
+            disabled={loading || chandaTaken}
             onClick={() => onSave(form)}
             style={{
               padding: "10px 22px",
@@ -331,8 +364,8 @@ export default function AddFamilyModal({
               border: "none",
               fontWeight: 700,
               fontSize: 14,
-              cursor: loading ? "not-allowed" : "pointer",
-              opacity: loading ? 0.7 : 1,
+              cursor: loading || chandaTaken ? "not-allowed" : "pointer",
+              opacity: loading || chandaTaken ? 0.7 : 1,
             }}
           >
             {loading ? "Saving..." : "Create Family"}

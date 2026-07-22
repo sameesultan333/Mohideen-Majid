@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Bell, CalendarDays, Menu, Receipt, RefreshCw, X, CheckCircle, XCircle, Wallet, Clock } from "lucide-react";
+import { Bell, CalendarDays, Menu, Receipt, RefreshCw, X, CheckCircle, XCircle, Wallet, Clock, UserX } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { COLORS } from "../../theme/colors";
 import { getCurrentUser } from "../../api/auth";
@@ -60,6 +60,7 @@ const KIND_META: Record<NotifItem["kind"], { label: string; dot: string; icon: t
   expense_approval:     { label: "Expense",   dot: "#B07A1E", icon: Wallet },
   recent_collection:    { label: "Collected", dot: COLORS.primary, icon: CheckCircle },
   recent_donation:      { label: "Donation",  dot: "#6B3FA0", icon: Wallet },
+  account_deletion:     { label: "Account Deleted", dot: "#5B6660", icon: UserX },
 };
 
 // ─── Single notification row ──────────────────────────────────

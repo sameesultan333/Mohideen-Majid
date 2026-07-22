@@ -14,7 +14,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, case
+from sqlalchemy import func, case, or_
 from sqlalchemy.orm import Session
 
 from app import models, schemas
@@ -22,6 +22,7 @@ from app.database import SessionLocal
 from app.security import get_current_user, require_admin, require_collector, require_superadmin
 from app.utils.timezones import india_month_key, utc_now, to_india
 from app.websocket_manager import manager
+from app.services.audit_service import AuditAction
 
 router = APIRouter(prefix="/finance", tags=["Finance"])
 
@@ -96,13 +97,25 @@ def finance_dashboard(
     ).count()
 
     # ── Current-month chanda (SQL aggregation) ────────────────
+    # "Expected" (amount_due) excludes families deactivated before paying —
+    # already-paid amounts always count regardless of current active status
+    # ("received amount unchanged"), so the exclusion only applies when the
+    # row is still pending/partial.
+    # Same is_active-or-paid condition used for both the row count and the
+    # due-amount sum below — a deactivated family's still-existing pending
+    # row must not inflate the Pending count either, or "Pending" ends up
+    # higher than the actual number of families.
+    _active_or_paid = or_(models.ApprovedHead.is_active.is_(True), models.ChandaCollection.status == "paid")
     _chanda_agg = (
         db.query(
             models.ChandaCollection.status,
-            func.count(models.ChandaCollection.id),
-            func.coalesce(func.sum(models.ChandaCollection.amount_due), 0.0),
+            func.count(case((_active_or_paid, models.ChandaCollection.id), else_=None)),
+            func.coalesce(func.sum(
+                case((_active_or_paid, models.ChandaCollection.amount_due), else_=0)
+            ), 0.0),
             func.coalesce(func.sum(models.ChandaCollection.total_paid), 0.0),
         )
+        .join(models.ApprovedHead, models.ApprovedHead.id == models.ChandaCollection.head_id)
         .filter(models.ChandaCollection.month == target_month)
         .group_by(models.ChandaCollection.status)
         .all()
@@ -360,6 +373,59 @@ def _count_defaulters(db: Session, threshold_months: int) -> int:
         .having(func.count(models.ChandaCollection.id) >= threshold_months)
         .count()
     )
+
+
+# ─────────────────────────────────────────────────────────────
+# COLLECTION TRENDS  (weekly rolling window / yearly monthly totals)
+# ─────────────────────────────────────────────────────────────
+
+@router.get("/collections/weekly")
+def weekly_collections(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_admin),
+):
+    """Rolling last-7-calendar-days collection total, grouped by the actual
+    date money was received (not record-creation date), so it crosses month
+    boundaries naturally — it's real date arithmetic, not a month-key string."""
+    paid_date = func.coalesce(models.PaymentEntry.collected_at, models.PaymentEntry.created_at)
+    end = to_india(utc_now()).date()
+    start = end - timedelta(days=6)
+
+    rows = (
+        db.query(func.date(paid_date).label("d"), func.sum(models.PaymentEntry.amount))
+        .filter(models.PaymentEntry.status == "verified")
+        .filter(func.date(paid_date) >= start, func.date(paid_date) <= end)
+        .group_by("d")
+        .all()
+    )
+    by_day = {str(d): float(total) for d, total in rows}
+    return [
+        {"date": str(start + timedelta(days=i)), "amount": by_day.get(str(start + timedelta(days=i)), 0.0)}
+        for i in range(7)
+    ]
+
+
+@router.get("/collections/yearly")
+def yearly_collections(
+    year: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_admin),
+):
+    """12 monthly totals (Jan-Dec) for the given year, defaulting to the
+    current year. Always returns all 12 slots, zero-filled for months with
+    no payments — never omits an empty month."""
+    paid_date = func.coalesce(models.PaymentEntry.collected_at, models.PaymentEntry.created_at)
+    target_year = year or to_india(utc_now()).year
+
+    rows = (
+        db.query(func.extract("month", paid_date).label("m"), func.sum(models.PaymentEntry.amount))
+        .filter(models.PaymentEntry.status == "verified")
+        .filter(func.extract("year", paid_date) == target_year)
+        .group_by("m")
+        .all()
+    )
+    by_month = {int(m): float(total) for m, total in rows}
+    return {"year": target_year, "months": [by_month.get(m, 0.0) for m in range(1, 13)]}
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1771,8 +1837,45 @@ def get_notifications(
             "can_act": can_act,
         })
 
+    # ── 5. Recent self-service account deletions (last 24 h) ─────
+    # Informational only (nothing to action) — same shape as recent_collection/
+    # recent_donation. Sourced from the audit trail rather than a new table,
+    # since USER_ACCOUNT_DELETED is already logged there by /auth/delete-account.
+    recent_deletions = (
+        db.query(models.AuditLog)
+        .filter(
+            models.AuditLog.action == AuditAction.USER_ACCOUNT_DELETED,
+            models.AuditLog.performed_at >= since_24h,
+        )
+        .order_by(models.AuditLog.performed_at.desc())
+        .limit(10)
+        .all()
+    )
+    for log in recent_deletions:
+        new_values = log.new_values or {}
+        user_name = new_values.get("user_name") or log.user_fullname or "A user"
+        chanda_no = new_values.get("chanda_no")
+        results.append({
+            "id": f"del_{log.id}",
+            "kind": "account_deletion",
+            "ref_id": log.record_id,
+            "title": user_name,
+            "subtitle": "User requested account deletion" + (f" · Chanda No. {chanda_no}" if chanda_no else ""),
+            "amount": 0.0,
+            "method": None,
+            "proof_image": None,
+            "payer_name": user_name,
+            "paid_by_name": None,
+            "head_id": None,
+            "covered_months": [],
+            "receipt_id": None,
+            "created_at": log.performed_at.isoformat() + "Z" if log.performed_at else None,
+            "actionable": False,
+            "can_act": False,
+        })
+
     # Sort: pending_verification first, then expense_approval, then recent
-    kind_order = {"pending_verification": 0, "expense_approval": 1, "recent_collection": 2, "recent_donation": 2}
+    kind_order = {"pending_verification": 0, "expense_approval": 1, "recent_collection": 2, "recent_donation": 2, "account_deletion": 2}
     results.sort(key=lambda x: (kind_order.get(x["kind"], 9), x.get("created_at") or ""))
     return results
 

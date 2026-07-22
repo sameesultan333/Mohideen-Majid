@@ -38,7 +38,7 @@ def _notify_admins_background(title: str, body: str, data: dict):
     request-scoped session from get_db() is already closed by then."""
     bg_db = SessionLocal()
     try:
-        notify_role(bg_db, "admin", title=title, body=body, data=data)
+        notify_role(bg_db, ["admin", "superadmin"], title=title, body=body, data=data)
     finally:
         bg_db.close()
 

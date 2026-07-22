@@ -1,6 +1,6 @@
 # backend/app/routes/admin.py
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 
 import pandas as pd
@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.database import SessionLocal
 from app.models import UserStatus
-from app.security import require_admin, require_superadmin, require_admin_or_collector
+from app.security import require_admin, require_superadmin, require_admin_or_collector, verify_password
 from app.services.audit_service import AuditAction, log_action
 from app.services.registration_service import RegistrationApprovalService
 from app.utils.fcm import notify_user
@@ -357,7 +357,7 @@ def list_families(
     db: Session = Depends(get_db),
     current_user=Depends(require_admin_or_collector),
 ):
-    q = db.query(models.ApprovedHead)
+    q = db.query(models.ApprovedHead).filter(models.ApprovedHead.is_deleted.is_(False))
     if active_only:
         q = q.filter_by(is_active=True)
     if search:
@@ -513,13 +513,20 @@ def activate_family(
     db: Session = Depends(get_db),
     current_user=Depends(require_admin),
 ):
+    """Restore a deactivated family. No password required — restoring isn't
+    destructive, unlike deactivation."""
     head = db.query(models.ApprovedHead).filter_by(id=family_id).first()
     if not head:
         raise HTTPException(404, "Family not found")
     head.is_active = True
-    write_audit(db, "approved_heads", head.id, "update",
+    head.deactivated_at = None
+    head.deactivated_until = None
+    head.deactivated_by_id = None
+    head.deactivation_reason = None
+    write_audit(db, "approved_heads", head.id, AuditAction.FAMILY_RESTORED,
                 new_values={"is_active": True},
-                performed_by_id=_actor_id(current_user))
+                performed_by_id=_actor_id(current_user),
+                note=f"Restored {head.name} ({head.chanda_no})")
     db.commit()
     manager.publish_sync("finance", "family_updated", {"family_id": head.id, "is_active": True})
     return {"message": f"Family {head.chanda_no} activated"}
@@ -528,16 +535,32 @@ def activate_family(
 @router.patch("/families/{family_id}/deactivate")
 def deactivate_family(
     family_id: int,
+    payload: schemas.ConfirmPassword,
     db: Session = Depends(get_db),
     current_user=Depends(require_admin),
 ):
+    """Deactivate a family — sensitive/destructive action, requires the
+    acting admin to re-enter their own current password. The family is
+    restorable for 30 days before the scheduled archive job permanently
+    hides it (see job_family_archive_expired in scheduler.py)."""
+    actor = db.query(models.User).filter_by(id=_actor_id(current_user)).first()
+    if not actor or not actor.password or not verify_password(payload.password, actor.password):
+        raise HTTPException(401, "Incorrect password")
+
     head = db.query(models.ApprovedHead).filter_by(id=family_id).first()
     if not head:
         raise HTTPException(404, "Family not found")
+    now = datetime.utcnow()
     head.is_active = False
-    write_audit(db, "approved_heads", head.id, "update",
-                new_values={"is_active": False},
-                performed_by_id=_actor_id(current_user))
+    head.deactivated_at = now
+    head.deactivated_until = now + timedelta(days=30)
+    head.deactivated_by_id = actor.id
+    head.deactivation_reason = payload.reason
+    write_audit(db, "approved_heads", head.id, AuditAction.FAMILY_DEACTIVATED,
+                new_values={"is_active": False, "reason": payload.reason},
+                performed_by_id=actor.id,
+                note=f"Deactivated {head.name} ({head.chanda_no}) by {actor.name}"
+                     + (f" — reason: {payload.reason}" if payload.reason else ""))
     db.commit()
     manager.publish_sync("finance", "family_updated", {"family_id": head.id, "is_active": False})
     return {"message": f"Family {head.chanda_no} deactivated"}
@@ -546,11 +569,12 @@ def deactivate_family(
 @router.delete("/families/{family_id}")
 def disable_family(
     family_id: int,
+    payload: schemas.ConfirmPassword,
     db: Session = Depends(get_db),
     current_user=Depends(require_admin),
 ):
     """Alias for deactivate — kept for backward compat."""
-    return deactivate_family(family_id, db, current_user)
+    return deactivate_family(family_id, payload, db, current_user)
 
 
 @router.get("/families/{family_id}/history")

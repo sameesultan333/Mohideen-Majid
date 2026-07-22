@@ -101,6 +101,12 @@ def hash_refresh_token(token: str) -> str:
 # ✅ SESSION MANAGEMENT
 # ─────────────────────────────────────────────────────────────
 
+def _session_platform(login_type: str | None) -> str:
+    """admin_login is the only web-dashboard login_type — everything else
+    (login, *_register, password_change) is the mobile app."""
+    return "web" if login_type == "admin_login" else "mobile"
+
+
 def create_user_session(
     db: Session,
     user_id: int,
@@ -113,15 +119,21 @@ def create_user_session(
     login_type=None,
     session_days: int = None,
 ) -> models.UserSession:
-    # Enforce max concurrent sessions — revoke oldest if over the limit.
+    # Enforce max concurrent sessions PER PLATFORM — revoke oldest if over the
+    # limit. Web and mobile used to share one pool, so repeatedly logging into
+    # the admin dashboard could silently evict a still-in-use mobile session
+    # (and vice versa) for the same account. Each platform now gets its own
+    # 5-session budget.
+    this_platform = _session_platform(login_type)
     active_sessions = (
         db.query(models.UserSession)
         .filter_by(user_id=user_id, is_active=True)
         .order_by(models.UserSession.last_used_at.asc())
         .all()
     )
-    if len(active_sessions) >= MAX_SESSIONS_PER_USER:
-        oldest = active_sessions[0]
+    active_same_platform = [s for s in active_sessions if _session_platform(s.login_type) == this_platform]
+    if len(active_same_platform) >= MAX_SESSIONS_PER_USER:
+        oldest = active_same_platform[0]
         oldest.is_active = False
         oldest.revoked_at = datetime.utcnow()
         db.flush()

@@ -246,7 +246,12 @@
     "logoutTitle": "Logout",
     "logoutMessage": "Are you sure you want to logout from your account?",
     "logoutCancel": "Cancel",
-    "logoutConfirm": "Logout"
+    "logoutConfirm": "Logout",
+    "deleteAccount": "Delete Account",
+    "deleteAccountWarningTitle": "Delete Account",
+    "deleteAccountWarningMessage": "Deleting your account is permanent and cannot be undone. Your family's chanda record and any other linked family member accounts will be removed along with it. Your chanda and donation history will be kept for accounting purposes, but your login, family record, and profile will be permanently removed.",
+    "deleteAccountCancel": "Cancel",
+    "deleteAccountConfirm": "Continue"
   },
   "announcement": {
     "title": "Announcements",
@@ -858,6 +863,39 @@
     "errorSame": "New password must be different from your current password.",
     "errorNetwork": "Cannot reach server. Check your connection.",
     "errorGeneric": "Failed to change password."
+  },
+  "deleteAccount": {
+    "title": "Delete Account",
+    "sectionTitle": "Delete Account",
+    "intro": "Deleting your account is permanent. Please review what happens before continuing.",
+    "removedTitle": "The following data will be removed",
+    "removedList": [
+      "Profile information",
+      "Login credentials",
+      "Device notification tokens",
+      "Personal account information",
+      "Your family's chanda record (no longer counted or visible to the mosque committee)",
+      "Any other family member accounts linked to the same family"
+    ],
+    "retainedTitle": "The following information may be retained",
+    "retainedList": [
+      "Chanda payment history",
+      "Donation history",
+      "Financial transaction records",
+      "Audit logs"
+    ],
+    "retainedNote": "These records are retained only for accounting, legal, fraud prevention and audit purposes.",
+    "reasonLabel": "Reason for deletion (optional)",
+    "reasonPlaceholder": "Let us know why you're leaving...",
+    "passwordLabel": "Current Password",
+    "cancel": "Cancel",
+    "confirm": "Delete Account",
+    "successTitle": "Account Deleted",
+    "successMessage": "Your account has been permanently deleted and you have been logged out of all devices.",
+    "ok": "OK",
+    "errorPassword": "Enter your current password to confirm.",
+    "errorNetwork": "Cannot reach server. Check your connection.",
+    "errorGeneric": "Failed to delete account."
   },
   "familyEdit": {
     "title": "Edit Family",

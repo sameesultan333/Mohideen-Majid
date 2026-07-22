@@ -31,7 +31,12 @@ def get_users(
     db: Session = Depends(get_db),
     user: dict = Depends(require_admin),
 ):
-    return db.query(models.User).order_by(models.User.created_at.desc()).all()
+    return (
+        db.query(models.User)
+        .filter(models.User.is_deleted == False)
+        .order_by(models.User.created_at.desc())
+        .all()
+    )
 
 
 # ── GET single user ──────────────────────────────────────────────────────────────

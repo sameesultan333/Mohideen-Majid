@@ -7,6 +7,7 @@ interface DeleteStaffDialogProps {
   onConfirm: () => Promise<void>;
   staffName: string;
   staffRole: string;
+  title?: string;
 }
 
 const styles: Record<string, React.CSSProperties> = {
@@ -120,6 +121,7 @@ const DeleteStaffDialog: React.FC<DeleteStaffDialogProps> = ({
   onConfirm,
   staffName,
   staffRole,
+  title = "Delete Staff Account",
 }) => {
   const [loading, setLoading] = useState(false);
 
@@ -142,7 +144,7 @@ const DeleteStaffDialog: React.FC<DeleteStaffDialogProps> = ({
     <div style={styles.overlay} onClick={onClose}>
       <div style={styles.dialog} onClick={(e) => e.stopPropagation()}>
         <div style={styles.icon}>⚠️</div>
-        <h2 style={styles.title}>Delete Staff Account</h2>
+        <h2 style={styles.title}>{title}</h2>
         <p style={styles.description}>
           You are about to delete <span style={styles.highlight}>{staffName}</span>{" "}
           ({roleDisplay}). This action is <strong>permanent</strong> and cannot be undone.

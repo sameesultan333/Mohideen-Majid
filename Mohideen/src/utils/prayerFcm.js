@@ -16,7 +16,7 @@ function showImmediateNotification({ channelId, title, message, soundName, setti
     soundName: settings.soundEnabled ? soundName : undefined,
     vibrate: settings.vibrationEnabled,
     smallIcon: 'ic_notification',
-    color: '#1B5E20',
+    color: '#D4AF37',
     userInfo: { prayerKey, type: notifType },
   });
 }

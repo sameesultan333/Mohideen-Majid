@@ -17,9 +17,8 @@ import {
   Alert,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { getToken, deleteToken, deleteRefreshToken } from "../utils/secureStorage";
-import messaging, { getToken as getFcmToken } from "@react-native-firebase/messaging";
-import { deregisterDevice } from "../utils/fcmRegistration";
+import { getToken } from "../utils/secureStorage";
+import { clearAuthSession } from "../utils/authSession";
 import { changeAppLanguage } from "../localization/languages";
 import { useTranslation } from "react-i18next";
 import Svg, { Path, Rect, Defs, LinearGradient, Stop } from "react-native-svg";
@@ -101,6 +100,19 @@ const LockIcon = memo(({ color = H.white, size = 22 }) => (
 const LogoutIcon = memo(({ color = H.white, size = 22 }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24">
     <Path d="M8 8 L16 8 M12 2 L12 12 M4 16 L4 20 L20 20 L20 16" stroke={color} strokeWidth={1.8} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+));
+
+const TrashIcon = memo(({ color = H.error, size = 20 }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path
+      d="M4 7 L20 7 M9 7 L9 4 L15 4 L15 7 M7 7 L7.5 20 C7.5 20.55 7.95 21 8.5 21 L15.5 21 C16.05 21 16.5 20.55 16.5 20 L17 7 M10 11 L10 17 M14 11 L14 17"
+      stroke={color}
+      strokeWidth={1.6}
+      fill="none"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
   </Svg>
 ));
 
@@ -393,20 +405,7 @@ export default function ProfileScreen({ navigation, route }) {
   const onRefresh = () => loadUser(true);
 
   const doLogout = async () => {
-    // Best-effort FCM deregistration with a 3s timeout — never block logout
-    try {
-      const fcm = messaging();
-      const userRaw = await AsyncStorage.getItem("user");
-      const userObj = userRaw ? JSON.parse(userRaw) : null;
-      const fcmToken = await Promise.race([
-        getFcmToken(fcm),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 3000)),
-      ]).catch(() => null);
-      if (fcmToken) deregisterDevice(fcm, fcmToken, userObj?.role).catch(() => {});
-    } catch {}
-    await deleteToken();
-    await deleteRefreshToken();
-    await AsyncStorage.multiRemove(["user", "chanda_summary"]);
+    await clearAuthSession();
     navigation.replace("Login");
   };
 
@@ -417,6 +416,17 @@ export default function ProfileScreen({ navigation, route }) {
       [
         { text: t("profile.logoutCancel"), style: "cancel" },
         { text: t("profile.logoutConfirm"), style: "destructive", onPress: doLogout },
+      ],
+    );
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      t("profile.deleteAccountWarningTitle"),
+      t("profile.deleteAccountWarningMessage"),
+      [
+        { text: t("profile.deleteAccountCancel"), style: "cancel" },
+        { text: t("profile.deleteAccountConfirm"), style: "destructive", onPress: () => navigation.navigate("DeleteAccount") },
       ],
     );
   };
@@ -591,6 +601,15 @@ export default function ProfileScreen({ navigation, route }) {
               <LogoutIcon color={H.error} size={20} />
               <Text style={styles.logoutText}>{t("profile.logout")}</Text>
             </TouchableOpacity>
+            {user.role !== "superadmin" && (
+              <>
+                <View style={{ height: 10 }} />
+                <TouchableOpacity style={styles.logoutRow} onPress={handleDeleteAccount} activeOpacity={0.75}>
+                  <TrashIcon color={H.error} size={18} />
+                  <Text style={styles.logoutText}>{t("profile.deleteAccount")}</Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         </View>
 

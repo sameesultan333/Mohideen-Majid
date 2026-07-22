@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import io
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models
 from app.security import require_superadmin, require_admin
+from app.utils.timezones import to_india, utc_now
 
 from sqlalchemy import text as _sql_text
 
@@ -213,19 +214,28 @@ def list_audit_logs(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_admin),
 ):
+    # Same IST-vs-UTC boundary issue as audit_stats() below: performed_at is
+    # naive UTC, but "Today"/"Yesterday"/etc. must mean the IST calendar day,
+    # not the UTC one — otherwise everything before ~5:30 AM IST lands in the
+    # wrong bucket. Compute boundaries in IST, then convert back to naive UTC.
     now = datetime.utcnow()
+    now_ist = to_india(now)
+
+    def _ist_to_utc_naive(dt_ist: datetime) -> datetime:
+        return dt_ist.astimezone(timezone.utc).replace(tzinfo=None)
+
     if today:
-        date_from = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        date_from = _ist_to_utc_naive(now_ist.replace(hour=0, minute=0, second=0, microsecond=0))
         date_to   = now
     elif yesterday:
-        d = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-        date_from = d
-        date_to   = d.replace(hour=23, minute=59, second=59)
+        d_ist = (now_ist - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        date_from = _ist_to_utc_naive(d_ist)
+        date_to   = _ist_to_utc_naive(d_ist.replace(hour=23, minute=59, second=59))
     elif this_week:
-        date_from = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+        date_from = _ist_to_utc_naive((now_ist - timedelta(days=now_ist.weekday())).replace(hour=0, minute=0, second=0, microsecond=0))
         date_to   = now
     elif this_month:
-        date_from = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        date_from = _ist_to_utc_naive(now_ist.replace(day=1, hour=0, minute=0, second=0, microsecond=0))
         date_to   = now
 
     q = _build_query(db, search, module, role, status, date_from, date_to, action, performed_by_id)
@@ -256,8 +266,15 @@ def audit_stats(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_admin),
 ):
-    now = datetime.utcnow()
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    # "Today" must mean the current IST calendar day, not the current UTC
+    # calendar day — performed_at is stored as naive UTC, and IST is UTC+5:30,
+    # so bucketing by UTC midnight misattributed anything logged between
+    # midnight and ~5:30 AM IST to the previous day's "Today" count (and
+    # conversely counted the same window from the day before as still
+    # "today"). Compute IST midnight, then convert back to naive UTC to
+    # compare against the naive-UTC performed_at column.
+    ist_midnight = to_india(utc_now()).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = ist_midnight.astimezone(timezone.utc).replace(tzinfo=None)
 
     # Fetch today's logs in one query; Python-side grouping handles NULL module
     # (existing records written before this version have module=NULL — fall back to table_name inference)

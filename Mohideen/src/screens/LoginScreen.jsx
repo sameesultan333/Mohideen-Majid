@@ -89,12 +89,19 @@ const RingBg = memo(({ size = 168 }) => {
   );
 });
 
-export default function LoginScreen({ navigation }) {
+export default function LoginScreen({ navigation, route }) {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(route?.params?.sessionExpired ? "Session expired, please sign in again." : "");
   const [forgotVisible, setForgotVisible] = useState(false);
+
+  // Clear the param once shown so backgrounding/resuming the app (or a later,
+  // deliberate logout that also lands on this screen) never re-shows a stale
+  // "session expired" message.
+  useEffect(() => {
+    if (route?.params?.sessionExpired) navigation.setParams({ sessionExpired: undefined });
+  }, []);
 
   const bgOpacity    = useRef(new Animated.Value(0)).current;
   const ringScale    = useRef(new Animated.Value(0.7)).current;

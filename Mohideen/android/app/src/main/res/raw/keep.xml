@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Protects the custom notification sounds from Android's resource shrinker.
+
+  build.gradle has `shrinkResources true`, which strips any resource it can't
+  find a static reference to. These sounds are referenced ONLY through runtime
+  string URIs (android.resource://<pkg>/raw/adhan, .../raw/start_prayer) in
+  MainApplication.kt / IqamahSchedulerModule.kt / PrayerNotificationService.js
+  — the shrinker cannot see string-based references, so in a RELEASE build it
+  removes/dummies these files and the notifications fire silently. Debug builds
+  don't shrink, which is exactly why the sound works over USB debugging but not
+  in the release APK.
+
+  Uses tools:keep only (default "safe" shrink mode) — this force-keeps just
+  these three sounds while every other resource still shrinks normally. We do
+  NOT set shrinkMode="strict" on purpose: strict mode would additionally drop
+  resources this React Native app looks up dynamically elsewhere.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@raw/adhan,@raw/start_prayer,@raw/notification" />

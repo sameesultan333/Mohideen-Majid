@@ -107,6 +107,14 @@ def ensure_columns():
         "ALTER TABLE approved_heads ADD COLUMN IF NOT EXISTS is_registered BOOLEAN DEFAULT FALSE",
         "ALTER TABLE approved_heads ADD COLUMN IF NOT EXISTS registration_date TIMESTAMP WITHOUT TIME ZONE",
 
+        # approved_heads — deactivation / 30-day restore window / permanent archive
+        "ALTER TABLE approved_heads ADD COLUMN IF NOT EXISTS deactivated_at TIMESTAMP WITHOUT TIME ZONE",
+        "ALTER TABLE approved_heads ADD COLUMN IF NOT EXISTS deactivated_until TIMESTAMP WITHOUT TIME ZONE",
+        "ALTER TABLE approved_heads ADD COLUMN IF NOT EXISTS deactivated_by_id INTEGER REFERENCES users(id)",
+        "ALTER TABLE approved_heads ADD COLUMN IF NOT EXISTS deactivation_reason TEXT",
+        "ALTER TABLE approved_heads ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE approved_heads ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITHOUT TIME ZONE",
+
         # payment_entries — new audit columns
         "ALTER TABLE payment_entries ADD COLUMN IF NOT EXISTS verified_by_user_id INTEGER REFERENCES users(id)",
 
@@ -325,6 +333,12 @@ def ensure_columns():
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP WITHOUT TIME ZONE",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE",
         "CREATE INDEX IF NOT EXISTS idx_users_status ON users(status)",
+
+        # users — self-service account deletion (soft delete)
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITHOUT TIME ZONE",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS deletion_reason TEXT",
+        "CREATE INDEX IF NOT EXISTS idx_users_is_deleted ON users(is_deleted)",
 
         # collector_cash_submissions table
         """CREATE TABLE IF NOT EXISTS collector_cash_submissions (

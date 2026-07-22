@@ -1,9 +1,20 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
-apply plugin: 'com.google.gms.google-services'
+apply plugin: "com.google.gms.google-services"
+
 apply from: file("../../node_modules/@react-native-community/cli-platform-android/native_modules.gradle")
 applyNativeModulesAppBuildGradle(project)
+
+import java.util.Properties
+
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file("key.properties")
+
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace "com.mohideen"
     compileSdkVersion rootProject.ext.compileSdkVersion
@@ -12,16 +23,25 @@ android {
         applicationId "com.mohideen"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 4
+        versionName "4.0"
     }
 
     signingConfigs {
         debug {
-            storeFile file('debug.keystore')
-            storePassword 'android'
-            keyAlias 'androiddebugkey'
-            keyPassword 'android'
+            storeFile file("debug.keystore")
+            storePassword "android"
+            keyAlias "androiddebugkey"
+            keyPassword "android"
+        }
+
+        release {
+            if (keystorePropertiesFile.exists()) {
+                storeFile file(keystoreProperties["storeFile"])
+                storePassword keystoreProperties["storePassword"]
+                keyAlias keystoreProperties["keyAlias"]
+                keyPassword keystoreProperties["keyPassword"]
+            }
         }
     }
 
@@ -29,12 +49,32 @@ android {
         debug {
             signingConfig signingConfigs.debug
         }
+
         release {
-            // TODO: replace signingConfigs.debug with your production keystore before Play submission
-            signingConfig signingConfigs.debug
-            minifyEnabled true               // R8 code shrinking
-            shrinkResources true             // remove unused resources
-            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+            signingConfig signingConfigs.release
+
+            minifyEnabled true
+            shrinkResources true
+
+            proguardFiles(
+                    getDefaultProguardFile("proguard-android-optimize.txt"),
+                    "proguard-rules.pro"
+            )
+
+            // Play Console needs this to symbolicate native crashes/ANRs (Hermes +
+            // any native-module .so files bundled from React Native/RN libraries).
+            // Setting this embeds the debug symbols directly in the .aab itself
+            // (BUNDLE-METADATA/com.android.tools.build.debugsymbols/) — Play
+            // Console picks them up automatically from a normal `bundleRelease`
+            // upload, no separate manual upload step needed. SYMBOL_TABLE (not
+            // FULL) is Google's own recommended default: it's enough to resolve
+            // function names in crash/ANR stack traces without the much larger
+            // full-debug-info payload FULL would produce, which isn't needed here
+            // since this app has no custom NDK/C++ modules of its own — every
+            // native .so comes from prebuilt RN/Hermes/library AARs.
+            ndk {
+                debugSymbolLevel 'SYMBOL_TABLE'
+            }
         }
     }
 
@@ -45,6 +85,11 @@ android {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_11
         targetCompatibility JavaVersion.VERSION_11
+        // compileSdk/targetSdk 35 means Kotlin resolves List.removeLast() (used
+        // internally by react-native-screens) to the java.util.List default
+        // method added in API 35 — without desugaring this throws
+        // NoSuchMethodError on any device below Android 15.
+        coreLibraryDesugaringEnabled true
     }
 
     kotlinOptions {
@@ -56,4 +101,5 @@ dependencies {
     implementation("com.facebook.react:react-native:0.72.6")
     implementation("com.facebook.react:hermes-android")
     implementation("androidx.work:work-runtime-ktx:2.9.0")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 }

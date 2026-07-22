@@ -10,6 +10,7 @@ export interface Family {
   name: string;
   phone: string;
   address?: string;
+  zone?: string;
   monthly_amount: number;
   registration_date?: string;
   is_active: boolean;
@@ -21,6 +22,7 @@ export interface AddFamilyRequest {
   name: string;
   phone: string;
   address?: string;
+  zone?: string;
   monthly_amount: number;
   registration_date?: string;
   historical_payments?: Record<string, number>;
@@ -141,6 +143,28 @@ export interface FinanceDashboard {
 export async function getDashboard(month?: string) {
   const { data } = await api.get<FinanceDashboard>("/finance/dashboard", {
     params: month ? { month } : undefined,
+  });
+  return data;
+}
+
+export interface WeeklyCollectionDay {
+  date: string;
+  amount: number;
+}
+
+export async function getWeeklyCollections() {
+  const { data } = await api.get<WeeklyCollectionDay[]>("/finance/collections/weekly");
+  return data;
+}
+
+export interface YearlyCollections {
+  year: number;
+  months: number[];
+}
+
+export async function getYearlyCollections(year?: number) {
+  const { data } = await api.get<YearlyCollections>("/finance/collections/yearly", {
+    params: year ? { year } : undefined,
   });
   return data;
 }

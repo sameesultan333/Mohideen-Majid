@@ -663,6 +663,25 @@ export default function QAViewerScreen({ navigation, route }) {
     fetchQAs();
   }, []);
 
+  // ─── Mark every currently-loaded answered question as read as soon as
+  // this screen is opened, so the Deen tab "answered" badge clears
+  // immediately instead of never (there was previously no write path for
+  // "read_questions" at all — only deenUnread.js/DeenScreen read it).
+  useEffect(() => {
+    if (qas.length === 0) return;
+    (async () => {
+      try {
+        const saved = await AsyncStorage.getItem("read_questions");
+        const existing = saved ? JSON.parse(saved) : [];
+        const ids = qas.map((q) => q.id);
+        const merged = Array.from(new Set([...existing, ...ids]));
+        if (merged.length !== existing.length) {
+          await AsyncStorage.setItem("read_questions", JSON.stringify(merged));
+        }
+      } catch {}
+    })();
+  }, [qas]);
+
   // ─── Handlers ──────────────────────────────────────────────────────
   const handleToggleExpand = useCallback((id) => {
     setExpandedId((prev) => (prev === id ? null : id));

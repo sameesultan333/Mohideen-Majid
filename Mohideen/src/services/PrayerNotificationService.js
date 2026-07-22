@@ -416,7 +416,7 @@ class PrayerNotificationService {
         vibrate: this.settings.vibrationEnabled,
         playSound: this.settings.soundEnabled,
         smallIcon: 'ic_notification',
-        color: '#1B5E20',
+        color: '#D4AF37',
         userInfo: { prayerKey, type, prayerName, scheduledFor: notificationDate.toISOString() },
       });
     } catch (error) {

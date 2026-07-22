@@ -7,7 +7,10 @@ import {
   WifiOff,
 } from "lucide-react";
 import { COLORS, TYPOGRAPHY } from "../../theme/colors";
-import { getDashboard, type FinanceDashboard } from "../../api/chanda";
+import {
+  getDashboard, getWeeklyCollections, getYearlyCollections,
+  type FinanceDashboard, type WeeklyCollectionDay,
+} from "../../api/chanda";
 import { getAccessToken } from "../../api/auth";
 import { cachedFetch, formatCacheAge } from "../../utils/offlineCache";
 
@@ -104,6 +107,123 @@ function MethodBar({ cash, upi, other, total }: { cash: number; upi: number; oth
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ─── Weekly / Yearly collection bar charts ─────────────────────────────
+// Hand-rolled divs (no charting library installed in this app) — bars are
+// just height-percentage <div>s anchored to the bottom of a fixed-height row,
+// following the same plain-div convention as MethodBar above.
+function BarChart({ bars, max }: { bars: { label: string; sub?: string; amount: number }[]; max: number }) {
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 90, marginBottom: 8 }}>
+        {bars.map((b, i) => (
+          <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: "100%" }}>
+            {b.amount > 0 && (
+              <div style={{ fontSize: 9, color: COLORS.textMuted, marginBottom: 3, whiteSpace: "nowrap" }}>
+                {fmt(b.amount)}
+              </div>
+            )}
+            <div style={{
+              width: "70%",
+              height: `${Math.max((b.amount / max) * 100, b.amount > 0 ? 4 : 1.5)}%`,
+              background: b.amount > 0 ? COLORS.primary : COLORS.divider,
+              borderRadius: "4px 4px 0 0",
+              transition: "height 0.3s",
+            }} />
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 6 }}>
+        {bars.map((b, i) => (
+          <div key={i} style={{ flex: 1, textAlign: "center" }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: COLORS.textSecondary }}>{b.label}</div>
+            {b.sub && <div style={{ fontSize: 9, color: COLORS.textMuted }}>{b.sub}</div>}
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function WeeklyCollectionCard() {
+  const [days, setDays] = useState<WeeklyCollectionDay[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getWeeklyCollections().then(setDays).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  const max = Math.max(1, ...days.map((d) => d.amount));
+  const bars = days.map((d) => {
+    const dt = new Date(d.date + "T00:00:00");
+    return {
+      label: dt.toLocaleDateString("en-IN", { weekday: "short" }),
+      sub: dt.toLocaleDateString("en-IN", { day: "numeric", month: "short" }),
+      amount: d.amount,
+    };
+  });
+
+  return (
+    <div style={{ background: COLORS.surface, borderRadius: 14, padding: "16px 18px", border: `1px solid ${COLORS.cardBorder}` }}>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: COLORS.textMuted, textTransform: "uppercase", marginBottom: 12 }}>
+        Weekly Chanda Collection
+      </div>
+      {loading ? (
+        <div style={{ fontSize: 12, color: COLORS.textMuted }}>Loading…</div>
+      ) : (
+        <BarChart bars={bars} max={max} />
+      )}
+    </div>
+  );
+}
+
+const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function YearlyCollectionCard() {
+  const currentYear = new Date().getFullYear();
+  const [year, setYear] = useState(currentYear);
+  const [months, setMonths] = useState<number[]>(Array(12).fill(0));
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    getYearlyCollections(year)
+      .then((d) => setMonths(d.months))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [year]);
+
+  const max = Math.max(1, ...months);
+  const bars = months.map((amount, i) => ({ label: MONTH_LABELS[i], amount }));
+
+  return (
+    <div style={{ background: COLORS.surface, borderRadius: 14, padding: "16px 18px", border: `1px solid ${COLORS.cardBorder}` }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: COLORS.textMuted, textTransform: "uppercase" }}>
+          Yearly Chanda Collection
+        </div>
+        <select
+          value={year}
+          onChange={(e) => setYear(Number(e.target.value))}
+          style={{
+            height: 28, padding: "0 8px", fontSize: 12, borderRadius: 7,
+            border: `1px solid ${COLORS.border}`, background: COLORS.surface,
+            color: COLORS.text, cursor: "pointer",
+          }}
+        >
+          {[currentYear, currentYear - 1, currentYear - 2].map((y) => (
+            <option key={y} value={y}>{y}</option>
+          ))}
+        </select>
+      </div>
+      {loading ? (
+        <div style={{ fontSize: 12, color: COLORS.textMuted }}>Loading…</div>
+      ) : (
+        <BarChart bars={bars} max={max} />
+      )}
     </div>
   );
 }
@@ -309,7 +429,7 @@ export default function DashboardPage() {
         ws.onmessage = (e) => {
           try {
             const msg = JSON.parse(e.data);
-            if (["dashboard_updated","monthly_amount_updated","payment_verified","payment_collected"].includes(msg.type)) {
+            if (["dashboard_updated","monthly_amount_updated","payment_verified","payment_collected","family_updated","family_created"].includes(msg.type)) {
               loadDataRef.current();
             }
           } catch (_) {}
@@ -339,7 +459,6 @@ export default function DashboardPage() {
   const pendingVerification = dash?.pending_verification ?? 0;
 
   // Responsive breakpoints
-  const cols3 = mob ? "1fr" : vw < 1024 ? "1fr 1fr" : "repeat(3, 1fr)";
   const cols2 = mob ? "1fr" : "1fr 1fr";
   const GAP   = mob ? 10 : 14;
   const MB    = mob ? 12 : 16;
@@ -408,75 +527,78 @@ export default function DashboardPage() {
         </div>
       ) : (
         <>
-          {/* ── Top stat cards (3 col on desktop, 2 on tablet, 1 on mobile) ── */}
-          <div style={{ display: "grid", gridTemplateColumns: cols3, gap: GAP, marginBottom: MB }}>
+          {/* ── Top stat cards ── */}
+          <div style={{ display: "grid", gridTemplateColumns: cols2, gap: GAP, marginBottom: MB }}>
             <StatCard label="Balance (Donations − Expenses)" value={fmt(balance)}
               accent={balance >= 0 ? COLORS.primary : COLORS.danger}
               icon={TrendingUp}
               sub={`${fmt(dash?.donations?.total)} received · ${fmt(dash?.expenses?.total)} spent`} />
-            <StatCard label="Income This Month" value={fmt(income)}
-              accent={COLORS.accent} icon={Wallet}
-              sub={`Cash ${fmt(cash)} · GPay/UPI ${fmt(upi)}`} />
             <StatCard label="Active Families" value={String(totalFamilies)}
               accent={COLORS.lapis} icon={Users}
               sub={`${paidCount} paid · ${pendingCount + partialCount} pending`}
               onClick={() => navigate("/chanda")} />
           </div>
 
-          {/* ── Income method breakdown + chanda ring ── */}
-          <div style={{ display: "grid", gridTemplateColumns: cols2, gap: GAP, marginBottom: MB }}>
-
-            {/* Income by method */}
-            <div style={{ background: COLORS.surface, borderRadius: 14, padding: "16px 18px", border: `1px solid ${COLORS.cardBorder}` }}>
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: COLORS.textMuted, textTransform: "uppercase", marginBottom: 10 }}>
-                Income this month — by method
-              </div>
-              <div style={{ fontFamily: TYPOGRAPHY.fontDisplay, fontSize: 30, fontWeight: 400, color: COLORS.text, marginBottom: 12 }}>
-                {fmt(income)}
-              </div>
-              {income > 0 ? (
-                <MethodBar cash={cash} upi={upi} other={Math.max(other, 0)} total={income} />
-              ) : (
-                <div style={{ fontSize: 13, color: COLORS.textMuted }}>No income recorded this month yet.</div>
-              )}
-            </div>
-
-            {/* Chanda collection progress */}
-            <div style={{ background: COLORS.surface, borderRadius: 14, padding: "16px 18px", border: `1px solid ${COLORS.cardBorder}` }}>
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: COLORS.textMuted, textTransform: "uppercase", marginBottom: 10 }}>
-                Chanda collection — {dash?.month}
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                <ProgressRing pct={collectionPct} color={COLORS.primary} />
-                <div style={{ flex: 1 }}>
-                  {[
-                    { label: "Paid",     count: paidCount,    color: COLORS.primary },
-                    { label: "Partial",  count: partialCount, color: COLORS.warning },
-                    { label: "Not paid", count: pendingCount, color: COLORS.danger },
-                  ].map(({ label, count, color }) => (
-                    <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 7 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                        <div style={{ width: 7, height: 7, borderRadius: 2, background: color }} />
-                        <span style={{ fontSize: 12, color: COLORS.textSecondary }}>{label}</span>
-                      </div>
-                      <span style={{ fontSize: 13, fontWeight: 700, color, fontFamily: TYPOGRAPHY.fontMono }}>{count}</span>
-                    </div>
-                  ))}
+          {/* ── Chanda collection (promoted — this already covers what a
+              separate "Income This Month" card used to duplicate: both
+              read from the same collection_periods.this_month figures) ── */}
+          <div style={{ marginBottom: MB }}>
+            <div style={{
+              background: COLORS.surface, borderRadius: 16, padding: mob ? "18px 18px" : "20px 24px",
+              border: `1px solid ${COLORS.primaryBorder ?? COLORS.cardBorder}`,
+              boxShadow: `0 2px 12px ${COLORS.primary}0F`,
+            }}>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: COLORS.textMuted, textTransform: "uppercase" }}>
+                  Chanda Collection — {dash?.month}
+                </div>
+                <div style={{ fontFamily: TYPOGRAPHY.fontMono, fontSize: 13, fontWeight: 700, color: COLORS.text }}>
+                  {fmt(chanda?.collected)} <span style={{ color: COLORS.textMuted, fontWeight: 500 }}>/ {fmt(chanda?.due)} expected</span>
                 </div>
               </div>
-              <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${COLORS.divider}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: 11, color: COLORS.textMuted }}>Collected / Due</span>
-                <span style={{ fontSize: 12, fontWeight: 700, color: COLORS.text, fontFamily: TYPOGRAPHY.fontMono }}>
-                  {fmt(chanda?.collected)} / {fmt(chanda?.due)}
-                </span>
+              <div style={{ display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
+                <ProgressRing pct={collectionPct} color={COLORS.primary} />
+                <div style={{ flex: 1, minWidth: 160, display: "grid", gridTemplateColumns: cols2, gap: GAP }}>
+                  <div>
+                    {[
+                      { label: "Paid",     count: paidCount,    color: COLORS.primary },
+                      { label: "Partial",  count: partialCount, color: COLORS.warning },
+                      { label: "Not paid", count: pendingCount, color: COLORS.danger },
+                    ].map(({ label, count, color }) => (
+                      <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 7 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                          <div style={{ width: 7, height: 7, borderRadius: 2, background: color }} />
+                          <span style={{ fontSize: 12, color: COLORS.textSecondary }}>{label}</span>
+                        </div>
+                        <span style={{ fontSize: 13, fontWeight: 700, color, fontFamily: TYPOGRAPHY.fontMono }}>{count}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ borderLeft: mob ? "none" : `1px solid ${COLORS.divider}`, paddingLeft: mob ? 0 : 16 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", color: COLORS.textMuted, textTransform: "uppercase", marginBottom: 8 }}>
+                      By Method
+                    </div>
+                    {income > 0 ? (
+                      <MethodBar cash={cash} upi={upi} other={Math.max(other, 0)} total={income} />
+                    ) : (
+                      <div style={{ fontSize: 12, color: COLORS.textMuted }}>No income recorded this month yet.</div>
+                    )}
+                  </div>
+                </div>
               </div>
               <button onClick={() => navigate("/chanda")}
-                style={{ marginTop: 10, width: "100%", padding: "8px 0", background: COLORS.primaryLight,
+                style={{ marginTop: 16, width: "100%", padding: "9px 0", background: COLORS.primaryLight,
                   border: `1px solid ${COLORS.primaryBorder}`, borderRadius: 9,
                   color: COLORS.primary, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
                 Manage Chanda →
               </button>
             </div>
+          </div>
+
+          {/* ── Weekly / Yearly collection trends ── */}
+          <div style={{ display: "grid", gridTemplateColumns: cols2, gap: GAP, marginBottom: MB }}>
+            <WeeklyCollectionCard />
+            <YearlyCollectionCard />
           </div>
 
           {/* ── Who hasn't paid ── */}

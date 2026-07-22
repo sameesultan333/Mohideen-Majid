@@ -19,6 +19,7 @@ import {
   RefreshControl,
 } from "react-native";
 import { useTranslation } from "react-i18next";
+import { useFocusEffect } from "@react-navigation/native";
 import Svg, { Path, Circle, Rect, Line, Defs, LinearGradient, Stop } from "react-native-svg";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { apiAxios } from "../config/server";
@@ -262,7 +263,14 @@ export default function DeenScreen({ navigation, route }) {
   }, []);
 
   // ─── Load unread counts ─────────────────────────────────────────────
-  useEffect(() => {
+  // useFocusEffect (not a plain mount-only useEffect) so the per-card
+  // badges re-derive from AsyncStorage every time this screen regains
+  // focus — otherwise reading a hadith/question in another screen and
+  // coming straight back here left the stale count showing until the
+  // 30s interval happened to fire.
+  useFocusEffect(
+    useCallback(() => {
+    let isActive = true;
     const loadUnreadCounts = async () => {
       try {
         const userRaw = await AsyncStorage.getItem("user");
@@ -295,14 +303,16 @@ export default function DeenScreen({ navigation, route }) {
           return hoursDiff < 48;
         });
 
+        if (!isActive) return;
         setUnreadHadithCount(freshHadiths.filter(h => !readHadithIds.includes(h.id)).length);
 
         // Imam/admin need the PENDING queue awaiting their reply, not the
         // general answered-questions feed — that's what "unread" means to
         // a member, but it's meaningless to someone who answers questions.
         if (isImamLike) {
-          setUnreadQuestionCount(await getPendingQuestionCount());
-        } else {
+          const pending = await getPendingQuestionCount();
+          if (isActive) setUnreadQuestionCount(pending);
+        } else if (isActive) {
           setUnreadQuestionCount(questions.filter(q => !readQuestionIds.includes(q.id)).length);
         }
       } catch (e) {
@@ -311,10 +321,14 @@ export default function DeenScreen({ navigation, route }) {
     };
 
     loadUnreadCounts();
-    // Refresh counts every 30 seconds
+    // Refresh counts every 30 seconds while focused
     const interval = setInterval(loadUnreadCounts, 30000);
-    return () => clearInterval(interval);
-  }, []);
+    return () => {
+      isActive = false;
+      clearInterval(interval);
+    };
+    }, [])
+  );
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);

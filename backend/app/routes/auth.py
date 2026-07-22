@@ -28,6 +28,8 @@ from app.security import (
     REFRESH_COOKIE_NAME,
 )
 from app.services.audit_service import AuditAction, log_action
+from app.websocket_manager import manager
+from app.routes.devices import deactivate_all_tokens_for_user
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -136,6 +138,11 @@ def _authenticate_user(db: Session, phone: str, password: str) -> models.User:
 
     if not user or not user.password or not user.is_registered:
         raise _invalid
+
+    # Deleted accounts can never authenticate again, checked before password
+    # verification so it fails fast (same ordering as the disabled/rejected checks below)
+    if user.is_deleted:
+        raise HTTPException(403, "This account has been deleted.")
 
     # Only block truly disabled accounts here; pending users get through
     if user.status == UserStatus.DISABLED:
@@ -289,6 +296,10 @@ async def register(
     await log_action(db, AuditAction.USER_REGISTERED, "users", new_user.id,
                      request=request, description=f"New self-registration pending approval: {name}")
     db.commit()
+    # Admins previously only found out about a new pending registration via a
+    # 60s poll (fetchBadgeCounts in NotificationContext) — nothing pushed this
+    # live over the websocket like payments/donations/expenses already do.
+    manager.publish_sync("admin", "registration_pending", {"user_id": new_user.id, "name": new_user.name})
     # Signal to the frontend that this user needs approval
     result["pending_approval"] = True
     return result
@@ -382,6 +393,101 @@ async def change_password(
     return {"message": "Password changed successfully.", **result}
 
 
+# ── DELETE ACCOUNT (self-service, mobile app) ─────────────────────────────────
+
+@router.post("/delete-account")
+async def delete_account(
+    data: schemas.ConfirmPassword,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Soft-deletes the caller's own account AND cascades: the linked family
+    (ApprovedHead) is soft-deleted too — same is_deleted flag the 30-day
+    archive job uses, so it vanishes from every list/count immediately
+    instead of staying active until someone remembers to deactivate it
+    separately — and every other registered User under that same family_id
+    (spouse/children/other members) is soft-deleted and unlinked alongside it.
+    Nothing is ever physically removed — payment/donation/audit history tied
+    to these ids must keep resolving against them."""
+    user = db.query(models.User).filter_by(id=int(current_user["sub"])).first()
+    if not user:
+        raise HTTPException(404, "User not found.")
+
+    if user.role == "superadmin":
+        raise HTTPException(403, "Superadmin accounts cannot be deleted.")
+
+    if not user.password or not verify_password(data.password, user.password):
+        raise HTTPException(401, "Incorrect password")
+
+    family_id = user.family_id
+    head = db.query(models.ApprovedHead).filter_by(id=family_id).first() if family_id else None
+
+    # Every other registered account under the same family — captured before
+    # anything is modified so the family_id filter still matches.
+    other_members = (
+        db.query(models.User)
+        .filter(models.User.family_id == family_id, models.User.id != user.id)
+        .all()
+        if family_id else []
+    )
+
+    def _soft_delete_user(u):
+        u.is_deleted = True
+        u.deleted_at = datetime.utcnow()
+        u.deletion_reason = data.reason
+        u.family_id = None
+        u.is_active = False
+        revoke_all_sessions(db, u.id)
+        deactivate_all_tokens_for_user(db, u.id)
+        u.expo_token = None
+
+    _soft_delete_user(user)
+
+    if head:
+        head.user_id = None
+        head.is_registered = False
+        head.is_active = False
+        head.is_deleted = True
+        head.deleted_at = datetime.utcnow()
+
+    for m in other_members:
+        _soft_delete_user(m)
+
+    await log_action(
+        db, AuditAction.USER_ACCOUNT_DELETED, "users", user.id,
+        actor=current_user, request=request,
+        description=f"Account deleted by user: {user.name}" + (f" (chanda_no={head.chanda_no})" if head else ""),
+        old_values={"is_deleted": False},
+        new_values={
+            "is_deleted": True,
+            "reason": data.reason,
+            "user_name": user.name,
+            "chanda_no": head.chanda_no if head else None,
+        },
+    )
+    if head:
+        await log_action(
+            db, AuditAction.FAMILY_ARCHIVED, "approved_heads", head.id,
+            actor=current_user, request=request,
+            description=f"Family {head.name} ({head.chanda_no}) archived — head deleted their own account"
+                         + (f", {len(other_members)} other linked account(s) removed with it" if other_members else ""),
+            new_values={"is_deleted": True, "is_active": False},
+        )
+    for m in other_members:
+        await log_action(
+            db, AuditAction.USER_ACCOUNT_DELETED, "users", m.id,
+            actor=current_user, request=request,
+            description=f"Account removed as part of family deletion (head: {user.name})",
+            new_values={"is_deleted": True},
+        )
+
+    clear_refresh_cookie(response)
+    db.commit()
+    return {"message": "Account deleted"}
+
+
 # ── HEAD LOOKUP ───────────────────────────────────────────────────────────────
 
 @router.get("/head-lookup")
@@ -419,7 +525,11 @@ def refresh_token(
         clear_refresh_cookie(response)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found")
 
-    # Disabled/rejected accounts cannot refresh
+    # Disabled/rejected/deleted accounts cannot refresh
+    if user.is_deleted:
+        revoke_session(db, session)
+        clear_refresh_cookie(response)
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "This account has been deleted.")
     if user.status in (UserStatus.DISABLED, UserStatus.REJECTED):
         revoke_session(db, session)
         clear_refresh_cookie(response)

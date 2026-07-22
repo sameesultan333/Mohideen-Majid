@@ -67,6 +67,10 @@ class AuditAction:
     FAMILY_EDITED         = "FAMILY_EDITED"
     PHONE_UPDATED         = "PHONE_UPDATED"
     CHANDA_AMOUNT_UPDATED = "CHANDA_AMOUNT_UPDATED"
+    FAMILY_DEACTIVATED    = "FAMILY_DEACTIVATED"
+    FAMILY_RESTORED       = "FAMILY_RESTORED"
+    FAMILY_ARCHIVED       = "FAMILY_ARCHIVED"
+    USER_ACCOUNT_DELETED  = "USER_ACCOUNT_DELETED"
 
     # FINANCE
     DONATION_CREATED      = "DONATION_CREATED"
@@ -139,6 +143,8 @@ _ACTION_MODULE: dict[str, str] = {
     "COLLECTOR_ASSIGNED": "Users", "COLLECTOR_REMOVED": "Users",
     "FAMILY_EDITED": "Users", "PHONE_UPDATED": "Users",
     "CHANDA_AMOUNT_UPDATED": "Users",
+    "FAMILY_DEACTIVATED": "Users", "FAMILY_RESTORED": "Users",
+    "FAMILY_ARCHIVED": "Users", "USER_ACCOUNT_DELETED": "Users",
 
     "DONATION_CREATED": "Donations", "DONATION_VERIFIED": "Donations",
     "DONATION_REJECTED": "Donations", "DONATION_DELETED": "Donations",
@@ -227,7 +233,7 @@ def _write_audit_row(params: dict) -> None:
                     :performed_by_id, :user_role, :user_fullname,
                     :ip_address, :browser, :os_name, :device_name,
                     :session_id, :request_id, :endpoint, :http_method,
-                    :status, :failure_reason, NOW()
+                    :status, :failure_reason, (NOW() AT TIME ZONE 'UTC')
                 )
             """), params)
         print(
@@ -247,7 +253,7 @@ def _write_audit_row(params: dict) -> None:
                         performed_by_id, ip_address, performed_at
                     ) VALUES (
                         :table_name, :record_id, :action,
-                        :performed_by_id, :ip_address, NOW()
+                        :performed_by_id, :ip_address, (NOW() AT TIME ZONE 'UTC')
                     )
                 """), {
                     "table_name":      params["table_name"],
