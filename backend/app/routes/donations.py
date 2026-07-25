@@ -305,7 +305,7 @@ def download_donation_report(
         {
             "receipt_id":  d.receipt_id or "—",
             "donor":       d.donor_name or "Unknown",
-            "purpose":     d.purpose or "—",
+            "purpose":     (d.purpose_rel.name if d.purpose_rel else "—"),
             "fund":        (d.fund_rel.name if d.fund_rel else "—"),
             "method":      (d.method or "—").upper(),
             "source":      d.donor_type or "walk_in",
