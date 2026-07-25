@@ -44,6 +44,7 @@ class ApprovedHead(Base):
     phone            = Column(String, nullable=True, index=True)
     address          = Column(String, nullable=True)
     zone             = Column(String, nullable=True)
+    street           = Column(String, nullable=True, index=True)
     monthly_amount   = Column(Float, default=300, nullable=False)
     is_registered    = Column(Boolean, default=False)
     is_active        = Column(Boolean, default=True)
@@ -252,6 +253,11 @@ class Donation(Base):
     created_at    = Column(DateTime, default=datetime.utcnow)
     updated_at    = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # Cash-submission tracking — which collector physically collected this,
+    # and which submission (if any) it has been bundled/locked into.
+    collector_id  = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    submission_id = Column(Integer, ForeignKey("collector_cash_submissions.id"), nullable=True, index=True)
+
     donor_user  = relationship("User",            back_populates="donations", foreign_keys=[user_id])
     purpose_rel = relationship("DonationPurpose", back_populates="donations")
     fund_rel    = relationship("Fund",            back_populates="donations", foreign_keys=[fund_id])
@@ -309,6 +315,11 @@ class PaymentEntry(Base):
     discount_amount       = Column(Float, default=0, nullable=True)
     discount_reason       = Column(String, nullable=True)
     payment_token         = Column(String, unique=True, nullable=True)  # idempotency key
+
+    # Cash-submission tracking — which collector physically collected this,
+    # and which submission (if any) it has been bundled/locked into.
+    collector_id  = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    submission_id = Column(Integer, ForeignKey("collector_cash_submissions.id"), nullable=True, index=True)
 
     collection   = relationship("ChandaCollection", back_populates="payments", foreign_keys=[collection_id])
     head         = relationship("ApprovedHead", back_populates="payments", foreign_keys=[head_id])
@@ -623,8 +634,13 @@ class CollectorCashSubmission(Base):
     start_date           = Column(DateTime, nullable=False)
     end_date             = Column(DateTime, nullable=False)
 
-    # Financial fields
-    submitted_amount     = Column(Numeric(12, 2), nullable=False)  # what collector says they're handing over
+    # Financial fields — always server-computed from the underlying
+    # Donation / PaymentEntry rows included in this submission, never typed
+    # in by the collector.
+    submitted_amount     = Column(Numeric(12, 2), nullable=False)  # cash_amount + online_amount
+    cash_amount          = Column(Numeric(12, 2), nullable=True)   # cash-method total
+    online_amount        = Column(Numeric(12, 2), nullable=True)   # GPay/UPI/online-method total
+    categories            = Column(JSON, nullable=True)            # e.g. ["chanda", "donation"]
     expected_amount      = Column(Numeric(12, 2), nullable=True)   # admin's expected total (optional)
     approved_amount      = Column(Numeric(12, 2), nullable=True)   # confirmed on approval
 
@@ -649,3 +665,5 @@ class CollectorCashSubmission(Base):
     receiving_admin = relationship("User", foreign_keys=[receiving_admin_id])
     approved_by     = relationship("User", foreign_keys=[approved_by_id])
     rejected_by     = relationship("User", foreign_keys=[rejected_by_id])
+    donations        = relationship("Donation", foreign_keys="Donation.submission_id")
+    payment_entries  = relationship("PaymentEntry", foreign_keys="PaymentEntry.submission_id")

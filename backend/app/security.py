@@ -313,6 +313,16 @@ def require_admin_or_imam(current_user: dict = Depends(get_current_user)) -> dic
     return current_user
 
 
+def require_prayer_editor(current_user: dict = Depends(get_current_user)) -> dict:
+    """Prayer times specifically also let watchman/modhin (the staff roles
+    that typically enter adhan times day-to-day) edit — a wider allowlist
+    than require_admin_or_imam, which is shared by announcements/hadith/
+    questions and shouldn't be broadened just for this one endpoint."""
+    if not _has_any(current_user, "superadmin", "admin", "imam", "watchman", "modhin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Prayer management access required")
+    return current_user
+
+
 def require_collector(current_user: dict = Depends(get_current_user)) -> dict:
     if not _has_any(current_user, "collector", "admin", "superadmin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Collector access required")

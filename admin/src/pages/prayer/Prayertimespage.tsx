@@ -58,8 +58,7 @@ function formatTime(t?: string | null) {
 function toMinutes(t?: string | null) {
   if (!t) return null;
   const clean = t.replace(/\s+/g, " ").trim();
-  let hour = 0,
-    minute = 0;
+  let hour: number, minute: number;
   const match = clean.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
   if (match) {
     hour = parseInt(match[1], 10);
@@ -82,17 +81,27 @@ const DAILY_PRAYERS = [
   { key: "isha", label: "Isha", icon: Moon },
 ] as const;
 
-function getNowNext(prayer: PrayerTimings | null, nowMin: number) {
+function getNowNext(prayer: PrayerTimings | null, nowMin: number, isFriday: boolean) {
   if (!prayer) return null;
   // Use adhan times to determine which prayer period is currently active.
   // Adhan marks the START of a prayer — the current prayer is the last
   // adhan that has already passed.
-  const slots = DAILY_PRAYERS.map((p) => ({
-    key: p.key,
-    label: p.label,
-    // Prefer adhan time; fall back to iqamah time if adhan is missing
-    minutes: toMinutes(prayer.adhan?.[p.key as keyof typeof prayer.adhan] ?? prayer.prayer?.[p.key]),
-  })).filter((s) => s.minutes !== null) as { key: string; label: string; minutes: number }[];
+  // On Fridays, Dhuhr is replaced by Jumu'ah — same slot, different time/label.
+  const slots = DAILY_PRAYERS.map((p) => {
+    if (isFriday && p.key === "dhuhr") {
+      return {
+        key: "jummah",
+        label: "Jumu'ah",
+        minutes: toMinutes(prayer.prayer?.jummah ?? prayer.prayer?.dhuhr),
+      };
+    }
+    return {
+      key: p.key,
+      label: p.label,
+      // Prefer adhan time; fall back to iqamah time if adhan is missing
+      minutes: toMinutes(prayer.adhan?.[p.key as keyof typeof prayer.adhan] ?? prayer.prayer?.[p.key]),
+    };
+  }).filter((s) => s.minutes !== null) as { key: string; label: string; minutes: number }[];
   if (slots.length === 0) return null;
 
   // Default: before Fajr → Isha from previous night is "current"
@@ -222,7 +231,8 @@ export default function PrayerTimesPage() {
     }
   }
 
-  const nowNext = useMemo(() => getNowNext(prayer, nowMin), [prayer, nowMin]);
+  const isFridayToday = useMemo(() => new Date().getDay() === 5, [nowMin]);
+  const nowNext = useMemo(() => getNowNext(prayer, nowMin, isFridayToday), [prayer, nowMin, isFridayToday]);
   const today = new Date();
   const dateStr = today.toLocaleDateString("en-US", {
     weekday: "long",
@@ -687,7 +697,7 @@ export default function PrayerTimesPage() {
 
           <EditSection title="Special" isMobile={isMobile}>
             <TimeInput label="Ishraq" value={form.ishraq} onChange={(v) => setForm({ ...form, ishraq: v })} isMobile={isMobile} period="AM" />
-            <TimeInput label="Taraweeh" value={form.taraweeh} onChange={(v) => setForm({ ...form, taraweeh: v })} isMobile={isMobile} period="PM" />
+            <TimeInput label="Taraweeh" value={form.taraweeh} onChange={(v) => setForm({ ...form, taraweeh: v })} onClear={() => setForm({ ...form, taraweeh: "" })} isMobile={isMobile} period="PM" />
             <TimeInput label="Sunset" value={form.sunset} onChange={(v) => setForm({ ...form, sunset: v })} isMobile={isMobile} period="PM" />
           </EditSection>
 
@@ -981,13 +991,50 @@ function TimeInput({
   onChange,
   isMobile,
   period,
+  onClear,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   isMobile: boolean;
   period: "AM" | "PM";
+  onClear?: () => void;
 }) {
+  const labelRow = (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <label
+        style={{
+          fontSize: isMobile ? 13 : 12.5,
+          fontWeight: 600,
+          color: COLORS.textSecondary,
+          display: "block",
+          marginBottom: isMobile ? 6 : 8,
+          letterSpacing: "0.03em",
+        }}
+      >
+        {label}
+      </label>
+      {onClear && value ? (
+        <button
+          type="button"
+          onClick={onClear}
+          style={{
+            border: "none",
+            background: "transparent",
+            color: COLORS.textMuted,
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: "pointer",
+            padding: 0,
+            marginBottom: 6,
+            textDecoration: "underline",
+          }}
+        >
+          Clear
+        </button>
+      ) : null}
+    </div>
+  );
   // On mobile – full‑width native time picker
   if (isMobile) {
     let val24 = value;
@@ -1005,18 +1052,7 @@ function TimeInput({
 
     return (
       <div style={{ width: "100%", maxWidth: "100%", boxSizing: "border-box" }}>
-        <label
-          style={{
-            fontSize: 13,
-            fontWeight: 600,
-            color: COLORS.textSecondary,
-            display: "block",
-            marginBottom: 6,
-            letterSpacing: "0.03em",
-          }}
-        >
-          {label}
-        </label>
+        {labelRow}
         <input
           type="time"
           value={val24 || ""}
@@ -1101,18 +1137,7 @@ function TimeInput({
 
   return (
     <div>
-      <label
-        style={{
-          fontSize: 12.5,
-          fontWeight: 600,
-          color: COLORS.textSecondary,
-          display: "block",
-          marginBottom: 8,
-          letterSpacing: "0.03em",
-        }}
-      >
-        {label}
-      </label>
+      {labelRow}
       <div
         style={{
           display: "flex",

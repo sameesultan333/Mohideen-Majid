@@ -529,7 +529,7 @@ const ExpensesPage: React.FC = () => {
                 </td>
                 <td style={{ ...S.td, color: COLORS.textSecondary }}>{e.category_name ?? "—"}</td>
                 <td style={{ ...S.td, color: COLORS.textSecondary }}>{(e as any).vendor_name ?? "—"}</td>
-                <td style={{ ...S.td, fontWeight: 600, color: COLORS.danger }}>{fmt(e.amount)}</td>
+                <td style={{ ...S.td, fontWeight: 600, color: COLORS.danger, fontFamily: TYPOGRAPHY.fontDisplay }}>{fmt(e.amount)}</td>
                 <td style={S.td}>
                   {e.approved_at ? (
                     <span style={{ ...S.badge, background: COLORS.iconGreen, color: COLORS.primary }}>Approved</span>
@@ -610,7 +610,7 @@ const ExpensesPage: React.FC = () => {
                   )}
                 </div>
               </div>
-              <div style={{ fontWeight: 700, fontSize: "15px", color: COLORS.danger, whiteSpace: "nowrap" }}>{fmt(e.amount)}</div>
+              <div style={{ fontWeight: 700, fontSize: "15px", color: COLORS.danger, whiteSpace: "nowrap", fontFamily: TYPOGRAPHY.fontDisplay }}>{fmt(e.amount)}</div>
             </div>
             <div style={S.cardBody}>
               <div style={S.cardRow}>

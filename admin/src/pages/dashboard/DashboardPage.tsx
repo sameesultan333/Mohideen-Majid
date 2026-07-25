@@ -397,7 +397,7 @@ export default function DashboardPage() {
       setIsOffline(result.fromCache);
       setCacheTime(result.cacheTime);
       setLastRefreshed(new Date());
-    } catch (_) {} finally { setLoading(false); }
+    } catch {} finally { setLoading(false); }
   }
 
   useEffect(() => {
@@ -432,11 +432,11 @@ export default function DashboardPage() {
             if (["dashboard_updated","monthly_amount_updated","payment_verified","payment_collected","family_updated","family_created"].includes(msg.type)) {
               loadDataRef.current();
             }
-          } catch (_) {}
+          } catch {}
         };
         ws.onerror = () => {};
         ws.onclose = () => { retry = setTimeout(connect, 20_000); };
-      } catch (_) {}
+      } catch {}
     };
     connect();
     return () => { ws?.close(); if (retry) clearTimeout(retry); };

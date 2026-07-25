@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.cache import cache_get, cache_set, cache_invalidate
 from app.database import SessionLocal
-from app.security import require_admin_or_imam, get_current_user
+from app.security import require_prayer_editor, get_current_user
 from app.websocket_manager import manager
 from app.services.audit_service import AuditAction, log_action
 from app.utils.fcm import send_fcm_prayer_times_update
@@ -111,7 +111,7 @@ async def update_prayer(
     request: Request,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_admin_or_imam),
+    current_user: dict = Depends(require_prayer_editor),
 ):
     prayer = db.query(models.PrayerTiming).first()
 

@@ -432,10 +432,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
 };
 
-// Add global keyframes for skeleton shimmer (once)
-let shimmerInjected = false;
-if (!shimmerInjected) {
-  shimmerInjected = true;
+// Add global keyframes for skeleton shimmer — this module only evaluates
+// once per page load, so no run-once guard is needed here.
+{
   const shimmerStyle = document.createElement("style");
   shimmerStyle.innerHTML = `
     @keyframes shimmer {
@@ -558,23 +557,18 @@ const StaffManagementPage: React.FC = () => {
   };
 
   const handleSaveStaff = async (payload: CreateStaffPayload | UpdateStaffPayload) => {
-    try {
-      if (editingStaff) {
-        const result = await updateStaff(editingStaff.id, payload as UpdateStaffPayload);
-        setStaff((prev) => prev.map((s) => (s.id === result.id ? result : s)));
-      } else {
-        await createStaff(payload as CreateStaffPayload);
-        // Refetch staff to ensure we get complete data from backend
-        await fetchStaff();
-      }
-      setShowAddEdit(false);
-      setEditingStaff(null);
-      // Clear any previous errors
-      setError(null);
-    } catch (err: any) {
-      // Re-throw so the dialog can display the error
-      throw err;
+    if (editingStaff) {
+      const result = await updateStaff(editingStaff.id, payload as UpdateStaffPayload);
+      setStaff((prev) => prev.map((s) => (s.id === result.id ? result : s)));
+    } else {
+      await createStaff(payload as CreateStaffPayload);
+      // Refetch staff to ensure we get complete data from backend
+      await fetchStaff();
     }
+    setShowAddEdit(false);
+    setEditingStaff(null);
+    // Clear any previous errors
+    setError(null);
   };
 
   const handleConfirmDelete = async () => {

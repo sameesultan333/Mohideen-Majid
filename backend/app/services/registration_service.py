@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app import models
 from app.models import UserStatus
 from app.services.audit_service import AuditAction, log_action
+from app.services.chanda_number_service import generate_next_chanda_no
 from app.utils.fcm import notify_user
 
 logger = logging.getLogger("mohideen.registration")
@@ -66,17 +67,14 @@ class RegistrationApprovalService:
         head: Optional[models.ApprovedHead] = None
 
         if family_action == "create":
-            # Auto-generate chanda_no if not supplied
+            # Auto-generate chanda_no if not supplied — single shared generator,
+            # same one used by admin/collector family creation.
             if new_chanda_no:
                 new_chanda_no = new_chanda_no.strip().upper()
-            if not new_chanda_no:
-                max_row = db.query(models.ApprovedHead).order_by(
-                    models.ApprovedHead.id.desc()
-                ).first()
-                next_num = (max_row.id + 1) if max_row else 1
-                new_chanda_no = f"CH{next_num:04d}"
-            elif db.query(models.ApprovedHead).filter_by(chanda_no=new_chanda_no).first():
-                raise ValueError(f"Chanda number '{new_chanda_no}' is already in use.")
+                if db.query(models.ApprovedHead).filter_by(chanda_no=new_chanda_no).first():
+                    raise ValueError(f"Chanda number '{new_chanda_no}' is already in use.")
+            else:
+                new_chanda_no = generate_next_chanda_no(db)
 
             # Derive registration_date from active_from_month (YYYY-MM) or default to today
             reg_date = None

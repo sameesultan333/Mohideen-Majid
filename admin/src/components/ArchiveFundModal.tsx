@@ -153,7 +153,7 @@ const ArchiveFundModal: React.FC<ArchiveFundModalProps> = ({
     try {
       await onConfirm();
       // onConfirm handles closing on success
-    } catch (err) {
+    } catch {
       // Error handled in parent
     } finally {
       setLoading(false);

@@ -162,19 +162,6 @@ export default function AuditPage() {
   const searchRef  = useRef<HTMLInputElement>(null);
   const debRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  if (!isSuperAdmin) {
-    return (
-      <div style={S.forbidden}>
-        <div style={{ ...S.iconWrap, width:56, height:56, borderRadius:"50%", background:COLORS.dangerLight, color:COLORS.danger }}>
-          <ShieldAlert size={28}/>
-        </div>
-        <div style={{ fontSize:"20px", fontWeight:700, color:COLORS.danger }}>403 — Forbidden</div>
-        <div style={{ color:COLORS.textSecondary, fontSize:"14px" }}>Only Super Administrator can access Audit Logs.</div>
-      </div>
-    );
-  }
-
-  // eslint-disable-next-line react-hooks/rules-of-hooks
   const load = useCallback(async (f: AuditFilters) => {
     setLoading(true);
     try {
@@ -209,6 +196,21 @@ export default function AuditPage() {
     load(filters);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Hooks must run unconditionally on every render — this guard sits after
+  // all hook declarations, not before, so hook call order stays identical
+  // regardless of role.
+  if (!isSuperAdmin) {
+    return (
+      <div style={S.forbidden}>
+        <div style={{ ...S.iconWrap, width:56, height:56, borderRadius:"50%", background:COLORS.dangerLight, color:COLORS.danger }}>
+          <ShieldAlert size={28}/>
+        </div>
+        <div style={{ fontSize:"20px", fontWeight:700, color:COLORS.danger }}>403 — Forbidden</div>
+        <div style={{ color:COLORS.textSecondary, fontSize:"14px" }}>Only Super Administrator can access Audit Logs.</div>
+      </div>
+    );
+  }
 
   function apply(next: Partial<AuditFilters>) {
     const merged = { ...filters, ...next, page: 1 };

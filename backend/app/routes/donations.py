@@ -211,6 +211,7 @@ async def add_donation(
     donation = models.Donation(
         donor_name=donor_name,
         user_id=actor_id,
+        collector_id=actor_id,
         amount=data.amount,
         method=(data.method or "cash").lower(),
         note=(data.note or "").strip() or None,

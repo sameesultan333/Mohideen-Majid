@@ -364,6 +364,27 @@ def ensure_columns():
         "CREATE INDEX IF NOT EXISTS idx_cash_submissions_collector_id ON collector_cash_submissions(collector_id)",
         "CREATE INDEX IF NOT EXISTS idx_cash_submissions_status ON collector_cash_submissions(status)",
         "CREATE INDEX IF NOT EXISTS idx_cash_submissions_submitted_at ON collector_cash_submissions(submitted_at)",
+
+        # collector_cash_submissions — category-based auto-aggregation (cash vs online split)
+        "ALTER TABLE collector_cash_submissions ADD COLUMN IF NOT EXISTS cash_amount NUMERIC(12,2)",
+        "ALTER TABLE collector_cash_submissions ADD COLUMN IF NOT EXISTS online_amount NUMERIC(12,2)",
+        "ALTER TABLE collector_cash_submissions ADD COLUMN IF NOT EXISTS categories JSON",
+
+        # donations / payment_entries — link to the collector who recorded them
+        # and the submission (if any) they've been bundled/locked into.
+        "ALTER TABLE donations ADD COLUMN IF NOT EXISTS collector_id INTEGER REFERENCES users(id)",
+        "ALTER TABLE donations ADD COLUMN IF NOT EXISTS submission_id INTEGER REFERENCES collector_cash_submissions(id)",
+        "CREATE INDEX IF NOT EXISTS idx_donations_collector_id ON donations(collector_id)",
+        "CREATE INDEX IF NOT EXISTS idx_donations_submission_id ON donations(submission_id)",
+
+        "ALTER TABLE payment_entries ADD COLUMN IF NOT EXISTS collector_id INTEGER REFERENCES users(id)",
+        "ALTER TABLE payment_entries ADD COLUMN IF NOT EXISTS submission_id INTEGER REFERENCES collector_cash_submissions(id)",
+        "CREATE INDEX IF NOT EXISTS idx_payment_entries_collector_id ON payment_entries(collector_id)",
+        "CREATE INDEX IF NOT EXISTS idx_payment_entries_submission_id ON payment_entries(submission_id)",
+
+        # approved_heads — street (cascading Zone -> Street filter)
+        "ALTER TABLE approved_heads ADD COLUMN IF NOT EXISTS street VARCHAR",
+        "CREATE INDEX IF NOT EXISTS idx_approved_heads_street ON approved_heads(street)",
     ]
 
     import logging as _log

@@ -7,9 +7,9 @@ Collector-specific routes:
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -17,7 +17,8 @@ from app import models
 from app.database import SessionLocal
 from app.security import require_collector, require_admin, get_current_user
 from app.services.audit_service import AuditAction, log_action
-from app.services.cash_submission_service import CashSubmissionService
+from app.services.cash_submission_service import CashSubmissionService, get_submission_transactions
+from app.services.chanda_number_service import generate_next_chanda_no
 from app.utils.fcm import notify_user
 
 router = APIRouter(prefix="/collector", tags=["Collector"])
@@ -36,7 +37,7 @@ def get_db():
 class CashSubmissionCreate(BaseModel):
     start_date: datetime
     end_date: datetime
-    submitted_amount: Decimal
+    categories: List[str] = ["chanda", "donation"]
     receiving_admin_id: Optional[int] = None
     notes: Optional[str] = None
     expected_amount: Optional[Decimal] = None
@@ -52,11 +53,12 @@ class CashSubmissionReject(BaseModel):
 
 
 class FamilyCreate(BaseModel):
-    chanda_no: str
+    chanda_no: Optional[str] = None  # blank => backend auto-generates (see chanda_number_service)
     name: str
     phone: Optional[str] = None
     address: Optional[str] = None
     zone: Optional[str] = None
+    street: Optional[str] = None
     monthly_amount: float
     registration_date: Optional[datetime] = None
 
@@ -67,11 +69,31 @@ class FamilyUpdate(BaseModel):
     phone: Optional[str] = None
     address: Optional[str] = None
     zone: Optional[str] = None
+    street: Optional[str] = None
     monthly_amount: Optional[float] = None
     registration_date: Optional[datetime] = None
 
 
 # ── Cash Submissions (Collector side) ─────────────────────────────────────────
+
+@router.get("/cash-submissions/preview")
+def preview_cash_submission(
+    categories: List[str] = Query(default=["chanda", "donation"]),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_collector),
+):
+    """Read-only breakdown of the collector's unsubmitted collections, for review before submit."""
+    collector_id = int(current_user["sub"])
+    summary = CashSubmissionService.preview(db, collector_id, categories)
+    return {
+        "categories":         summary["categories"],
+        "cash_amount":        str(summary["cash_amount"]),
+        "online_amount":      str(summary["online_amount"]),
+        "total_amount":       str(summary["total_amount"]),
+        "transaction_count":  summary["transaction_count"],
+        "transactions":       summary["transactions"],
+    }
+
 
 @router.post("/cash-submissions")
 async def submit_cash(
@@ -82,8 +104,6 @@ async def submit_cash(
 ):
     if data.end_date < data.start_date:
         raise HTTPException(400, "end_date must be after start_date.")
-    if data.submitted_amount <= 0:
-        raise HTTPException(400, "submitted_amount must be positive.")
 
     submission = await CashSubmissionService.submit(
         db=db,
@@ -91,7 +111,7 @@ async def submit_cash(
         request=request,
         start_date=data.start_date,
         end_date=data.end_date,
-        submitted_amount=data.submitted_amount,
+        categories=data.categories,
         receiving_admin_id=data.receiving_admin_id,
         notes=data.notes,
         expected_amount=data.expected_amount,
@@ -104,7 +124,7 @@ async def submit_cash(
             notify_user(
                 db, data.receiving_admin_id,
                 title="Cash Submission Received",
-                body=f"{collector_name} submitted ₹{data.submitted_amount} for approval.",
+                body=f"{collector_name} submitted ₹{submission.submitted_amount} for approval.",
                 data={"type": "cash_submission", "submission_id": str(submission.id)},
             )
         except Exception:
@@ -114,11 +134,25 @@ async def submit_cash(
         "id":               submission.id,
         "status":           submission.status,
         "submitted_amount": str(submission.submitted_amount),
+        "cash_amount":      str(submission.cash_amount),
+        "online_amount":    str(submission.online_amount),
         "start_date":       submission.start_date.isoformat() + "Z",
         "end_date":         submission.end_date.isoformat() + "Z",
         "submitted_at":     submission.submitted_at.isoformat() + "Z",
         "message":          "Cash submission created. Awaiting admin approval.",
     }
+
+
+@router.get("/cash-submissions/{submission_id}/transactions")
+def my_submission_transactions(
+    submission_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_collector),
+):
+    submission = db.query(models.CollectorCashSubmission).filter_by(id=submission_id).first()
+    if not submission or submission.collector_id != int(current_user["sub"]):
+        raise HTTPException(404, "Submission not found.")
+    return get_submission_transactions(db, submission)
 
 
 @router.get("/cash-submissions")
@@ -149,6 +183,18 @@ def admin_list_submissions(
         q = q.filter_by(status=status)
     rows = q.order_by(models.CollectorCashSubmission.submitted_at.desc()).all()
     return [_serialize_submission(r, admin_view=True) for r in rows]
+
+
+@router.get("/admin/cash-submissions/{submission_id}/transactions")
+def admin_submission_transactions(
+    submission_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_admin),
+):
+    submission = db.query(models.CollectorCashSubmission).filter_by(id=submission_id).first()
+    if not submission:
+        raise HTTPException(404, "Submission not found.")
+    return get_submission_transactions(db, submission)
 
 
 @router.patch("/admin/cash-submissions/{submission_id}/approve")
@@ -243,11 +289,12 @@ async def create_family(
     """Create a new family (same rules as admin creation)."""
     from app.routes.admin import normalize as normalize_phone
 
-    chanda_no = data.chanda_no.strip().upper()
-    if not chanda_no:
-        raise HTTPException(400, "chanda_no is required.")
-    if db.query(models.ApprovedHead).filter_by(chanda_no=chanda_no).first():
-        raise HTTPException(400, f"Chanda number '{chanda_no}' is already in use.")
+    if data.chanda_no and data.chanda_no.strip():
+        chanda_no = data.chanda_no.strip().upper()
+        if db.query(models.ApprovedHead).filter_by(chanda_no=chanda_no).first():
+            raise HTTPException(400, f"Chanda number '{chanda_no}' is already in use.")
+    else:
+        chanda_no = generate_next_chanda_no(db)
 
     phone = None
     if data.phone:
@@ -263,6 +310,7 @@ async def create_family(
         phone=phone,
         address=data.address,
         zone=data.zone.strip().title() if data.zone else None,
+        street=data.street.strip().title() if data.street else None,
         monthly_amount=data.monthly_amount,
         registration_date=data.registration_date,
     )
@@ -351,6 +399,10 @@ async def update_family(
         family.zone = data.zone.strip().title() or None
         changed["zone"] = family.zone
 
+    if data.street is not None:
+        family.street = data.street.strip().title() or None
+        changed["street"] = family.street
+
     if data.registration_date is not None:
         old_reg_date = family.registration_date
         family.registration_date = data.registration_date
@@ -415,6 +467,9 @@ def _serialize_submission(row: models.CollectorCashSubmission, admin_view: bool 
         "start_date":       row.start_date.isoformat() + "Z" if row.start_date else None,
         "end_date":         row.end_date.isoformat() + "Z" if row.end_date else None,
         "submitted_amount": str(row.submitted_amount),
+        "cash_amount":      str(row.cash_amount) if row.cash_amount is not None else None,
+        "online_amount":    str(row.online_amount) if row.online_amount is not None else None,
+        "categories":       row.categories,
         "expected_amount":  str(row.expected_amount) if row.expected_amount else None,
         "approved_amount":  str(row.approved_amount) if row.approved_amount else None,
         "notes":            row.notes,
@@ -439,6 +494,7 @@ def _serialize_family(family: models.ApprovedHead) -> dict:
         "phone":          family.phone,
         "address":        family.address,
         "zone":           family.zone,
+        "street":         family.street,
         "monthly_amount": family.monthly_amount,
         "is_registered":  family.is_registered,
         "is_active":      family.is_active,

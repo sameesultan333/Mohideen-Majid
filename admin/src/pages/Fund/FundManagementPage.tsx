@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { COLORS } from "../../theme/colors";
+import { COLORS, TYPOGRAPHY } from "../../theme/colors";
 import {
   getFundDashboard,
   getFunds,
@@ -87,7 +87,7 @@ const styles: Record<string, React.CSSProperties> = {
   statNumber: {
     fontSize: "26px",
     fontWeight: 600,
-    fontFamily: "'Fraunces', Georgia, serif",
+    fontFamily: TYPOGRAPHY.fontDisplay,
     color: COLORS.text,
     lineHeight: 1.2,
   },
@@ -338,20 +338,16 @@ const FundManagementPage: React.FC = () => {
   };
 
   const handleSaveFund = async (payload: CreateFundPayload | UpdateFundPayload) => {
-    try {
-      if (editingFund) {
-        const updated = await updateFund(editingFund.id, payload);
-        setFunds((prev) => prev.map((f) => (f.id === updated.id ? updated : f)));
-      } else {
-        const created = await createFund(payload as CreateFundPayload);
-        setFunds((prev) => [created, ...prev]);
-      }
-      setShowCreateModal(false);
-      setEditingFund(null);
-      await fetchData();
-    } catch (err: any) {
-      throw err;
+    if (editingFund) {
+      const updated = await updateFund(editingFund.id, payload);
+      setFunds((prev) => prev.map((f) => (f.id === updated.id ? updated : f)));
+    } else {
+      const created = await createFund(payload as CreateFundPayload);
+      setFunds((prev) => [created, ...prev]);
     }
+    setShowCreateModal(false);
+    setEditingFund(null);
+    await fetchData();
   };
 
   const handleConfirmArchive = async () => {

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { X, UserPlus } from "lucide-react";
 
 import COLORS from "../theme/colors";
-import { getZones } from "../api/families";
+import { getZones, getStreets } from "../api/families";
 
 interface AddFamilyData {
   chandaNo: string;
@@ -10,6 +10,7 @@ interface AddFamilyData {
   phone: string;
   address: string;
   zone: string;
+  street: string;
   monthlyAmount: number;
   startMonth: string;
   existingFamily: boolean;
@@ -46,12 +47,15 @@ export default function AddFamilyModal({
     phone: "",
     address: "",
     zone: "",
+    street: "",
     monthlyAmount: 300,
     startMonth: "",
     existingFamily: false,
   });
   const [zones, setZones] = useState<string[]>([]);
   const [zonesError, setZonesError] = useState(false);
+  const [streets, setStreets] = useState<string[]>([]);
+  const [streetsError, setStreetsError] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -59,6 +63,9 @@ export default function AddFamilyModal({
     getZones()
       .then(z => { if (!cancelled) { setZones(z); setZonesError(false); } })
       .catch(() => { if (!cancelled) setZonesError(true); });
+    getStreets()
+      .then(s => { if (!cancelled) { setStreets(s); setStreetsError(false); } })
+      .catch(() => { if (!cancelled) setStreetsError(true); });
     return () => { cancelled = true; };
   }, [open]);
 
@@ -78,18 +85,6 @@ export default function AddFamilyModal({
   // locally before it round-trips to the server's own uniqueness check.
   const chandaTaken = form.chandaNo.trim() !== "" &&
     existingChandaNos.some(cn => cn.trim().toUpperCase() === form.chandaNo.trim().toUpperCase());
-
-  // Existing chanda numbers are plain incrementing digits (e.g. "1489",
-  // "1628") — generate picks one past the current highest. Purely a
-  // convenience default; the field stays editable if the admin wants a
-  // specific number instead.
-  const generateChandaNo = () => {
-    const nums = existingChandaNos
-      .map(cn => parseInt(cn.trim(), 10))
-      .filter(n => !isNaN(n));
-    const next = nums.length > 0 ? Math.max(...nums) + 1 : 1001;
-    update("chandaNo", String(next));
-  };
 
   // box-sizing: border-box is the fix that matters most here — without it,
   // width:100% + horizontal padding renders wider than the parent, which is
@@ -206,33 +201,12 @@ export default function AddFamilyModal({
             forcing the whole modal taller than the viewport. */}
         <div style={{ padding: 24, overflowY: "auto", minHeight: 0, flex: 1 }}>
           <label style={LB}>Chanda Number</label>
-          <div style={{ display: "flex", gap: 8, marginBottom: chandaTaken ? 6 : 16 }}>
-            <input
-              style={{ ...inputStyle, marginBottom: 0, flex: 1 }}
-              placeholder="Type a number or generate one"
-              value={form.chandaNo}
-              onChange={(e) => update("chandaNo", e.target.value)}
-            />
-            <button
-              type="button"
-              onClick={generateChandaNo}
-              style={{
-                flexShrink: 0,
-                height: 46,
-                padding: "0 16px",
-                borderRadius: 10,
-                border: `1px solid ${COLORS.primary}`,
-                background: COLORS.primaryLight,
-                color: COLORS.primary,
-                fontWeight: 700,
-                fontSize: 13,
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-              }}
-            >
-              Generate
-            </button>
-          </div>
+          <input
+            style={{ ...inputStyle, marginBottom: chandaTaken ? 6 : 16 }}
+            placeholder="Leave blank to auto-generate"
+            value={form.chandaNo}
+            onChange={(e) => update("chandaNo", e.target.value)}
+          />
           {chandaTaken && (
             <div style={{ fontSize: 12, color: COLORS.danger, marginBottom: 16 }}>
               This chanda number is already in use.
@@ -282,6 +256,23 @@ export default function AddFamilyModal({
           {zonesError && (
             <div style={{ fontSize: 11, color: COLORS.danger, marginBottom: 16 }}>
               Couldn't load the zone list — you can still type a zone manually.
+            </div>
+          )}
+
+          <label style={LB}>Street</label>
+          <input
+            list="street-options-add-family"
+            style={{ ...inputStyle, marginBottom: streetsError ? 6 : 16 }}
+            placeholder="Select or type a street"
+            value={form.street}
+            onChange={(e) => update("street", e.target.value)}
+          />
+          <datalist id="street-options-add-family">
+            {streets.map(st => <option key={st} value={st} />)}
+          </datalist>
+          {streetsError && (
+            <div style={{ fontSize: 11, color: COLORS.danger, marginBottom: 16 }}>
+              Couldn't load the street list — you can still type a street manually.
             </div>
           )}
 

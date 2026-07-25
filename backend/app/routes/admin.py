@@ -15,6 +15,7 @@ from app.models import UserStatus
 from app.security import require_admin, require_superadmin, require_admin_or_collector, verify_password
 from app.services.audit_service import AuditAction, log_action
 from app.services.registration_service import RegistrationApprovalService
+from app.services.chanda_number_service import generate_next_chanda_no
 from app.utils.fcm import notify_user
 from app.utils.payment_ledger import generate_receipt_id
 from app.websocket_manager import manager
@@ -377,12 +378,16 @@ def add_family(
     db: Session = Depends(get_db),
     current_user=Depends(require_admin),
 ):
-    chanda_no = data.chanda_no.strip().upper()
-    phone     = normalize(data.phone)
+    if data.chanda_no and data.chanda_no.strip():
+        chanda_no = data.chanda_no.strip().upper()
+        if db.query(models.ApprovedHead).filter_by(chanda_no=chanda_no).first():
+            raise HTTPException(400, f"Chanda number {chanda_no} already exists")
+    else:
+        chanda_no = generate_next_chanda_no(db)
+
+    phone = normalize(data.phone)
     if not phone:
         raise HTTPException(400, "Invalid phone number")
-    if db.query(models.ApprovedHead).filter_by(chanda_no=chanda_no).first():
-        raise HTTPException(400, f"Chanda number {chanda_no} already exists")
     if db.query(models.ApprovedHead).filter_by(phone=phone).first():
         raise HTTPException(400, "Phone number already registered")
 
@@ -390,6 +395,7 @@ def add_family(
         chanda_no=chanda_no, name=data.name.strip(),
         phone=phone, address=data.address,
         zone=data.zone.strip().title() if data.zone else None,
+        street=data.street.strip().title() if data.street else None,
         monthly_amount=data.monthly_amount,
         registration_date=data.registration_date,
     )
@@ -459,6 +465,7 @@ def edit_family(
     if data.name            is not None: head.name           = data.name.strip()
     if data.address         is not None: head.address        = data.address
     if data.zone            is not None: head.zone           = data.zone.strip().title() or None
+    if data.street          is not None: head.street         = data.street.strip().title() or None
     if data.registration_date is not None: head.registration_date = data.registration_date
     if data.monthly_amount  is not None:
         if data.monthly_amount <= 0:
@@ -977,6 +984,20 @@ def get_zones(
         .order_by(models.ApprovedHead.zone)
         .all()
     )
+    return [r[0] for r in rows]
+
+
+@router.get("/streets")
+def get_streets(
+    zone: str | None = None,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin_or_collector),
+):
+    """Return distinct, sorted street names for use in cascading Zone -> Street dropdown filters."""
+    q = db.query(models.ApprovedHead.street).filter(models.ApprovedHead.street.isnot(None))
+    if zone:
+        q = q.filter(models.ApprovedHead.zone == zone)
+    rows = q.distinct().order_by(models.ApprovedHead.street).all()
     return [r[0] for r in rows]
 
 

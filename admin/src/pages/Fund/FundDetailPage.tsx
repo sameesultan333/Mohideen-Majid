@@ -158,7 +158,7 @@ const S: Record<string, React.CSSProperties> = {
   statValue: {
     fontSize: "22px",
     fontWeight: 700,
-    fontFamily: "'Fraunces', Georgia, serif",
+    fontFamily: TYPOGRAPHY.fontDisplay,
     color: COLORS.text,
     lineHeight: 1.2,
   },

@@ -296,6 +296,7 @@ async def collect_payment(
         collection_id=None,
         head_id=head.id,
         paid_by_user_id=int(user.get("sub")),
+        collector_id=int(user.get("sub")),
         amount=data.amount,
         method=(data.method or "cash").lower(),
         created_at=created_at,

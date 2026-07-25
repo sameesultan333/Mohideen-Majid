@@ -146,16 +146,27 @@ def job_prayer_notifications():
         if not timing:
             return
 
+        is_friday = now.weekday() == 4
+
         # (prayer_key, name, adhan_time, iqamah_time)
+        # Friday: Jumu'ah replaces Dhuhr entirely — never send a "Dhuhr" FCM
+        # on Fridays, only "Jumu'ah", so users aren't told the wrong prayer
+        # is starting.
         prayers = [
-            ("fajr",    "Fajr",    timing.fajr_adhan,    timing.fajr),
-            ("dhuhr",   "Dhuhr",   timing.dhuhr_adhan,   timing.dhuhr),
+            ("fajr", "Fajr", timing.fajr_adhan, timing.fajr),
+        ]
+        if is_friday:
+            prayers.append(("jummah", "Jumu'ah", timing.jummah, timing.jummah_iqamah))
+        else:
+            prayers.append(("dhuhr", "Dhuhr", timing.dhuhr_adhan, timing.dhuhr))
+        prayers += [
             ("asr",     "Asr",     timing.asr_adhan,     timing.asr),
             ("maghrib", "Maghrib", timing.maghrib_adhan, timing.maghrib),
             ("isha",    "Isha",    timing.isha_adhan,    timing.isha),
         ]
-        if now.weekday() == 4:
-            prayers.append(("jummah", "Jumu'ah", timing.jummah, timing.jummah_iqamah))
+        # Taraweeh only runs during Ramadan — gated on the taraweeh time
+        # being configured at all (admin clears it outside Ramadan), so it
+        # never fires for the other 11 months.
         if timing.taraweeh:
             prayers.append(("taraweeh", "Taraweeh", None, timing.taraweeh))
 

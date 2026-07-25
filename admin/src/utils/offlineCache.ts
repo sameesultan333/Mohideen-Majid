@@ -19,7 +19,7 @@ export function setCacheEntry<T>(key: string, data: T): void {
   try {
     const entry: CacheEntry<T> = { data, timestamp: Date.now() };
     localStorage.setItem(CACHE_PREFIX + key, JSON.stringify(entry));
-  } catch (_) {
+  } catch {
     // storage quota or private browsing — ignore silently
   }
 }
@@ -29,7 +29,7 @@ export function getCacheEntry<T>(key: string): CacheEntry<T> | null {
     const raw = localStorage.getItem(CACHE_PREFIX + key);
     if (!raw) return null;
     return JSON.parse(raw) as CacheEntry<T>;
-  } catch (_) {
+  } catch {
     return null;
   }
 }

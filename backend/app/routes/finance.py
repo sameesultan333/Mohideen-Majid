@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.database import SessionLocal
-from app.security import get_current_user, require_admin, require_collector, require_superadmin
+from app.security import get_current_user, require_admin, require_admin_or_collector, require_collector, require_superadmin
 from app.utils.timezones import india_month_key, utc_now, to_india
 from app.websocket_manager import manager
 from app.services.audit_service import AuditAction
@@ -70,7 +70,7 @@ def _sanitize(obj):
 def finance_dashboard(
     month: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_admin),
+    current_user: dict = Depends(require_admin_or_collector),
 ):
     """
     Returns every number the frontend dashboard needs in one request.
@@ -501,6 +501,71 @@ def get_defaulters(
         response["filtered"] = {"threshold_months": months, "count": len(filtered), "items": filtered}
 
     return _sanitize(response)
+
+
+@router.post("/defaulters/notify", response_model=schemas.DefaulterReminderResult)
+def notify_defaulters(
+    data: schemas.DefaulterReminderRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_admin),
+):
+    """
+    Push (FCM) reminder to selected defaulters — replaces the old SMS-based
+    reminder. Re-derives each family's pending-months count from the same
+    query as GET /defaulters rather than trusting a client-supplied number,
+    and reuses the existing notify_user() FCM helper (see
+    scheduler.job_send_chanda_reminders for the same pattern).
+    """
+    from app.utils.fcm import notify_user
+
+    family_ids = list(dict.fromkeys(data.family_ids))  # de-dupe, preserve order
+    if not family_ids:
+        return {"requested": 0, "notified": 0, "skipped": []}
+
+    heads = (
+        db.query(models.ApprovedHead)
+        .filter(models.ApprovedHead.id.in_(family_ids), models.ApprovedHead.is_active == True)
+        .all()
+    )
+    head_map = {h.id: h for h in heads}
+
+    notified = 0
+    skipped: list[int] = []
+    for fid in family_ids:
+        head = head_map.get(fid)
+        if not head:
+            skipped.append(fid)
+            continue
+
+        pending = (
+            db.query(models.ChandaCollection)
+            .filter(models.ChandaCollection.head_id == fid, models.ChandaCollection.status != "paid")
+            .count()
+        )
+        if pending == 0:
+            skipped.append(fid)
+            continue
+
+        user = db.query(models.User).filter_by(family_id=fid, role="head", is_active=True).first()
+        if not user:
+            skipped.append(fid)
+            continue
+
+        months_word = "month" if pending == 1 else "months"
+        title = "Chanda Contribution Reminder"
+        body = (
+            "Assalamu Alaikum.\n\n"
+            f"Our records show that your Chanda contribution has been pending for {pending} {months_word}. "
+            "Please contribute through the My Ummah app or directly at the mosque.\n\n"
+            "May Allah reward you for your contribution."
+        )
+        sent = notify_user(db, user.id, title, body, data={"type": "chanda_reminder", "family_id": str(fid)})
+        if sent:
+            notified += 1
+        else:
+            skipped.append(fid)
+
+    return {"requested": len(family_ids), "notified": notified, "skipped": skipped}
 
 
 # ─────────────────────────────────────────────────────────────
@@ -2329,6 +2394,23 @@ def get_collector_history(
     today_partial = sum(1 for p in today_items if p["status"] == "partial")
     today_advance = sum(1 for p in today_items if p["is_advance"])
 
+    # Per-day breakdown (IST calendar day), most recent first — powers the
+    # collector dashboard's "per day collection" view.
+    daily_buckets: dict[str, dict] = {}
+    for it in items:
+        day = _ist_date(it["collected_at"] or it["created_at"])
+        if not day:
+            continue
+        bucket = daily_buckets.setdefault(day, {"date": day, "cash": 0.0, "online": 0.0, "total": 0.0, "count": 0})
+        amt = it["amount"]
+        if it["method"] == "cash":
+            bucket["cash"] = round(bucket["cash"] + amt, 2)
+        else:
+            bucket["online"] = round(bucket["online"] + amt, 2)
+        bucket["total"] = round(bucket["total"] + amt, 2)
+        bucket["count"] += 1
+    daily = sorted(daily_buckets.values(), key=lambda b: b["date"], reverse=True)
+
     return {
         "total":      total,
         "page":       page,
@@ -2350,6 +2432,7 @@ def get_collector_history(
             "pending_count":        sum(1 for p in chanda_items if p["status"] == "pending"),
             "today_total":          today_total,
         },
+        "daily": daily,
     }
 
 

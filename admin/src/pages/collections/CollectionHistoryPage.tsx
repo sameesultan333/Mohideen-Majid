@@ -417,11 +417,11 @@ export default function CollectionHistoryPage() {
             if (["dashboard_updated", "monthly_amount_updated", "payment_verified", "payment_collected"].includes(msg.type)) {
               loadRef.current(1);
             }
-          } catch (_) {}
+          } catch {}
         };
         ws.onerror = () => {};
         ws.onclose = () => { retryTimer = setTimeout(connect, 20_000); };
-      } catch (_) {}
+      } catch {}
     };
     connect();
     return () => { ws?.close(); if (retryTimer) clearTimeout(retryTimer); };

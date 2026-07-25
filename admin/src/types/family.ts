@@ -38,6 +38,9 @@ export interface Family {
   /** Zone / area */
   zone?: string | null;
 
+  /** Street (within the zone) */
+  street?: string | null;
+
   /** Record creation timestamp */
   created_at?: string | null;
 
@@ -53,8 +56,8 @@ export interface Family {
  * ========================================================================== */
 
 export interface CreateFamilyPayload {
-  /** Unique chanda number (required) */
-  chanda_no: string;
+  /** Unique chanda number (optional — blank/omitted auto-generates) */
+  chanda_no?: string;
 
   /** Family head name (required) */
   name: string;
@@ -73,6 +76,9 @@ export interface CreateFamilyPayload {
 
   /** Zone / area */
   zone?: string;
+
+  /** Street (within the zone) */
+  street?: string;
 
   /** Historical payments per month (for migration) */
   historical_payments?: Record<string, number>;
@@ -100,6 +106,9 @@ export interface UpdateFamilyPayload {
 
   /** Zone / area */
   zone?: string;
+
+  /** Street (within the zone) */
+  street?: string;
 
   /** Updated registration date */
   registration_date?: string;

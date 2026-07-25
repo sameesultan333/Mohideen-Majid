@@ -444,11 +444,12 @@ class UserRoleUpdate(BaseModel):
 
 
 class AddFamily(BaseModel):
-    chanda_no: str
+    chanda_no: Optional[str] = None  # blank => backend auto-generates (see chanda_number_service)
     name: str
     phone: str
     address: Optional[str] = None
     zone: Optional[str] = None
+    street: Optional[str] = None
     monthly_amount: float
     registration_date: Optional[UTCDateTime] = None
     historical_payments: Optional[dict] = None
@@ -459,6 +460,7 @@ class EditFamily(BaseModel):
     phone: Optional[str] = None
     address: Optional[str] = None
     zone: Optional[str] = None
+    street: Optional[str] = None
     monthly_amount: Optional[float] = None
     chanda_no: Optional[str] = None
     registration_date: Optional[UTCDateTime] = None
@@ -836,6 +838,19 @@ class FinanceSettingOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ─────────────────────────────────────────────
+# 📣 DEFAULTER REMINDERS (push, not SMS)
+# ─────────────────────────────────────────────
+class DefaulterReminderRequest(BaseModel):
+    family_ids: list[int]
+
+
+class DefaulterReminderResult(BaseModel):
+    requested: int
+    notified: int
+    skipped: list[int]   # family_ids with no registered head/device to notify
 
 
 # ─────────────────────────────────────────────

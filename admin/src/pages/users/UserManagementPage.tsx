@@ -169,12 +169,16 @@ const EditFamilyDialog: React.FC<EditFamilyDialogProps> = ({ family, existingFam
     phone:        family.phone ?? "",
     address:      family.address ?? "",
     zone:         family.zone ?? "",
+    street:       family.street ?? "",
     monthly_amount: String(family.monthly_amount ?? ""),
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [zones, setZones] = useState<string[]>([]);
   const [zonesError, setZonesError] = useState(false);
+  const [streets, setStreets] = useState<string[]>([]);
+  const [streetsError, setStreetsError] = useState(false);
+  const [streetInput, setStreetInput] = useState(family.street ?? "");
   // The zone <input> starts pre-filled with the family's current zone (unlike
   // Add Family, which starts blank) — browsers filter the <datalist> popup by
   // the input's current text, so a pre-filled value narrows suggestions down
@@ -187,11 +191,11 @@ const EditFamilyDialog: React.FC<EditFamilyDialogProps> = ({ family, existingFam
     let cancelled = false;
     (async () => {
       try {
-        const { getZones } = await import("../../api/families");
-        const z = await getZones();
-        if (!cancelled) { setZones(z); setZonesError(false); }
-      } catch (_) {
-        if (!cancelled) setZonesError(true);
+        const { getZones, getStreets } = await import("../../api/families");
+        const [z, st] = await Promise.all([getZones(), getStreets()]);
+        if (!cancelled) { setZones(z); setZonesError(false); setStreets(st); setStreetsError(false); }
+      } catch {
+        if (!cancelled) { setZonesError(true); setStreetsError(true); }
       }
     })();
     return () => { cancelled = true; };
@@ -224,6 +228,7 @@ const EditFamilyDialog: React.FC<EditFamilyDialogProps> = ({ family, existingFam
     if (form.phone.trim())   payload.phone   = form.phone.trim();
     if (form.address.trim()) payload.address = form.address.trim();
     if (form.zone.trim())    payload.zone    = form.zone.trim();
+    if (form.street.trim())  payload.street  = form.street.trim();
 
     try {
       setBusy(true);
@@ -298,6 +303,34 @@ const EditFamilyDialog: React.FC<EditFamilyDialogProps> = ({ family, existingFam
             {zonesError && (
               <div style={{ fontSize: 11, color: COLORS.danger, marginTop: 4 }}>
                 Couldn't load the zone list — you can still type a zone manually.
+              </div>
+            )}
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: COLORS.textSecondary, marginBottom: 4 }}>
+              Street
+            </label>
+            <input
+              list="street-options-edit-family"
+              value={streetInput}
+              onFocus={() => setStreetInput("")}
+              onChange={(e) => { setStreetInput(e.target.value); set("street")(e); }}
+              onBlur={() => { if (!streetInput) setStreetInput(form.street); }}
+              placeholder="Select or type a street"
+              style={{
+                width: "100%", boxSizing: "border-box",
+                padding: "9px 12px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
+                fontSize: 14, color: COLORS.text, background: COLORS.background,
+                outline: "none",
+              }}
+            />
+            <datalist id="street-options-edit-family">
+              {streets.map(st => <option key={st} value={st} />)}
+            </datalist>
+            {streetsError && (
+              <div style={{ fontSize: 11, color: COLORS.danger, marginTop: 4 }}>
+                Couldn't load the street list — you can still type a street manually.
               </div>
             )}
           </div>
@@ -929,7 +962,7 @@ const UserManagementPage: React.FC = () => {
     e.stopPropagation();
     setExpanded((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   };

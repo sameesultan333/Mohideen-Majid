@@ -18,11 +18,12 @@ export interface Family {
 }
 
 export interface AddFamilyRequest {
-  chanda_no: string;
+  chanda_no?: string; // blank/omitted => backend auto-generates
   name: string;
   phone: string;
   address?: string;
   zone?: string;
+  street?: string;
   monthly_amount: number;
   registration_date?: string;
   historical_payments?: Record<string, number>;
@@ -33,6 +34,7 @@ export interface EditFamilyRequest {
   name?: string;
   phone?: string;
   address?: string;
+  street?: string;
   monthly_amount?: number;
   registration_date?: string;
 }
@@ -233,6 +235,20 @@ export async function deactivateFamily(id: number) {
 export async function getDefaulters(months?: number) {
   const { data } = await api.get<DefaultersResponse>("/finance/defaulters", {
     params: months != null ? { months } : undefined,
+  });
+  return data;
+}
+
+export interface DefaulterReminderResult {
+  requested: number;
+  notified: number;
+  skipped: number[];
+}
+
+/** Push (FCM) reminder to selected defaulters — replaces the old SMS reminder. */
+export async function notifyDefaulters(familyIds: number[]) {
+  const { data } = await api.post<DefaulterReminderResult>("/finance/defaulters/notify", {
+    family_ids: familyIds,
   });
   return data;
 }

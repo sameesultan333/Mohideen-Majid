@@ -3,7 +3,7 @@ import {
   Search, X, RefreshCw, ChevronDown, ChevronRight,
   CalendarPlus, UserPlus, FileSpreadsheet, FileText,
   AlertTriangle, TrendingUp, Eye, Edit3, Receipt,
-  WifiOff, Clock,
+  WifiOff, Clock, Bell,
 } from "lucide-react";
 import { cachedFetch, formatCacheAge } from "../../utils/offlineCache";
 import { COLORS, TYPOGRAPHY } from "../../theme/colors";
@@ -13,7 +13,7 @@ import {
   getDashboard, getMembers, getDefaulters, generateMonth,
   addFamily, updateFamily, getFamilyHistory,
   downloadMonthlyExcel, downloadMonthlyPDF, downloadFamilyStatementPDF,
-  currentMonthKey, triggerDownload,
+  currentMonthKey, triggerDownload, notifyDefaulters,
   type FinanceDashboard, type MemberWithCollection, type DefaulterItem,
 } from "../../api/chanda";
 import { getAccessToken } from "../../api/auth";
@@ -507,9 +507,13 @@ function PendingVerificationPanel({ onVerified }: { onVerified(): void }) {
 // ─── Defaulters Panel ─────────────────────────────────────────
 // Shows head names (not "X families") and which months are overdue.
 
-function DefaultersPanel({ onSendSMS }: { onSendSMS(months: number, names: string[]): void }) {
+function DefaultersPanel() {
   const [defData, setDefData] = useState<any>(null);
   const [expanded, setExpanded] = useState<number | null>(null);
+  // Selection is per family_id, shared across tiers (a family belongs to
+  // exactly one tier at a time, so this never collides).
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [sending, setSending] = useState<number | null>(null); // tier currently sending, or null
 
   useEffect(() => {
     getDefaulters().then(d => setDefData(d)).catch(() => {});
@@ -521,6 +525,52 @@ function DefaultersPanel({ onSendSMS }: { onSendSMS(months: number, names: strin
     { months: 6,  label: "4–11 Months Due",  color: "#7A2E2E", bg: "#FAEEEE", border: "#E0B0B0" },
     { months: 12, label: "12+ Months Due",   color: "#4A0A0A", bg: "#FAEEEE", border: "#D09090" },
   ];
+
+  const toggleOne = (familyId: number) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(familyId)) next.delete(familyId); else next.add(familyId);
+      return next;
+    });
+  };
+
+  const toggleAllInTier = (items: DefaulterItem[]) => {
+    const ids = items.map(i => i.family_id);
+    const allSelected = ids.every(id => selected.has(id));
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (allSelected) ids.forEach(id => next.delete(id));
+      else ids.forEach(id => next.add(id));
+      return next;
+    });
+  };
+
+  // Sends to the checked families within this tier, or to every family in
+  // the tier if none are checked — keeps the old "one click, whole bucket"
+  // behavior while adding individual/multi-select on top of it.
+  const sendReminders = async (months: number, items: DefaulterItem[]) => {
+    const checkedInTier = items.filter(i => selected.has(i.family_id)).map(i => i.family_id);
+    const targetIds = checkedInTier.length > 0 ? checkedInTier : items.map(i => i.family_id);
+    if (targetIds.length === 0) return;
+
+    setSending(months);
+    try {
+      const result = await notifyDefaulters(targetIds);
+      setSelected(prev => {
+        const next = new Set(prev);
+        targetIds.forEach(id => next.delete(id));
+        return next;
+      });
+      alert(
+        `Push reminder sent to ${result.notified} of ${result.requested} famil${result.requested === 1 ? "y" : "ies"}.` +
+        (result.skipped.length > 0 ? `\n${result.skipped.length} skipped (no registered app user/device).` : "")
+      );
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || "Failed to send reminder.");
+    } finally {
+      setSending(null);
+    }
+  };
 
   return (
     <div style={{
@@ -538,6 +588,8 @@ function DefaultersPanel({ onSendSMS }: { onSendSMS(months: number, names: strin
       {tiers.map(({ months, label, color, bg, border }) => {
         const items: DefaulterItem[] = defData?.grouped?.[String(months)]?.items ?? [];
         const isOpen = expanded === months;
+        const checkedCount = items.filter(i => selected.has(i.family_id)).length;
+        const isSendingTier = sending === months;
 
         return (
           <div key={months} style={{ borderBottom: "1px solid #F0ECE0" }}>
@@ -560,13 +612,21 @@ function DefaultersPanel({ onSendSMS }: { onSendSMS(months: number, names: strin
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 {items.length > 0 && (
                   <button
-                    onClick={e => { e.stopPropagation(); onSendSMS(months, items.map(i => i.name)); }}
+                    onClick={e => { e.stopPropagation(); sendReminders(months, items); }}
+                    disabled={isSendingTier}
+                    title={checkedCount > 0 ? `Send to ${checkedCount} selected` : `Send to all ${items.length}`}
                     style={{
+                      display: "flex", alignItems: "center", gap: 5,
                       background: COLORS.primaryLight, color: COLORS.primary,
                       border: `1px solid ${COLORS.primaryBorder}`, borderRadius: 6,
-                      padding: "4px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                      padding: "4px 10px", fontSize: 12, fontWeight: 700,
+                      cursor: isSendingTier ? "default" : "pointer",
+                      opacity: isSendingTier ? 0.6 : 1,
                     }}
-                  >SMS</button>
+                  >
+                    <Bell size={12} />
+                    {isSendingTier ? "Sending…" : checkedCount > 0 ? `Remind (${checkedCount})` : "Remind All"}
+                  </button>
                 )}
                 <ChevronRight size={14} color="#93998F"
                   style={{ transform: isOpen ? "rotate(90deg)" : "none", transition: "0.2s" }} />
@@ -577,37 +637,64 @@ function DefaultersPanel({ onSendSMS }: { onSendSMS(months: number, names: strin
               <div style={{ background: "#FAF8F2", borderTop: "1px solid #F0ECE0" }}>
                 {items.length === 0 ? (
                   <div style={{ padding: "12px 18px", fontSize: 13, color: "#93998F" }}>No defaulters</div>
-                ) : items.map(item => (
-                  <div key={item.family_id} style={{
-                    padding: "10px 20px", borderBottom: "1px solid #F0ECE0",
-                  }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                      <div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: "#1C231F" }}>{item.name}</div>
-                        <div style={{ fontSize: 12, color: "#5B6660", marginTop: 1, fontFamily: TYPOGRAPHY.fontMono }}>
-                          {item.chanda_no} · {item.phone}
-                        </div>
-                        {/* Show WHICH months are overdue */}
-                        <div style={{ marginTop: 5, display: "flex", gap: 4, flexWrap: "wrap" }}>
-                          {(item.months ?? []).map((m: string) => (
-                            <span key={m} style={{
-                              background: bg, color, border: `1px solid ${border}`,
-                              fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 5,
-                            }}>
-                              {MONTH_NAMES[parseInt(m.split("-")[1]) - 1]} {m.split("-")[0]}
-                            </span>
-                          ))}
+                ) : (
+                  <>
+                    <div
+                      onClick={() => toggleAllInTier(items)}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        padding: "8px 20px", cursor: "pointer", fontSize: 12,
+                        color: "#5B6660", fontWeight: 600,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={items.length > 0 && items.every(i => selected.has(i.family_id))}
+                        onChange={() => toggleAllInTier(items)}
+                        onClick={e => e.stopPropagation()}
+                      />
+                      Select all in this tier
+                    </div>
+                    {items.map(item => (
+                      <div key={item.family_id} style={{
+                        padding: "10px 20px", borderBottom: "1px solid #F0ECE0",
+                        display: "flex", alignItems: "flex-start", gap: 10,
+                      }}>
+                        <input
+                          type="checkbox"
+                          checked={selected.has(item.family_id)}
+                          onChange={() => toggleOne(item.family_id)}
+                          style={{ marginTop: 4 }}
+                        />
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flex: 1 }}>
+                          <div>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: "#1C231F" }}>{item.name}</div>
+                            <div style={{ fontSize: 12, color: "#5B6660", marginTop: 1, fontFamily: TYPOGRAPHY.fontMono }}>
+                              {item.chanda_no} · {item.phone}
+                            </div>
+                            {/* Show WHICH months are overdue */}
+                            <div style={{ marginTop: 5, display: "flex", gap: 4, flexWrap: "wrap" }}>
+                              {(item.months ?? []).map((m: string) => (
+                                <span key={m} style={{
+                                  background: bg, color, border: `1px solid ${border}`,
+                                  fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 5,
+                                }}>
+                                  {MONTH_NAMES[parseInt(m.split("-")[1]) - 1]} {m.split("-")[0]}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          <span style={{
+                            fontFamily: TYPOGRAPHY.fontMono, fontWeight: 800,
+                            color, fontSize: 14, whiteSpace: "nowrap", marginLeft: 12,
+                          }}>
+                            {fmt(item.outstanding)}
+                          </span>
                         </div>
                       </div>
-                      <span style={{
-                        fontFamily: TYPOGRAPHY.fontMono, fontWeight: 800,
-                        color, fontSize: 14, whiteSpace: "nowrap", marginLeft: 12,
-                      }}>
-                        {fmt(item.outstanding)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                    ))}
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -1197,11 +1284,11 @@ export default function ChandaDashboard() {
                 msg.type === "family_updated"     || msg.type === "family_created") {
               loadDataRef.current(true);
             }
-          } catch (_) {}
+          } catch {}
         };
         ws.onerror = () => {};
         ws.onclose = () => { retryTimer = setTimeout(connect, 20_000); };
-      } catch (_) {}
+      } catch {}
     };
     connect();
     return () => {
@@ -1250,9 +1337,10 @@ export default function ChandaDashboard() {
     try {
       setAddLoading(true);
       await addFamily({
-        chanda_no: formData.chandaNo, name: formData.name,
+        chanda_no: formData.chandaNo?.trim() || undefined, name: formData.name,
         phone: formData.phone, address: formData.address,
         zone: formData.zone || undefined,
+        street: formData.street || undefined,
         monthly_amount: formData.monthlyAmount,
         registration_date: formData.startMonth ? formData.startMonth + "-01" : undefined,
       });
@@ -1514,11 +1602,7 @@ export default function ChandaDashboard() {
         </div>
 
         {/* Defaulters */}
-        <DefaultersPanel
-          onSendSMS={(months, names) =>
-            alert(`Sending SMS to ${names.length} ${months}-month defaulters:\n${names.slice(0,5).join(", ")}${names.length > 5 ? `… +${names.length - 5} more` : ""}`)
-          }
-        />
+        <DefaultersPanel />
 
         {/* Recent Activity */}
         <RecentActivity dashboard={dashboard} />

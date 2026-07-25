@@ -68,6 +68,9 @@ export interface CashSubmission {
   start_date: string;
   end_date: string;
   submitted_amount: number;
+  cash_amount: number | null;
+  online_amount: number | null;
+  categories: string[] | null;
   expected_amount: number | null;
   approved_amount: number | null;
   notes: string | null;
@@ -77,9 +80,21 @@ export interface CashSubmission {
   approved_at: string | null;
 }
 
+export interface CashSubmissionTransaction {
+  type: "chanda" | "donation";
+  id: number;
+  date: string | null;
+  head_name: string | null;
+  amount: string;
+  method: string;
+  receipt_id: string | null;
+}
+
 const coerceSubmission = (s: any): CashSubmission => ({
   ...s,
   submitted_amount: parseFloat(s.submitted_amount ?? 0),
+  cash_amount:      s.cash_amount      != null ? parseFloat(s.cash_amount)      : null,
+  online_amount:    s.online_amount    != null ? parseFloat(s.online_amount)    : null,
   expected_amount:  s.expected_amount != null ? parseFloat(s.expected_amount) : null,
   approved_amount:  s.approved_amount  != null ? parseFloat(s.approved_amount)  : null,
 });
@@ -98,4 +113,9 @@ export const approveCashSubmission = async (id: number, approved_amount?: number
 export const rejectCashSubmission = async (id: number, reason: string): Promise<{ message: string }> => {
   const { data } = await api.patch(`/collector/admin/cash-submissions/${id}/reject`, { reason });
   return data;
+};
+
+export const getCashSubmissionTransactions = async (id: number): Promise<CashSubmissionTransaction[]> => {
+  const { data } = await api.get(`/collector/admin/cash-submissions/${id}/transactions`);
+  return Array.isArray(data) ? data : [];
 };

@@ -129,7 +129,7 @@ const DeleteStaffDialog: React.FC<DeleteStaffDialogProps> = ({
     setLoading(true);
     try {
       await onConfirm();
-    } catch (err) {
+    } catch {
       // Error handled in parent
     } finally {
       setLoading(false);

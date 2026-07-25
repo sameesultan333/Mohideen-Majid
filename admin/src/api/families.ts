@@ -17,6 +17,15 @@ export const getZones = async (): Promise<string[]> => {
 };
 
 /* ============================================================================
+ * Get Streets (distinct street names — optionally scoped to a zone)
+ * ========================================================================== */
+
+export const getStreets = async (zone?: string): Promise<string[]> => {
+  const { data } = await api.get("/admin/streets", { params: zone ? { zone } : undefined });
+  return Array.isArray(data) ? data : [];
+};
+
+/* ============================================================================
  * Get Families
  * ⚠️  No trailing slash – matches backend route @router.get("/families")
  * ========================================================================== */

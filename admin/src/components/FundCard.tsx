@@ -1,5 +1,5 @@
 import React from "react";
-import { COLORS } from "../theme/colors";
+import { COLORS, TYPOGRAPHY } from "../theme/colors";
 import type { Fund } from "../types/fund";
 
 interface FundCardProps {
@@ -115,7 +115,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     color: COLORS.text,
     marginTop: "2px",
-    fontFamily: "'Fraunces', Georgia, serif",
+    fontFamily: TYPOGRAPHY.fontDisplay,
   },
   financialValueCollected: { color: COLORS.success },
   financialValueSpent: { color: COLORS.danger },

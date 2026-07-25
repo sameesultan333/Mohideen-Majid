@@ -130,7 +130,7 @@ const S: Record<string, React.CSSProperties> = {
   submitRow: { display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "20px", paddingTop: "16px", borderTop: `1px solid ${COLORS.divider}` },
   receiptSuccess: { textAlign: "center", padding: "16px 0 24px" },
   receiptCheck: { width: "56px", height: "56px", borderRadius: "50%", background: COLORS.successLight, color: COLORS.success, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px", fontSize: "28px", fontWeight: 700 },
-  receiptAmount: { fontSize: "22px", fontWeight: 700, color: COLORS.success, marginBottom: "4px" },
+  receiptAmount: { fontSize: "22px", fontWeight: 700, fontFamily: TYPOGRAPHY.fontDisplay, color: COLORS.success, marginBottom: "4px" },
 
   // Skeleton
   skeleton: { background: "linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.5s infinite", borderRadius: "12px" },
@@ -625,7 +625,7 @@ const DonationsPage: React.FC = () => {
                 </td>
                 <td style={{ ...S.td, color: COLORS.textSecondary }}>{d.purpose_name ?? "—"}</td>
                 <td style={S.td}><span style={methodBadgeStyle(d.method)}>{fmtMethod(d.method)}</span></td>
-                <td style={{ ...S.td, fontWeight: 600, color: COLORS.success }}>{fmt(d.amount)}</td>
+                <td style={{ ...S.td, fontWeight: 600, color: COLORS.success, fontFamily: TYPOGRAPHY.fontDisplay }}>{fmt(d.amount)}</td>
                 <td style={{ ...S.td, color: COLORS.textSecondary, fontSize: "13px" }}>{d.recorded_by}</td>
                 <td style={{ ...S.td, color: COLORS.textSecondary, whiteSpace: "nowrap" }}>
                   {fmtDate(d.donation_date ?? d.created_at)}
@@ -700,7 +700,7 @@ const DonationsPage: React.FC = () => {
             <div style={S.cardBody}>
               <div style={S.cardRow}>
                 <span style={S.cardRowLabel}>Amount</span>
-                <span style={{ ...S.cardRowValue, color: COLORS.success }}>{fmt(d.amount)}</span>
+                <span style={{ ...S.cardRowValue, color: COLORS.success, fontFamily: TYPOGRAPHY.fontDisplay }}>{fmt(d.amount)}</span>
               </div>
               <div style={S.cardRow}>
                 <span style={S.cardRowLabel}>Fund</span>

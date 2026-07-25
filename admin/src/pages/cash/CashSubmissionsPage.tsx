@@ -4,7 +4,9 @@ import {
   listCashSubmissions,
   approveCashSubmission,
   rejectCashSubmission,
+  getCashSubmissionTransactions,
   type CashSubmission,
+  type CashSubmissionTransaction,
 } from "../../api/registrations";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -231,6 +233,64 @@ function RejectModal({ sub, onClose, onDone }: RejectModalProps) {
   );
 }
 
+// ─── Transactions Modal ───────────────────────────────────────────────────────
+
+interface TransactionsModalProps {
+  sub: CashSubmission;
+  onClose: () => void;
+}
+
+function TransactionsModal({ sub, onClose }: TransactionsModalProps) {
+  const [txns, setTxns] = useState<CashSubmissionTransaction[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getCashSubmissionTransactions(sub.id)
+      .then(setTxns)
+      .catch(() => setError("Failed to load transactions"));
+  }, [sub.id]);
+
+  return (
+    <div style={S.overlay} onClick={onClose}>
+      <div style={{ ...S.modal, width: "520px" }} onClick={(e) => e.stopPropagation()}>
+        <div style={S.modalHeader}>
+          <div style={S.modalTitle}>Transactions — {sub.collector_name}</div>
+          <button style={S.modalClose} onClick={onClose}>✕</button>
+        </div>
+        <div style={{ ...S.modalBody, maxHeight: "60vh", overflowY: "auto" }}>
+          {error && <div style={S.errorBanner}>⚠ {error}</div>}
+          {!txns && !error && <div style={{ color: COLORS.textMuted, fontSize: "14px" }}>Loading…</div>}
+          {txns && txns.length === 0 && (
+            <div style={{ color: COLORS.textMuted, fontSize: "14px" }}>No transactions found.</div>
+          )}
+          {txns && txns.map((t) => (
+            <div
+              key={`${t.type}-${t.id}`}
+              style={{
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+                padding: "10px 0", borderBottom: `1px solid ${COLORS.border}`,
+              }}
+            >
+              <div>
+                <div style={{ fontSize: "14px", fontWeight: 600, color: COLORS.text }}>
+                  {t.head_name ?? "—"}
+                </div>
+                <div style={{ fontSize: "12px", color: COLORS.textSecondary }}>
+                  {t.type === "chanda" ? "Monthly Chanda" : "Donation"} · {t.method?.toUpperCase()} ·{" "}
+                  {t.date ? fmtDate(t.date) : "—"}
+                </div>
+              </div>
+              <div style={{ fontSize: "14px", fontWeight: 700, color: COLORS.text }}>
+                ₹{parseFloat(t.amount).toLocaleString("en-IN")}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 type FilterType = "all" | "pending" | "approved" | "rejected";
@@ -243,6 +303,7 @@ const CashSubmissionsPage: React.FC = () => {
   const [filter, setFilter] = useState<FilterType>("pending");
   const [approving, setApproving] = useState<CashSubmission | null>(null);
   const [rejecting, setRejecting] = useState<CashSubmission | null>(null);
+  const [viewingTxns, setViewingTxns] = useState<CashSubmission | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -327,6 +388,11 @@ const CashSubmissionsPage: React.FC = () => {
                 )}
                 <div style={S.cardMeta}>Submitted {fmtDateTime(sub.submitted_at)}</div>
                 <div style={S.cardAmt}>₹{sub.submitted_amount.toLocaleString("en-IN")}</div>
+                {(sub.cash_amount !== null || sub.online_amount !== null) && (
+                  <div style={S.amtLine}>
+                    Cash: ₹{(sub.cash_amount ?? 0).toLocaleString("en-IN")} · Online: ₹{(sub.online_amount ?? 0).toLocaleString("en-IN")}
+                  </div>
+                )}
                 {sub.approved_amount !== null && sub.approved_amount !== sub.submitted_amount && (
                   <div style={S.amtLine}>Approved: ₹{sub.approved_amount.toLocaleString("en-IN")}</div>
                 )}
@@ -339,10 +405,16 @@ const CashSubmissionsPage: React.FC = () => {
                 {sub.rejection_reason && (
                   <div style={S.rejectNote}>Rejected: {sub.rejection_reason}</div>
                 )}
-                <div style={{ marginTop: "8px" }}>
+                <div style={{ marginTop: "8px", display: "flex", gap: "10px", alignItems: "center" }}>
                   <span style={{ ...S.badge, background: sc.bg, color: sc.text }}>
                     {sub.status}
                   </span>
+                  <button
+                    style={{ ...S.filterBtn, padding: "4px 12px", fontSize: "12px" }}
+                    onClick={() => setViewingTxns(sub)}
+                  >
+                    View Transactions
+                  </button>
                 </div>
               </div>
               {sub.status === "pending" && (
@@ -373,6 +445,9 @@ const CashSubmissionsPage: React.FC = () => {
       )}
       {rejecting && (
         <RejectModal sub={rejecting} onClose={() => setRejecting(null)} onDone={handleDone} />
+      )}
+      {viewingTxns && (
+        <TransactionsModal sub={viewingTxns} onClose={() => setViewingTxns(null)} />
       )}
     </div>
   );
