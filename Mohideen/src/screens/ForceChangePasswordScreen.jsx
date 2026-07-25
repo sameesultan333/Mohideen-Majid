@@ -2,11 +2,8 @@
 // Shown when must_change_password=true (admin set a temporary password).
 // User MUST change it before accessing any other screen.
 import React, { useState, useCallback } from "react";
-import {
-  View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, StatusBar, Platform, ActivityIndicator,
-  SafeAreaView,
-} from "react-native";
+import { View, Text, StyleSheet, ScrollView, StatusBar, Platform, ActivityIndicator, SafeAreaView } from "react-native";
+import AnimatedPressable from "../components/AnimatedPressable";
 import { useTranslation } from "react-i18next";
 import { saveToken, saveRefreshToken, deleteToken, deleteRefreshToken } from "../utils/secureStorage";
 import { authApiAxios } from "../config/server";
@@ -97,7 +94,7 @@ export default function ForceChangePasswordScreen({ navigation }) {
           />
         </View>
 
-        <TouchableOpacity
+        <AnimatedPressable
           style={[styles.submitBtn, loading && styles.submitDisabled]}
           onPress={handleSubmit}
           disabled={loading}
@@ -108,11 +105,11 @@ export default function ForceChangePasswordScreen({ navigation }) {
           ) : (
             <Text style={styles.submitTxt}>{t("forceChangePassword.submit")}</Text>
           )}
-        </TouchableOpacity>
+        </AnimatedPressable>
 
-        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+        <AnimatedPressable style={styles.logoutBtn} onPress={handleLogout}>
           <Text style={styles.logoutTxt}>{t("forceChangePassword.logout")}</Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
 
       </ScrollView>
     </SafeAreaView>

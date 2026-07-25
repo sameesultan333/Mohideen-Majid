@@ -2,6 +2,7 @@ import { Platform } from "react-native";
 import messaging, { subscribeToTopic, unsubscribeFromTopic } from "@react-native-firebase/messaging";
 import { getToken } from "./secureStorage";
 import { apiAxios } from "../config/server";
+import { logger } from "./logger";
 
 // Role → FCM topic mapping
 const ROLE_TOPICS = {
@@ -34,7 +35,7 @@ export async function registerFcmToken(fcmToken, role) {
       headers: { Authorization: `Bearer ${authToken}` },
     });
   } catch (e) {
-    console.log("[FCM] Device registration failed:", e?.message);
+    logger.log("[FCM] Device registration failed:", e?.message);
   }
 }
 
@@ -47,9 +48,9 @@ export async function subscribeRoleTopics(fcmInstance, role) {
   for (const topic of topics) {
     try {
       await subscribeToTopic(fcmInstance, topic);
-      console.log(`[FCM] Subscribed to topic: ${topic}`);
+      logger.log(`[FCM] Subscribed to topic: ${topic}`);
     } catch (e) {
-      console.log(`[FCM] Failed to subscribe to ${topic}:`, e?.message);
+      logger.log(`[FCM] Failed to subscribe to ${topic}:`, e?.message);
     }
   }
 }

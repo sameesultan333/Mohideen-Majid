@@ -1,21 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback, memo } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  StatusBar,
-  Animated,
-  Platform,
-  Dimensions,
-  RefreshControl,
-  Modal,
-  FlatList,
-  TouchableWithoutFeedback,
-  ActivityIndicator,
-  Alert,
-} from "react-native";
+import { View, Text, StyleSheet, ScrollView, StatusBar, Animated, Platform, Dimensions, RefreshControl, Modal, FlatList, TouchableWithoutFeedback, ActivityIndicator, Alert } from "react-native";
+import AnimatedPressable from "../components/AnimatedPressable";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getToken } from "../utils/secureStorage";
 import { clearAuthSession } from "../utils/authSession";
@@ -25,6 +10,7 @@ import Svg, { Path, Rect, Defs, LinearGradient, Stop } from "react-native-svg";
 import BottomNav from "../components/BottomNav";
 import { apiAxios } from "../config/server";
 import { COLORS as C } from "../config/theme";
+import { logger } from "../utils/logger";
 
 const { width: SW } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
@@ -214,7 +200,7 @@ const LanguageModal = ({ visible, onClose, currentLang, onSelect }) => {
   ];
 
   const renderItem = ({ item }) => (
-    <TouchableOpacity
+    <AnimatedPressable
       style={[styles.modalItem, currentLang === item.code && styles.modalItemActive]}
       onPress={() => {
         onSelect(item.code);
@@ -229,7 +215,7 @@ const LanguageModal = ({ visible, onClose, currentLang, onSelect }) => {
           <CheckIcon color={H.gold} size={18} />
         </View>
       )}
-    </TouchableOpacity>
+    </AnimatedPressable>
   );
 
   return (
@@ -279,14 +265,14 @@ const CompactHeader = ({ userName, greetingKey, hijriDate, gregorianDate, unread
           <Text allowFontScaling={false} style={hs.greeting}>{greetingKey}</Text>
           <Text allowFontScaling={false} style={hs.name} numberOfLines={1}>{userName || "User"}</Text>
         </View>
-        <TouchableOpacity accessibilityLabel="Notifications" onPress={onBellPress} style={hs.bell}>
+        <AnimatedPressable accessibilityLabel="Notifications" onPress={onBellPress} style={hs.bell}>
           <BellIcon />
           {unreadCount > 0 && (
             <View style={hs.badge}>
               <Text allowFontScaling={false} style={hs.badgeTxt}>{unreadCount > 9 ? "9+" : unreadCount}</Text>
             </View>
           )}
-        </TouchableOpacity>
+        </AnimatedPressable>
       </View>
 
       <View style={hs.dateRow}>
@@ -329,7 +315,7 @@ export default function ProfileScreen({ navigation, route }) {
 
   // ─── Clock update ─────────────────────────────────────────────────
   useEffect(() => {
-    const interval = setInterval(() => setCurrentTime(new Date()), 1000);
+    const interval = setInterval(() => setCurrentTime(new Date()), 60000); // minute granularity is enough — only date/greeting text depends on this
     return () => clearInterval(interval);
   }, []);
 
@@ -390,7 +376,7 @@ export default function ProfileScreen({ navigation, route }) {
         // ignore
       }
     } catch (e) {
-      console.log("Profile load error", e);
+      logger.log("Profile load error", e);
     } finally {
       setLoading(false);
       if (showRefresh) setRefreshing(false);
@@ -562,27 +548,27 @@ export default function ProfileScreen({ navigation, route }) {
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>{t("profile.settings")}</Text>
           <View style={styles.card}>
-            <TouchableOpacity style={styles.action} onPress={() => setModalVisible(true)}>
+            <AnimatedPressable style={styles.action} onPress={() => setModalVisible(true)}>
               <View style={styles.actionLeft}>
                 <LanguageIcon color={H.headerDeep} size={22} />
                 <Text style={styles.actionText}>{t("profile.language")}</Text>
               </View>
               <Text style={styles.actionValue}>{currentLanguage === "en" ? "English" : "தமிழ்"}</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
             <View style={styles.separator} />
-            <TouchableOpacity style={styles.action} onPress={() => navigation.navigate("Chanda")}>
+            <AnimatedPressable style={styles.action} onPress={() => navigation.navigate("Chanda")}>
               <View style={styles.actionLeft}>
                 <ProfileIcon color={H.headerDeep} size={22} />
                 <Text style={styles.actionText}>{t("profile.chanda_history")}</Text>
               </View>
-            </TouchableOpacity>
+            </AnimatedPressable>
             <View style={styles.separator} />
-            <TouchableOpacity style={styles.action} onPress={() => alert(t("profile.about_app"))}>
+            <AnimatedPressable style={styles.action} onPress={() => alert(t("profile.about_app"))}>
               <View style={styles.actionLeft}>
                 <QuickIcon type="deen" color={H.headerDeep} size={22} />
                 <Text style={styles.actionText}>{t("profile.about_app")}</Text>
               </View>
-            </TouchableOpacity>
+            </AnimatedPressable>
           </View>
         </View>
 
@@ -590,24 +576,24 @@ export default function ProfileScreen({ navigation, route }) {
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>{t("profile.account")}</Text>
           <View style={styles.card}>
-            <TouchableOpacity style={styles.action} onPress={() => navigation.navigate("ChangePassword")} activeOpacity={0.75}>
+            <AnimatedPressable style={styles.action} onPress={() => navigation.navigate("ChangePassword")} activeOpacity={0.75}>
               <View style={styles.actionLeft}>
                 <LockIcon color={H.headerDeep} size={22} />
                 <Text style={styles.actionText}>Change Password</Text>
               </View>
-            </TouchableOpacity>
+            </AnimatedPressable>
             <View style={styles.separator} />
-            <TouchableOpacity style={styles.logoutRow} onPress={handleLogout} activeOpacity={0.75}>
+            <AnimatedPressable style={styles.logoutRow} onPress={handleLogout} activeOpacity={0.75}>
               <LogoutIcon color={H.error} size={20} />
               <Text style={styles.logoutText}>{t("profile.logout")}</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
             {user.role !== "superadmin" && (
               <>
                 <View style={{ height: 10 }} />
-                <TouchableOpacity style={styles.logoutRow} onPress={handleDeleteAccount} activeOpacity={0.75}>
+                <AnimatedPressable style={styles.logoutRow} onPress={handleDeleteAccount} activeOpacity={0.75}>
                   <TrashIcon color={H.error} size={18} />
                   <Text style={styles.logoutText}>{t("profile.deleteAccount")}</Text>
-                </TouchableOpacity>
+                </AnimatedPressable>
               </>
             )}
           </View>

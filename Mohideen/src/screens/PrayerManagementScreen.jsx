@@ -4,7 +4,9 @@
 
  * Matches ImamHadithScreen / AskQuestionScreen palette and styling
 
- * No emojis · All text from i18n · Native time picker (DateTimePicker)
+ * No emojis · All text from i18n · Custom JS-only time picker (no native
+ * module — @react-native-community/datetimepicker was never linked into
+ * this build and crashed with "RNCDatePicker could not be found").
 
  */
 
@@ -12,47 +14,19 @@
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
 
-import {
-
-  View,
-
-  Text,
-
-  StyleSheet,
-
-  TextInput,
-
-  TouchableOpacity,
-
-  ActivityIndicator,
-
-  StatusBar,
-
-  Platform,
-
-  Animated,
-
-  Dimensions,
-
-  Alert,
-
-  Modal,
-
-  KeyboardAvoidingView,
-
-} from "react-native";
+import { View, Text, StyleSheet, TextInput, ActivityIndicator, StatusBar, Platform, Animated, Dimensions, Alert, Modal, KeyboardAvoidingView } from "react-native";
+import AnimatedPressable from "../components/AnimatedPressable";
 
 import { useTranslation } from "react-i18next";
 
 import Svg, { Path, Rect, Circle, Defs, LinearGradient, Stop } from "react-native-svg";
 
-import DateTimePicker from "@react-native-community/datetimepicker";
 
 
-
-import { apiAxios } from "../config/server";
+import { apiAxios, authApiAxios } from "../config/server";
 
 import { COLORS as C, RADII, SPACING, FONTS } from "../config/theme";
+import { logger } from "../utils/logger";
 
 
 
@@ -402,7 +376,7 @@ const CompactHeader = ({ title, version, updatedByLabel }) => (
 
 // ─── Reusable Time Field (press to open native picker) ──────────────
 
-const TimeField = ({ icon, label, value, onPress, invalid, half }) => {
+const TimeField = ({ icon, label, value, onPress, invalid, half, onClear }) => {
 
   const display = formatDisplayTime(value);
 
@@ -410,9 +384,23 @@ const TimeField = ({ icon, label, value, onPress, invalid, half }) => {
 
     <View style={[fs.wrap, half && fs.half]}>
 
-      <Text style={fs.label}>{label}</Text>
+      <View style={fs.labelRow}>
 
-      <TouchableOpacity
+        <Text style={fs.label}>{label}</Text>
+
+        {onClear && value ? (
+
+          <AnimatedPressable onPress={onClear} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+
+            <Text style={fs.clearText}>Clear</Text>
+
+          </AnimatedPressable>
+
+        ) : null}
+
+      </View>
+
+      <AnimatedPressable
 
         style={[fs.inputBox, invalid && fs.inputBoxInvalid]}
 
@@ -432,7 +420,7 @@ const TimeField = ({ icon, label, value, onPress, invalid, half }) => {
 
         <ChevronIcon />
 
-      </TouchableOpacity>
+      </AnimatedPressable>
 
     </View>
 
@@ -552,35 +540,9 @@ export default function PrayerManagementScreen() {
 
 
 
-  const handlePickerChange = (event, selectedDate) => {
+  const confirmPickedTime = (date) => {
 
-    if (Platform.OS === "android") {
-
-      // Android's dialog fires once (or is dismissed) then closes itself.
-
-      if (event.type === "set" && selectedDate && pickerField) {
-
-        applyPickedTime(pickerField.key, selectedDate);
-
-      }
-
-      setPickerField(null);
-
-      return;
-
-    }
-
-    // iOS spinner updates continuously while the sheet stays open.
-
-    if (selectedDate) setPickerValue(selectedDate);
-
-  };
-
-
-
-  const confirmIOSPicker = () => {
-
-    if (pickerField) applyPickedTime(pickerField.key, pickerValue);
+    if (pickerField) applyPickedTime(pickerField.key, date);
 
     closePicker();
 
@@ -656,7 +618,7 @@ export default function PrayerManagementScreen() {
 
     } catch (err) {
 
-      console.log("PRAYER FETCH ERROR:", err?.response?.data || err.message);
+      logger.log("PRAYER FETCH ERROR:", err?.response?.data || err.message);
 
       Alert.alert(t("prayerManagement.errorTitle"), t("prayerManagement.loadError"));
 
@@ -812,7 +774,7 @@ export default function PrayerManagementScreen() {
 
 
 
-      const res = await apiAxios({ method: "put", url: "/prayer/", data: payload });
+      const res = await authApiAxios({ method: "put", url: "/prayer/", data: payload });
 
       const d = res.data?.data;
 
@@ -832,7 +794,7 @@ export default function PrayerManagementScreen() {
 
     } catch (err) {
 
-      console.log("PRAYER UPDATE ERROR:", err?.response?.data || err.message);
+      logger.log("PRAYER UPDATE ERROR:", err?.response?.data || err.message);
 
       Alert.alert(
 
@@ -1018,7 +980,7 @@ export default function PrayerManagementScreen() {
 
             <TimeField icon={<ClockIcon />} half label={t("prayerManagement.fields.ishraq")} value={form.ishraq} onPress={() => openPicker("ishraq", t("prayerManagement.fields.ishraq"))} invalid={invalidKeys.ishraq} />
 
-            <TimeField icon={<ClockIcon />} half label={t("prayerManagement.fields.taraweeh")} value={form.taraweeh} onPress={() => openPicker("taraweeh", t("prayerManagement.fields.taraweeh"))} invalid={invalidKeys.taraweeh} />
+            <TimeField icon={<ClockIcon />} half label={t("prayerManagement.fields.taraweeh")} value={form.taraweeh} onPress={() => openPicker("taraweeh", t("prayerManagement.fields.taraweeh"))} onClear={() => setForm((f) => ({ ...f, taraweeh: "" }))} invalid={invalidKeys.taraweeh} />
 
             <TimeField icon={<ClockIcon />} half label={t("prayerManagement.fields.sunset")} value={form.sunset} onPress={() => openPicker("sunset", t("prayerManagement.fields.sunset"))} invalid={invalidKeys.sunset} />
 
@@ -1064,7 +1026,7 @@ export default function PrayerManagementScreen() {
 
 
 
-          <TouchableOpacity
+          <AnimatedPressable
 
             style={[styles.submit, saving && styles.submitDisabled]}
 
@@ -1092,7 +1054,7 @@ export default function PrayerManagementScreen() {
 
             )}
 
-          </TouchableOpacity>
+          </AnimatedPressable>
 
 
 
@@ -1104,97 +1066,179 @@ export default function PrayerManagementScreen() {
 
 
 
-      {/* ── Android: native dialog opens itself, no extra UI needed ── */}
+      <TimePickerModal
 
-      {!IOS && pickerField && (
+        visible={!!pickerField}
 
-        <DateTimePicker
+        value={pickerValue}
 
-          key={`time-picker-${pickerField.key}`}
+        label={pickerField?.label}
 
-          value={pickerValue}
+        onConfirm={confirmPickedTime}
 
-          mode="time"
+        onCancel={closePicker}
 
-          is24Hour={false}
+        cancelLabel={t("prayerManagement.pickerCancel")}
 
-          display="clock"
+        doneLabel={t("prayerManagement.pickerDone")}
 
-          onChange={handlePickerChange}
-
-        />
-
-      )}
-
-
-
-      {/* ── iOS: inline spinner inside a bottom sheet with Done/Cancel ── */}
-
-      {IOS && (
-
-        <Modal
-
-          visible={!!pickerField}
-
-          transparent
-
-          animationType="fade"
-
-          onRequestClose={closePicker}
-
-        >
-
-          <TouchableOpacity style={ps.backdrop} activeOpacity={1} onPress={closePicker}>
-
-            <TouchableOpacity activeOpacity={1} style={ps.sheet} onPress={() => {}}>
-
-              <View style={ps.sheetHeader}>
-
-                <TouchableOpacity onPress={closePicker}>
-
-                  <Text style={ps.cancelText}>{t("prayerManagement.pickerCancel")}</Text>
-
-                </TouchableOpacity>
-
-                <Text style={ps.sheetTitle}>{pickerField?.label}</Text>
-
-                <TouchableOpacity onPress={confirmIOSPicker}>
-
-                  <Text style={ps.doneText}>{t("prayerManagement.pickerDone")}</Text>
-
-                </TouchableOpacity>
-
-              </View>
-
-              <DateTimePicker
-
-                key={`time-picker-${pickerField?.key}`}
-
-                value={pickerValue}
-
-                mode="time"
-
-                is24Hour={false}
-
-                display="spinner"
-
-                onChange={handlePickerChange}
-
-                textColor={H.textDark}
-
-                style={ps.spinner}
-
-              />
-
-            </TouchableOpacity>
-
-          </TouchableOpacity>
-
-        </Modal>
-
-      )}
+      />
 
     </View>
+
+  );
+
+}
+
+
+
+// ─── Custom JS-only time picker (no native module dependency) ──────────
+
+function TimePickerModal({ visible, value, label, onConfirm, onCancel, cancelLabel, doneLabel }) {
+
+  const [hour, setHour] = useState("12");
+
+  const [minute, setMinute] = useState("00");
+
+  const [period, setPeriod] = useState("AM");
+
+
+
+  useEffect(() => {
+
+    if (!visible) return;
+
+    const h24 = value.getHours();
+
+    const period = h24 >= 12 ? "PM" : "AM";
+
+    let h12 = h24 % 12;
+
+    if (h12 === 0) h12 = 12;
+
+    setHour(String(h12));
+
+    setMinute(String(value.getMinutes()).padStart(2, "0"));
+
+    setPeriod(period);
+
+  }, [visible, value]);
+
+
+
+  const confirm = () => {
+
+    const h = parseInt(hour, 10);
+
+    const m = parseInt(minute, 10);
+
+    if (!h || h < 1 || h > 12 || isNaN(m) || m < 0 || m > 59) {
+
+      Alert.alert("Invalid time", "Please enter a valid hour (1-12) and minute (0-59).");
+
+      return;
+
+    }
+
+    let h24 = h % 12;
+
+    if (period === "PM") h24 += 12;
+
+    const d = new Date(value);
+
+    d.setHours(h24, m, 0, 0);
+
+    onConfirm(d);
+
+  };
+
+
+
+  return (
+
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+
+      <AnimatedPressable style={ps.backdrop} activeOpacity={1} onPress={onCancel}>
+
+        <AnimatedPressable activeOpacity={1} style={ps.sheet} onPress={() => {}}>
+
+          <View style={ps.sheetHeader}>
+
+            <AnimatedPressable onPress={onCancel}>
+
+              <Text style={ps.cancelText}>{cancelLabel}</Text>
+
+            </AnimatedPressable>
+
+            <Text style={ps.sheetTitle}>{label}</Text>
+
+            <AnimatedPressable onPress={confirm}>
+
+              <Text style={ps.doneText}>{doneLabel}</Text>
+
+            </AnimatedPressable>
+
+          </View>
+
+          <View style={ps.pickerRow}>
+
+            <View style={ps.pickerField}>
+
+              <Text style={ps.pickerFieldLabel}>HH</Text>
+
+              <TextInput style={ps.pickerInput} value={hour} onChangeText={setHour}
+
+                keyboardType="numeric" maxLength={2} selectTextOnFocus />
+
+            </View>
+
+            <Text style={ps.pickerSep}>:</Text>
+
+            <View style={ps.pickerField}>
+
+              <Text style={ps.pickerFieldLabel}>MM</Text>
+
+              <TextInput style={ps.pickerInput} value={minute} onChangeText={setMinute}
+
+                keyboardType="numeric" maxLength={2} selectTextOnFocus />
+
+            </View>
+
+            <View style={ps.ampmCol}>
+
+              <AnimatedPressable
+
+                style={[ps.ampmBtn, period === "AM" && ps.ampmBtnActive]}
+
+                onPress={() => setPeriod("AM")}
+
+              >
+
+                <Text style={[ps.ampmTxt, period === "AM" && ps.ampmTxtActive]}>AM</Text>
+
+              </AnimatedPressable>
+
+              <AnimatedPressable
+
+                style={[ps.ampmBtn, period === "PM" && ps.ampmBtnActive]}
+
+                onPress={() => setPeriod("PM")}
+
+              >
+
+                <Text style={[ps.ampmTxt, period === "PM" && ps.ampmTxtActive]}>PM</Text>
+
+              </AnimatedPressable>
+
+            </View>
+
+          </View>
+
+        </AnimatedPressable>
+
+      </AnimatedPressable>
+
+    </Modal>
 
   );
 
@@ -1330,6 +1374,10 @@ const fs = StyleSheet.create({
 
   label: { fontSize: 11.5, fontWeight: "700", color: H.textMuted, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.4 },
 
+  labelRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+
+  clearText: { fontSize: 11, fontWeight: "700", color: H.gold, textDecorationLine: "underline", marginBottom: 6 },
+
   inputBox: {
 
     flexDirection: "row", alignItems: "center", gap: 8,
@@ -1390,7 +1438,33 @@ const ps = StyleSheet.create({
 
   doneText: { fontSize: 15, color: H.headerLight, fontWeight: "700" },
 
-  spinner: { height: 216, marginTop: 4 },
+  pickerRow: { flexDirection: "row", alignItems: "flex-end", justifyContent: "center",
+
+              gap: 8, paddingHorizontal: 20, paddingVertical: 28 },
+
+  pickerField: { alignItems: "center" },
+
+  pickerFieldLabel: { fontSize: 11, color: H.textMuted, fontWeight: "600", marginBottom: 4, letterSpacing: 0.5 },
+
+  pickerInput: { borderWidth: 1.5, borderColor: H.cardBorder, borderRadius: 8, paddingVertical: 10,
+
+                paddingHorizontal: 14, fontSize: 20, fontWeight: "700", color: H.textDark,
+
+                textAlign: "center", minWidth: 56 },
+
+  pickerSep: { fontSize: 24, color: H.textMuted, fontWeight: "700", paddingBottom: 8 },
+
+  ampmCol: { marginLeft: 12, gap: 6 },
+
+  ampmBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8,
+
+            borderWidth: 1.5, borderColor: H.cardBorder },
+
+  ampmBtnActive: { backgroundColor: H.headerLight, borderColor: H.headerLight },
+
+  ampmTxt: { fontSize: 13, fontWeight: "700", color: H.textMuted },
+
+  ampmTxtActive: { color: "#fff" },
 
 });
 

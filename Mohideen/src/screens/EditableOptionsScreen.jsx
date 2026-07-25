@@ -44,29 +44,8 @@
 
 import React, { useEffect, useState, useRef, useCallback, memo } from "react";
 
-import {
-
-  View,
-
-  Text,
-
-  StyleSheet,
-
-  TouchableOpacity,
-
-  Animated,
-
-  ScrollView,
-
-  StatusBar,
-
-  Platform,
-
-  Dimensions,
-
-  RefreshControl,
-
-} from "react-native";
+import { View, Text, StyleSheet, Animated, ScrollView, StatusBar, Platform, Dimensions, RefreshControl, TouchableOpacity } from "react-native";
+import AnimatedPressable from "../components/AnimatedPressable";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -141,6 +120,7 @@ const normalizeRole = (role) => (role || "").toString().trim().toLowerCase();
 const SUPERADMIN_ROLES = ["superadmin", "super_admin", "super admin"];
 
 const EDITABLE_ROLES = ["imam", "modhin", "watchman"];
+const MANAGEMENT_ROLES = ["modhin", "watchman"];
 
 const canAccessEditable = (role) => {
 
@@ -149,6 +129,11 @@ const canAccessEditable = (role) => {
   return EDITABLE_ROLES.includes(r) || SUPERADMIN_ROLES.includes(r);
 
 };
+
+// Modhin/Watchman get a trimmed "Management Dashboard" — Prayer Timings
+// only. Imam (and SuperAdmin, for oversight) keep the full Imam Dashboard
+// with all four controls.
+const isManagementRole = (role) => MANAGEMENT_ROLES.includes(normalizeRole(role));
 
 
 
@@ -388,11 +373,11 @@ const CompactHeader = ({ onBack, title, hijriDate, gregorianDate }) => (
 
     <View style={hs.row}>
 
-      <TouchableOpacity onPress={onBack} style={hs.backBtn} activeOpacity={0.8}>
+      <AnimatedPressable onPress={onBack} style={hs.backBtn} activeOpacity={0.8}>
 
         <BackIcon />
 
-      </TouchableOpacity>
+      </AnimatedPressable>
 
       <View style={hs.titleContainer}>
 
@@ -574,7 +559,7 @@ export default function EditableOptionsScreen({ navigation, route }) {
 
   useEffect(() => {
 
-    const interval = setInterval(() => setCurrentTime(new Date()), 1000);
+    const interval = setInterval(() => setCurrentTime(new Date()), 60000); // minute granularity is enough — only date/greeting text depends on this
 
     return () => clearInterval(interval);
 
@@ -595,6 +580,9 @@ export default function EditableOptionsScreen({ navigation, route }) {
   const hijriDate = getHijriDateString(currentTime);
 
   const gregorianDate = currentTime.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+
+  const managementView = isManagementRole(role);
+  const dashboardTitle = managementView ? t("editable.managementTitle") : t("editable.title");
 
 
 
@@ -630,7 +618,7 @@ export default function EditableOptionsScreen({ navigation, route }) {
 
         <StatusBar barStyle="light-content" backgroundColor={H.headerDeep} />
 
-        <CompactHeader onBack={() => navigation.goBack()} title={t("editable.title")} hijriDate={hijriDate} gregorianDate={gregorianDate} />
+        <CompactHeader onBack={() => navigation.goBack()} title={dashboardTitle} hijriDate={hijriDate} gregorianDate={gregorianDate} />
 
         <View style={styles.restricted}>
 
@@ -638,11 +626,11 @@ export default function EditableOptionsScreen({ navigation, route }) {
 
           <Text allowFontScaling={false} style={styles.restrictedSub}>{t("editable.accessRestrictedSub")}</Text>
 
-          <TouchableOpacity style={styles.restrictedBtn} onPress={() => navigation.navigate("Home")}>
+          <AnimatedPressable style={styles.restrictedBtn} onPress={() => navigation.navigate("Home")}>
 
             <Text allowFontScaling={false} style={styles.restrictedBtnTxt}>{t("editable.backToHome")}</Text>
 
-          </TouchableOpacity>
+          </AnimatedPressable>
 
         </View>
 
@@ -664,7 +652,7 @@ export default function EditableOptionsScreen({ navigation, route }) {
 
 
 
-      <CompactHeader onBack={() => navigation.goBack()} title={t("editable.title")} hijriDate={hijriDate} gregorianDate={gregorianDate} />
+      <CompactHeader onBack={() => navigation.goBack()} title={dashboardTitle} hijriDate={hijriDate} gregorianDate={gregorianDate} />
 
 
 
@@ -700,55 +688,67 @@ export default function EditableOptionsScreen({ navigation, route }) {
 
 
 
-        <ControlCard
+        {!managementView && (
 
-          title={t("editable.hadithManagement")}
+          <ControlCard
 
-          subtitle={t("editable.hadithManagementSub")}
+            title={t("editable.hadithManagement")}
 
-          type="hadith"
+            subtitle={t("editable.hadithManagementSub")}
 
-          onPress={() => navigation.navigate("ImamHadith")}
+            type="hadith"
 
-          index={1}
+            onPress={() => navigation.navigate("ImamHadith")}
 
-        />
+            index={1}
 
+          />
 
-
-        <Text allowFontScaling={false} style={[styles.sectionTitle, { marginTop: 20 }]}>{t("editable.community")}</Text>
-
-
-
-        <ControlCard
-
-          title={t("editable.qaResponses")}
-
-          subtitle={t("editable.qaResponsesSub")}
-
-          type="question"
-
-          onPress={() => navigation.navigate("AnswerQA")}
-
-          index={2}
-
-        />
+        )}
 
 
 
-        <ControlCard
+        {!managementView && (
 
-          title={t("editable.announcements")}
+          <>
 
-          subtitle={t("editable.announcementsSub")}
+            <Text allowFontScaling={false} style={[styles.sectionTitle, { marginTop: 20 }]}>{t("editable.community")}</Text>
 
-          type="announcement"
 
-          onPress={() => navigation.navigate("PostAnnouncement")}
 
-          index={3}
+            <ControlCard
 
-        />
+              title={t("editable.qaResponses")}
+
+              subtitle={t("editable.qaResponsesSub")}
+
+              type="question"
+
+              onPress={() => navigation.navigate("AnswerQA")}
+
+              index={2}
+
+            />
+
+
+
+            <ControlCard
+
+              title={t("editable.announcements")}
+
+              subtitle={t("editable.announcementsSub")}
+
+              type="announcement"
+
+              onPress={() => navigation.navigate("PostAnnouncement")}
+
+              index={3}
+
+            />
+
+          </>
+
+        )}
 
       </Animated.ScrollView>
 

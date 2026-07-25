@@ -1,21 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  TextInput,
-  Modal,
-  Alert,
-  Platform,
-  ActivityIndicator,
-  StatusBar,
-  ScrollView,
-  Animated,
-  Image,
-  Dimensions,
-} from "react-native";
+import { View, Text, StyleSheet, FlatList, TextInput, Modal, Alert, Platform, ActivityIndicator, StatusBar, ScrollView, Animated, Image, Dimensions } from "react-native";
+import AnimatedPressable from "../components/AnimatedPressable";
 import { useTranslation } from "react-i18next";
 import { PermissionsAndroid } from "react-native";
 import { launchImageLibrary } from "react-native-image-picker";
@@ -26,7 +11,7 @@ import Video from "react-native-video";
 import AudioRecord from "../lib/audioRecord";
 import { getToken } from "../utils/secureStorage";
 import { apiAxios, authApiFetch } from "../config/server";
-import { COLORS, RADII, SPACING, FONTS } from "../config/theme";
+import { COLORS, RADII, FONTS } from "../config/theme";
 
 const { width: SW } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
@@ -210,13 +195,13 @@ const CompactHeader = ({ title, hijriDate, gregorianDate, onBackPress, onRefresh
       </Svg>
       <HeaderPattern w={SW} h={148} />
       <View style={hs.row}>
-        <TouchableOpacity style={hs.backBtn} onPress={onBackPress}>
+        <AnimatedPressable style={hs.backBtn} onPress={onBackPress}>
           <BackArrowIcon />
-        </TouchableOpacity>
+        </AnimatedPressable>
         <Text style={hs.title}>{title}</Text>
-        <TouchableOpacity style={hs.refreshBtn} onPress={onRefreshPress}>
+        <AnimatedPressable style={hs.refreshBtn} onPress={onRefreshPress}>
           <RefreshIcon />
-        </TouchableOpacity>
+        </AnimatedPressable>
       </View>
       <View style={hs.dateRow}>
         <Text style={hs.dateTxt}>{gregorianDate}</Text>
@@ -309,7 +294,7 @@ export default function ImamQAScreen({ navigation }) {
   const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
-    const interval = setInterval(() => setCurrentTime(new Date()), 1000);
+    const interval = setInterval(() => setCurrentTime(new Date()), 60000); // minute granularity is enough — only date/greeting text depends on this
     return () => clearInterval(interval);
   }, []);
 
@@ -590,9 +575,9 @@ export default function ImamQAScreen({ navigation }) {
       <Text style={styles.timeText}>
         {item.created_at ? new Date(item.created_at).toLocaleString() : ""}
       </Text>
-      <TouchableOpacity style={styles.answerBtn} onPress={() => openModal(item)} activeOpacity={0.85}>
+      <AnimatedPressable style={styles.answerBtn} onPress={() => openModal(item)} activeOpacity={0.85}>
         <Text style={styles.answerBtnText}>{t("qa.answerThis")}</Text>
-      </TouchableOpacity>
+      </AnimatedPressable>
     </View>
   );
 
@@ -644,9 +629,9 @@ export default function ImamQAScreen({ navigation }) {
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>{t("qa.answerModalTitle")}</Text>
-            <TouchableOpacity onPress={closeModal}>
+            <AnimatedPressable onPress={closeModal}>
               <CloseIcon />
-            </TouchableOpacity>
+            </AnimatedPressable>
           </View>
 
           <Animated.ScrollView
@@ -675,7 +660,7 @@ export default function ImamQAScreen({ navigation }) {
             {image && (
               <View style={styles.previewSection}>
                 <Text style={styles.previewLabel}>{t("qa.imageLabel")}</Text>
-                <TouchableOpacity
+                <AnimatedPressable
                   style={styles.imagePreviewBox}
                   activeOpacity={0.85}
                   onPress={() => setImagePreviewVisible(true)}
@@ -685,10 +670,10 @@ export default function ImamQAScreen({ navigation }) {
                     <Text style={styles.fileName} numberOfLines={1}>{getAssetName(image)}</Text>
                     <Text style={styles.tapHint}>{t("qa.tapToView")}</Text>
                   </View>
-                  <TouchableOpacity onPress={() => setImage(null)} style={styles.removeChip}>
+                  <AnimatedPressable onPress={() => setImage(null)} style={styles.removeChip}>
                     <TrashIcon />
-                  </TouchableOpacity>
-                </TouchableOpacity>
+                  </AnimatedPressable>
+                </AnimatedPressable>
               </View>
             )}
 
@@ -697,18 +682,18 @@ export default function ImamQAScreen({ navigation }) {
                 <Text style={styles.previewLabel}>{t("qa.audioLabel")}</Text>
                 <View style={styles.audioPreviewBox}>
                   <View style={styles.audioTopRow}>
-                    <TouchableOpacity style={styles.playBtn} onPress={togglePlayback} activeOpacity={0.85}>
+                    <AnimatedPressable style={styles.playBtn} onPress={togglePlayback} activeOpacity={0.85}>
                       {isPlaying ? <PauseIcon /> : <PlayIcon />}
-                    </TouchableOpacity>
+                    </AnimatedPressable>
                     <View style={styles.audioPreviewMeta}>
                       <Text style={styles.audioPreviewTitle}>{t("qa.yourRecording")}</Text>
                       <Text style={styles.audioDuration}>
                         {formatDuration(playbackPosition)} / {formatDuration(playbackDuration || recordedDuration)}
                       </Text>
                     </View>
-                    <TouchableOpacity style={styles.removeChip} onPress={removeAudio}>
+                    <AnimatedPressable style={styles.removeChip} onPress={removeAudio}>
                       <TrashIcon />
-                    </TouchableOpacity>
+                    </AnimatedPressable>
                   </View>
 
                   <View style={styles.audioControls}>
@@ -722,10 +707,10 @@ export default function ImamQAScreen({ navigation }) {
                       thumbTintColor={C.gold}
                       onSlidingComplete={handleSeek}
                     />
-                    <TouchableOpacity onPress={toggleSpeed} style={styles.speedBtn} activeOpacity={0.85}>
+                    <AnimatedPressable onPress={toggleSpeed} style={styles.speedBtn} activeOpacity={0.85}>
                       <SpeedIcon color={C.headerDeep} size={18} />
                       <Text style={styles.speedText}>{playbackRate}x</Text>
-                    </TouchableOpacity>
+                    </AnimatedPressable>
                   </View>
 
                   <Video
@@ -759,7 +744,7 @@ export default function ImamQAScreen({ navigation }) {
             )}
 
             <View style={styles.buttonGroup}>
-              <TouchableOpacity
+              <AnimatedPressable
                 style={[styles.secondaryBtn, image && styles.activeBtn]}
                 onPress={pickImage}
                 disabled={recording}
@@ -769,9 +754,9 @@ export default function ImamQAScreen({ navigation }) {
                 <Text style={[styles.secondaryBtnText, image && { color: C.headerDeep }]}>
                   {image ? t("qa.changeImage") : t("qa.addImage")}
                 </Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
 
-              <TouchableOpacity
+              <AnimatedPressable
                 style={[styles.recordBtn, recording && styles.recordingBtnActive]}
                 onPress={recording ? stopRecording : startRecording}
                 activeOpacity={0.85}
@@ -780,10 +765,10 @@ export default function ImamQAScreen({ navigation }) {
                 <Text style={[styles.recordBtnText, recording && { color: C.error }]}>
                   {recording ? t("qa.stop") : t("qa.record")}
                 </Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
             </View>
 
-            <TouchableOpacity
+            <AnimatedPressable
               style={[styles.submitBtn, submitting && styles.submitDisabled]}
               onPress={submitAnswer}
               disabled={submitting}
@@ -796,7 +781,7 @@ export default function ImamQAScreen({ navigation }) {
                   {recording ? t("qa.stopAndSubmit") : t("qa.submit")}
                 </Text>
               )}
-            </TouchableOpacity>
+            </AnimatedPressable>
             <View style={{ height: 40 }} />
           </Animated.ScrollView>
         </View>
@@ -809,16 +794,16 @@ export default function ImamQAScreen({ navigation }) {
         animationType="fade"
         onRequestClose={() => setImagePreviewVisible(false)}
       >
-        <TouchableOpacity
+        <AnimatedPressable
           style={styles.imageViewerBackdrop}
           activeOpacity={1}
           onPress={() => setImagePreviewVisible(false)}
         >
           {image && <Image source={{ uri: image.uri }} style={styles.imageViewerFull} resizeMode="contain" />}
-          <TouchableOpacity style={styles.imageViewerClose} onPress={() => setImagePreviewVisible(false)}>
+          <AnimatedPressable style={styles.imageViewerClose} onPress={() => setImagePreviewVisible(false)}>
             <CloseIcon color={C.white} />
-          </TouchableOpacity>
-        </TouchableOpacity>
+          </AnimatedPressable>
+        </AnimatedPressable>
       </Modal>
     </View>
   );

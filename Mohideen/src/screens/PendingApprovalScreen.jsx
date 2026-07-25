@@ -1,9 +1,7 @@
 // screens/PendingApprovalScreen.jsx
 import React, { useCallback, useEffect, useRef } from "react";
-import {
-  View, Text, StyleSheet, TouchableOpacity,
-  SafeAreaView, StatusBar, AppState,
-} from "react-native";
+import { View, Text, StyleSheet, SafeAreaView, StatusBar, AppState } from "react-native";
+import AnimatedPressable from "../components/AnimatedPressable";
 import { useTranslation } from "react-i18next";
 import messaging from "@react-native-firebase/messaging";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -123,9 +121,9 @@ export default function PendingApprovalScreen({ navigation }) {
         <Text style={styles.info}>{t("pendingApproval.info")}</Text>
 
         {/* Logout */}
-        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+        <AnimatedPressable style={styles.logoutBtn} onPress={handleLogout}>
           <Text style={styles.logoutText}>{t("pendingApproval.logout")}</Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
       </View>
     </SafeAreaView>
   );

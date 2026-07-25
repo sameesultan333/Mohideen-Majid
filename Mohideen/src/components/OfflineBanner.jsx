@@ -1,5 +1,6 @@
 import React from "react";
-import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
+import AnimatedPressable from "./AnimatedPressable";
 import { useTranslation } from "react-i18next";
 import { formatLastUpdated } from "../utils/cache";
 
@@ -12,9 +13,9 @@ export default function OfflineBanner({ lastUpdated, onRetry }) {
         {lastUpdated ? ` · ${t("common.lastUpdated")} ${formatLastUpdated(lastUpdated)}` : ""}
       </Text>
       {onRetry && (
-        <TouchableOpacity onPress={onRetry} style={s.retryBtn}>
+        <AnimatedPressable onPress={onRetry} style={s.retryBtn}>
           <Text style={s.retryText}>{t("common.retry")}</Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
       )}
     </View>
   );

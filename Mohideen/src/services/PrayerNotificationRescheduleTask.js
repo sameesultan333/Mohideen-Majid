@@ -7,11 +7,12 @@
 
 import { AppRegistry, Platform } from 'react-native';
 import PrayerNotificationService from './PrayerNotificationService';
+import { logger } from "../utils/logger";
 
 const TASK_NAME = 'PrayerNotificationReschedule';
 
 const PrayerNotificationRescheduleTask = async (taskData) => {
-  console.log('PrayerNotificationRescheduleTask started:', taskData);
+  logger.log('PrayerNotificationRescheduleTask started:', taskData);
   
   try {
     // Initialize the notification service
@@ -20,9 +21,9 @@ const PrayerNotificationRescheduleTask = async (taskData) => {
     // Reschedule notifications from local storage
     await PrayerNotificationService.rescheduleOnLaunch();
     
-    console.log('PrayerNotificationRescheduleTask completed successfully');
+    logger.log('PrayerNotificationRescheduleTask completed successfully');
   } catch (error) {
-    console.error('PrayerNotificationRescheduleTask failed:', error);
+    logger.error('PrayerNotificationRescheduleTask failed:', error);
   }
 };
 

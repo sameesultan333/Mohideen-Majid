@@ -5,26 +5,15 @@
  */
 
 import React, { useState, useRef, useEffect } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  StatusBar,
-  Platform,
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Animated,
-  Dimensions,
-} from "react-native";
+import { View, Text, StyleSheet, TextInput, StatusBar, Platform, ActivityIndicator, Alert, KeyboardAvoidingView, Animated, Dimensions } from "react-native";
+import AnimatedPressable from "../components/AnimatedPressable";
 import { useTranslation } from "react-i18next";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getToken } from "../utils/secureStorage";
 import Svg, { Path, Rect, Defs, LinearGradient, Stop, Circle } from "react-native-svg";
 import { apiAxios } from "../config/server";
 import { COLORS as C } from "../config/theme";
+import { logger } from "../utils/logger";
 
 const { width: SW } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
@@ -161,9 +150,9 @@ const CompactHeader = ({ onBack, title, hijriDate, gregorianDate }) => {
       <HeaderPattern w={SW} h={148} />
 
       <View style={hs.row}>
-        <TouchableOpacity onPress={onBack} style={hs.backBtn}>
+        <AnimatedPressable onPress={onBack} style={hs.backBtn}>
           <BackIcon />
-        </TouchableOpacity>
+        </AnimatedPressable>
         <View style={hs.titleContainer}>
           <Text style={hs.title}>{safeTitle}</Text>
         </View>
@@ -202,7 +191,7 @@ export default function AskQuestionScreen({ navigation, route }) {
   }, []);
 
   useEffect(() => {
-    const interval = setInterval(() => setCurrentTime(new Date()), 1000);
+    const interval = setInterval(() => setCurrentTime(new Date()), 60000); // minute granularity is enough — only date/greeting text depends on this
     return () => clearInterval(interval);
   }, []);
 
@@ -230,7 +219,7 @@ export default function AskQuestionScreen({ navigation, route }) {
       setQuestionText("");
     } catch (err) {
       const msg = err?.response?.data?.detail || err.message || t("common.error");
-      console.log("Submit error:", msg);
+      logger.log("Submit error:", msg);
       Alert.alert(t("common.error"), msg);
     } finally {
       setSubmitting(false);
@@ -274,14 +263,14 @@ export default function AskQuestionScreen({ navigation, route }) {
             </View>
             <Text style={styles.successTitle}>{t("askQuestion.successTitle")}</Text>
             <Text style={styles.successText}>{t("askQuestion.successText")}</Text>
-            <TouchableOpacity
+            <AnimatedPressable
               style={styles.askAnother}
               onPress={() => setSubmitted(false)}
               activeOpacity={0.8}
             >
               <Text style={styles.askAnotherText}>{t("askQuestion.askAnother")}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
+            </AnimatedPressable>
+            <AnimatedPressable
               style={[styles.askAnother, { backgroundColor: H.cardBorder, marginTop: 10 }]}
               onPress={() => navigation.goBack()}
               activeOpacity={0.8}
@@ -289,7 +278,7 @@ export default function AskQuestionScreen({ navigation, route }) {
               <Text style={[styles.askAnotherText, { color: H.textDark }]}>
                 {t("askQuestion.goBack")}
               </Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           </View>
         ) : (
           // ── Form ──────────────────────────────────────
@@ -316,7 +305,7 @@ export default function AskQuestionScreen({ navigation, route }) {
               {questionText.length} / 600
             </Text>
 
-            <TouchableOpacity
+            <AnimatedPressable
               style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
               onPress={handleSubmit}
               disabled={submitting}
@@ -327,7 +316,7 @@ export default function AskQuestionScreen({ navigation, route }) {
               ) : (
                 <Text style={styles.submitText}>{t("askQuestion.submit")}</Text>
               )}
-            </TouchableOpacity>
+            </AnimatedPressable>
           </>
         )}
       </Animated.ScrollView>

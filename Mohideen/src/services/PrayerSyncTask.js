@@ -7,6 +7,7 @@ import { AppRegistry, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import PrayerNotificationService from './PrayerNotificationService';
 import { getFallbackBaseUrl } from '../config/server';
+import { logger } from "../utils/logger";
 
 const TASK_NAME = 'PrayerSyncTask';
 
@@ -35,12 +36,12 @@ async function PrayerSyncTask() {
 
     const storedVersion = parseInt(await AsyncStorage.getItem(VERSION_KEY) || '0', 10);
     if (serverVersion <= storedVersion) {
-      console.log(`[PrayerSync] Up to date (v${storedVersion})`);
+      logger.log(`[PrayerSync] Up to date (v${storedVersion})`);
       return;
     }
 
     // Step 2 — download full times
-    console.log(`[PrayerSync] New version ${serverVersion} (had ${storedVersion}) — downloading`);
+    logger.log(`[PrayerSync] New version ${serverVersion} (had ${storedVersion}) — downloading`);
     const timesRes = await fetchWithTimeout(`${BASE_URL}/prayer/`, 10000);
     if (!timesRes.ok) return;
     const data = await timesRes.json();
@@ -57,9 +58,9 @@ async function PrayerSyncTask() {
     await PrayerNotificationService.initialize();
     await PrayerNotificationService.scheduleNotifications(data);
 
-    console.log(`[PrayerSync] Rescheduled alarms for v${serverVersion}`);
+    logger.log(`[PrayerSync] Rescheduled alarms for v${serverVersion}`);
   } catch (e) {
-    console.warn('[PrayerSync] Sync failed (will retry next cycle):', e?.message);
+    logger.warn('[PrayerSync] Sync failed (will retry next cycle):', e?.message);
   }
 }
 

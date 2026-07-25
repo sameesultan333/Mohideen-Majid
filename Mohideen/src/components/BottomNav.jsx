@@ -61,14 +61,14 @@ function buildTabs(rawRole, rawRoles, t) {
   const isCollector  = hasRole("collector");
   const isAdmin      = hasRole("admin");
 
-  // Collector: Home / Collect / Deen / History / Donation / Profile
+  // Collector: Home / Collect / Deen / History / Dashboard / Profile
   if (isCollector) {
     return [
       { screen: "Home",             type: "home",      label: t("nav.home") },
       { screen: "Collector",        type: "collector", label: t("nav.collect") },
       { screen: "Deen",             type: "deen",      label: t("nav.deen") },
       { screen: "CollectorHistory", type: "history",   label: t("nav.history") },
-      { screen: "Donation",         type: "donate",    label: t("nav.donate") },
+      { screen: "CollectorDashboard", type: "dashboard", label: t("nav.dashboard") },
       { screen: "Profile",          type: "profile",   label: t("nav.profile") },
     ];
   }
@@ -152,6 +152,7 @@ const NavIcon = ({ active, type, color, inactiveColor }) => {
     editable: "M18 4 L20 6 L8 18 L6 18 L6 16 Z M15 7 L17 9",
     collector: "M4 6 L4 18 L8 18 L8 20 L16 20 L16 18 L20 18 L20 6 L18 4 L6 4 Z M8 8 L16 8 M8 12 L16 12 M8 16 L12 16",
     history: "M12 3 A9 9 0 1 0 21 12 M12 3 L12 12 L16 15 M18 3 L21 6 M21 3 L18 6",
+    dashboard: "M4 4 L10 4 L10 12 L4 12 Z M14 4 L20 4 L20 9 L14 9 Z M14 13 L20 13 L20 20 L14 20 Z M4 16 L10 16 L10 20 L4 20 Z",
   };
   const d = paths[type] || paths.home;
   const isStroke = type === "prayerTime" || type === "editable" || type === "history";

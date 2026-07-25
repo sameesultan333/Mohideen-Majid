@@ -4,20 +4,8 @@
  */
 
 import React, { useEffect, useState, useRef, useCallback, memo } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  ActivityIndicator,
-  Image,
-  Dimensions,
-  Platform,
-  StatusBar,
-  SafeAreaView,
-  RefreshControl,
-} from "react-native";
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, Image, Dimensions, Platform, StatusBar, SafeAreaView, RefreshControl } from "react-native";
+import AnimatedPressable from "../components/AnimatedPressable";
 import { useTranslation } from "react-i18next";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Svg, { Path, Rect, Defs, LinearGradient, Stop } from "react-native-svg";
@@ -166,7 +154,7 @@ const HadithCard = memo(({ item, onPress }) => {
     : safeTranslation;
 
   return (
-    <TouchableOpacity style={styles.card} onPress={() => onPress(item)} activeOpacity={0.85}>
+    <AnimatedPressable style={styles.card} onPress={() => onPress(item)} activeOpacity={0.85}>
       <View style={styles.cardHeader}>
         <Text style={styles.timestamp}>{safeTimestamp}</Text>
         {safeSource ? (
@@ -188,7 +176,7 @@ const HadithCard = memo(({ item, onPress }) => {
         </View>
         <Text style={styles.replyAction}>{t("hadith.viewDiscussion")}</Text>
       </View>
-    </TouchableOpacity>
+    </AnimatedPressable>
   );
 });
 
@@ -208,7 +196,7 @@ export default function HadithFeedScreen({ navigation, route }) {
 
   // ─── Clock ──────────────────────────────────────────────────────────
   useEffect(() => {
-    const interval = setInterval(() => setCurrentTime(new Date()), 1000);
+    const interval = setInterval(() => setCurrentTime(new Date()), 60000); // minute granularity is enough — only date/greeting text depends on this
     return () => clearInterval(interval);
   }, []);
 

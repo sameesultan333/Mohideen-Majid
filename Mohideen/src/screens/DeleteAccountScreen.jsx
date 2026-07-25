@@ -1,16 +1,6 @@
 import React, { useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  StatusBar,
-  Platform,
-  TextInput,
-  ActivityIndicator,
-  Alert,
-} from "react-native";
+import { View, Text, StyleSheet, ScrollView, StatusBar, Platform, TextInput, ActivityIndicator, Alert } from "react-native";
+import AnimatedPressable from "../components/AnimatedPressable";
 import { useTranslation } from "react-i18next";
 import { authApiAxios } from "../config/server";
 import { PasswordInput } from "../components/AuthComponents";
@@ -64,9 +54,9 @@ export default function DeleteAccountScreen({ navigation }) {
       <StatusBar barStyle="light-content" backgroundColor={C.bg} />
 
       <View style={[s.header, { paddingTop: IOS ? 52 : (StatusBar.currentHeight || 0) + 12 }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={s.backBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+        <AnimatedPressable onPress={() => navigation.goBack()} style={s.backBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
           <View style={s.backArrow} />
-        </TouchableOpacity>
+        </AnimatedPressable>
         <Text allowFontScaling={false} style={s.headerTitle}>{t("deleteAccount.title")}</Text>
         <View style={{ width: 40 }} />
       </View>
@@ -125,16 +115,16 @@ export default function DeleteAccountScreen({ navigation }) {
             />
           </View>
 
-          <TouchableOpacity
+          <AnimatedPressable
             style={s.cancelBtn}
             onPress={() => navigation.goBack()}
             activeOpacity={0.85}
             disabled={loading}
           >
             <Text allowFontScaling={false} style={s.cancelBtnTxt}>{t("deleteAccount.cancel")}</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
 
-          <TouchableOpacity
+          <AnimatedPressable
             style={[s.deleteBtn, (loading || !password) && s.deleteBtnDisabled]}
             onPress={handleDelete}
             disabled={loading || !password}
@@ -145,7 +135,7 @@ export default function DeleteAccountScreen({ navigation }) {
             ) : (
               <Text allowFontScaling={false} style={s.deleteBtnTxt}>{t("deleteAccount.confirm")}</Text>
             )}
-          </TouchableOpacity>
+          </AnimatedPressable>
         </View>
       </ScrollView>
     </View>

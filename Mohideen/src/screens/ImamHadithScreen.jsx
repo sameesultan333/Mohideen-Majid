@@ -5,23 +5,8 @@
  */
 
 import React, { useEffect, useRef, useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  TextInput,
-  Modal,
-  Alert,
-  Platform,
-  ActivityIndicator,
-  StatusBar,
-  ScrollView,
-  Animated,
-  Image,
-  Dimensions,
-} from "react-native";
+import { View, Text, StyleSheet, FlatList, TextInput, Modal, Alert, Platform, ActivityIndicator, StatusBar, ScrollView, Animated, Image, Dimensions } from "react-native";
+import AnimatedPressable from "../components/AnimatedPressable";
 import { useTranslation } from "react-i18next";
 import { PermissionsAndroid } from "react-native";
 import { launchImageLibrary } from "react-native-image-picker";
@@ -32,7 +17,8 @@ import Slider from "@react-native-community/slider";
 import AudioRecord from "../lib/audioRecord";
 import { getToken } from "../utils/secureStorage";
 import { apiAxios, authApiFetch } from "../config/server";
-import { COLORS as C, RADII, SPACING, FONTS } from "../config/theme";
+import { COLORS as C, RADII, FONTS } from "../config/theme";
+import { logger } from "../utils/logger";
 
 const { width: SW } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
@@ -250,9 +236,9 @@ const CompactHeader = ({ title, hijriDate, gregorianDate, onAdd }) => {
         <View style={hs.titleContainer}>
           <Text style={hs.title}>{safeTitle}</Text>
         </View>
-        <TouchableOpacity onPress={onAdd} style={hs.addBtn} activeOpacity={0.85}>
+        <AnimatedPressable onPress={onAdd} style={hs.addBtn} activeOpacity={0.85}>
           <PlusIcon />
-        </TouchableOpacity>
+        </AnimatedPressable>
       </View>
 
       <View style={hs.dateRow}>
@@ -305,14 +291,14 @@ export default function ImamHadithScreen() {
       const res = await apiAxios({ method: "get", url: "/hadith" });
       setHadiths(res.data);
     } catch (err) {
-      console.log("FETCH ERROR:", err.message);
+      logger.log("FETCH ERROR:", err.message);
     }
   };
 
   useEffect(() => { fetchHadith(); }, []);
 
   useEffect(() => {
-    const interval = setInterval(() => setCurrentTime(new Date()), 1000);
+    const interval = setInterval(() => setCurrentTime(new Date()), 60000); // minute granularity is enough — only date/greeting text depends on this
     return () => clearInterval(interval);
   }, []);
 
@@ -544,7 +530,7 @@ export default function ImamHadithScreen() {
       resetForm();
       fetchHadith();
     } catch (err) {
-      console.log("HADITH POST ERROR:", err?.response?.data || err.message || err);
+      logger.log("HADITH POST ERROR:", err?.response?.data || err.message || err);
       Alert.alert(t("hadith.errorTitle"), err?.response?.data?.detail || err.message || t("hadith.postError"));
     } finally {
       setLoading(false);
@@ -604,9 +590,9 @@ export default function ImamHadithScreen() {
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>{t("hadith.modalTitle")}</Text>
-            <TouchableOpacity onPress={closeModal}>
+            <AnimatedPressable onPress={closeModal}>
               <Text style={styles.closeBtnText}>{t("common.close")}</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           </View>
 
           <Animated.ScrollView
@@ -648,7 +634,7 @@ export default function ImamHadithScreen() {
             {image && (
               <View style={styles.previewSection}>
                 <Text style={styles.previewLabel}>{t("hadith.imageLabel")}</Text>
-                <TouchableOpacity
+                <AnimatedPressable
                   style={styles.imagePreviewBox}
                   activeOpacity={0.85}
                   onPress={() => setImagePreviewVisible(true)}
@@ -658,10 +644,10 @@ export default function ImamHadithScreen() {
                     <Text style={styles.fileName} numberOfLines={1}>{getAssetName(image)}</Text>
                     <Text style={styles.tapHint}>{t("hadith.tapToView")}</Text>
                   </View>
-                  <TouchableOpacity onPress={() => setImage(null)} style={styles.removeChip}>
+                  <AnimatedPressable onPress={() => setImage(null)} style={styles.removeChip}>
                     <TrashIcon />
-                  </TouchableOpacity>
-                </TouchableOpacity>
+                  </AnimatedPressable>
+                </AnimatedPressable>
               </View>
             )}
 
@@ -671,18 +657,18 @@ export default function ImamHadithScreen() {
                 <Text style={styles.previewLabel}>{t("hadith.audioLabel")}</Text>
                 <View style={styles.audioPreviewBox}>
                   <View style={styles.audioTopRow}>
-                    <TouchableOpacity style={styles.playBtn} onPress={togglePlayback} activeOpacity={0.85}>
+                    <AnimatedPressable style={styles.playBtn} onPress={togglePlayback} activeOpacity={0.85}>
                       {isPlaying ? <PauseIcon /> : <PlayIcon />}
-                    </TouchableOpacity>
+                    </AnimatedPressable>
                     <View style={styles.audioPreviewMeta}>
                       <Text style={styles.audioPreviewTitle}>{t("hadith.voiceNote")}</Text>
                       <Text style={styles.audioDuration}>
                         {formatDuration(playbackPosition)} / {formatDuration(playbackDuration || recordedDuration)}
                       </Text>
                     </View>
-                    <TouchableOpacity onPress={removeAudio} style={styles.removeChip}>
+                    <AnimatedPressable onPress={removeAudio} style={styles.removeChip}>
                       <TrashIcon />
-                    </TouchableOpacity>
+                    </AnimatedPressable>
                   </View>
 
                   <Slider
@@ -705,7 +691,7 @@ export default function ImamHadithScreen() {
                     onLoad={handlePlaybackLoad}
                     onProgress={handlePlaybackProgress}
                     onEnd={handlePlaybackEnd}
-                    onError={(e) => console.log("AUDIO PLAYBACK ERROR:", e)}
+                    onError={(e) => logger.log("AUDIO PLAYBACK ERROR:", e)}
                     style={styles.hiddenPlayer}
                   />
                 </View>
@@ -728,7 +714,7 @@ export default function ImamHadithScreen() {
             )}
 
             <View style={styles.buttonGroup}>
-              <TouchableOpacity
+              <AnimatedPressable
                 style={[styles.secondaryBtn, image && styles.activeBtn]}
                 onPress={pickImage}
                 disabled={recording}
@@ -738,9 +724,9 @@ export default function ImamHadithScreen() {
                 <Text style={[styles.secondaryBtnText, image && { color: H.headerDeep }]}>
                   {image ? t("hadith.changeImage") : t("hadith.addImage")}
                 </Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
 
-              <TouchableOpacity
+              <AnimatedPressable
                 style={[styles.recordBtn, recording && styles.recordingBtnActive]}
                 onPress={recording ? stopRecording : startRecording}
                 activeOpacity={0.85}
@@ -751,10 +737,10 @@ export default function ImamHadithScreen() {
                 <Text style={[styles.recordBtnText, recording && { color: H.error }]}>
                   {recording ? t("hadith.stop") : t("hadith.record")}
                 </Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
             </View>
 
-            <TouchableOpacity
+            <AnimatedPressable
               style={[styles.submit, loading && styles.submitDisabled]}
               onPress={submitHadith}
               disabled={loading}
@@ -767,7 +753,7 @@ export default function ImamHadithScreen() {
                   {recording ? t("hadith.stopAndPost") : t("hadith.submit")}
                 </Text>
               )}
-            </TouchableOpacity>
+            </AnimatedPressable>
             <View style={{ height: 40 }} />
           </Animated.ScrollView>
         </View>
@@ -780,7 +766,7 @@ export default function ImamHadithScreen() {
         animationType="fade"
         onRequestClose={() => setImagePreviewVisible(false)}
       >
-        <TouchableOpacity
+        <AnimatedPressable
           style={styles.imageViewerBackdrop}
           activeOpacity={1}
           onPress={() => setImagePreviewVisible(false)}
@@ -788,10 +774,10 @@ export default function ImamHadithScreen() {
           {image && (
             <Image source={{ uri: image.uri }} style={styles.imageViewerFull} resizeMode="contain" />
           )}
-          <TouchableOpacity style={styles.imageViewerClose} onPress={() => setImagePreviewVisible(false)}>
+          <AnimatedPressable style={styles.imageViewerClose} onPress={() => setImagePreviewVisible(false)}>
             <CloseIcon color={H.white} />
-          </TouchableOpacity>
-        </TouchableOpacity>
+          </AnimatedPressable>
+        </AnimatedPressable>
       </Modal>
     </View>
   );

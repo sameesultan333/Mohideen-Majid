@@ -1,5 +1,12 @@
 import 'react-native-gesture-handler';
+import { enableFreeze } from 'react-native-screens';
 import { AppRegistry } from 'react-native';
+
+// Lets screens still mounted-but-not-visible (e.g. a screen pushed under the
+// one currently on top) skip re-renders entirely, paired with
+// `freezeOnBlur: true` in AppNavigator's screenOptions. Must be called once
+// at the app entry point — the screenOption alone is a silent no-op without it.
+enableFreeze();
 import App from './App';
 import { name as appName } from './app.json';
 import messaging from '@react-native-firebase/messaging';

@@ -20,6 +20,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import PushNotification from 'react-native-push-notification';
 import PushNotificationIOS from '@react-native-community/push-notification-ios';
 import { Platform } from 'react-native';
+import { logger } from "../utils/logger";
 
 // Storage keys
 const PRAYER_TIMES_KEY = 'prayer_times_cache';
@@ -83,10 +84,10 @@ class PrayerNotificationService {
     // Configure PushNotification
     PushNotification.configure({
       onRegister: function (token) {
-        console.log('Notification token:', token);
+        logger.log('Notification token:', token);
       },
       onNotification: function (notification) {
-        console.log('Notification received:', notification);
+        logger.log('Notification received:', notification);
         if (notification.userInteraction) {
           // User tapped notification
         }
@@ -157,7 +158,7 @@ class PrayerNotificationService {
         this.settings = normalizeSettings(JSON.parse(stored));
       }
     } catch (error) {
-      console.error('Failed to load notification settings:', error);
+      logger.error('Failed to load notification settings:', error);
       this.settings = { ...DEFAULT_SETTINGS };
     }
   }
@@ -170,7 +171,7 @@ class PrayerNotificationService {
       this.settings = normalizeSettings(this.settings);
       await AsyncStorage.setItem(NOTIFICATION_SETTINGS_KEY, JSON.stringify(this.settings));
     } catch (error) {
-      console.error('Failed to save notification settings:', error);
+      logger.error('Failed to save notification settings:', error);
     }
   }
 
@@ -200,7 +201,7 @@ class PrayerNotificationService {
    */
   async savePrayerTimes(prayerTimes) {
     try {
-      console.log('Saving prayer times:', JSON.stringify(prayerTimes, null, 2));
+      logger.log('Saving prayer times:', JSON.stringify(prayerTimes, null, 2));
       
       const data = {
         times: prayerTimes,
@@ -215,7 +216,7 @@ class PrayerNotificationService {
       
       return true;
     } catch (error) {
-      console.error('Failed to save prayer times:', error);
+      logger.error('Failed to save prayer times:', error);
       return false;
     }
   }
@@ -232,7 +233,7 @@ class PrayerNotificationService {
       }
       return null;
     } catch (error) {
-      console.error('Failed to get prayer times:', error);
+      logger.error('Failed to get prayer times:', error);
       return null;
     }
   }
@@ -245,7 +246,7 @@ class PrayerNotificationService {
       const stored = await AsyncStorage.getItem(LAST_SYNC_KEY);
       return stored ? new Date(stored) : null;
     } catch (error) {
-      console.error('Failed to get last sync:', error);
+      logger.error('Failed to get last sync:', error);
       return null;
     }
   }
@@ -261,7 +262,7 @@ class PrayerNotificationService {
       // because Android hasn't finished removing the pending intents.
       await new Promise(resolve => setTimeout(resolve, 250));
     } catch (error) {
-      console.error('Failed to cancel notifications:', error);
+      logger.error('Failed to cancel notifications:', error);
     }
   }
 
@@ -420,7 +421,7 @@ class PrayerNotificationService {
         userInfo: { prayerKey, type, prayerName, scheduledFor: notificationDate.toISOString() },
       });
     } catch (error) {
-      console.error(`Failed to schedule ${type} for ${prayerName}:`, error);
+      logger.error(`Failed to schedule ${type} for ${prayerName}:`, error);
     }
   }
 
@@ -432,7 +433,7 @@ class PrayerNotificationService {
     const prayerTimes = await this.getPrayerTimes();
     if (prayerTimes) {
       await this.scheduleNotifications(prayerTimes);
-      console.log('Rescheduled prayer notifications on app launch');
+      logger.log('Rescheduled prayer notifications on app launch');
     }
   }
 
@@ -447,7 +448,7 @@ class PrayerNotificationService {
       await this.cancelAllPrayerNotifications();
       this.settings = DEFAULT_SETTINGS;
     } catch (error) {
-      console.error('Failed to clear prayer notification data:', error);
+      logger.error('Failed to clear prayer notification data:', error);
     }
   }
 }

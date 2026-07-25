@@ -5,17 +5,9 @@
  * Allows users to toggle global settings and individual prayer notification types.
  */
 
-import React, { useState, useEffect } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  StatusBar,
-  Platform,
-  Switch,
-} from "react-native";
+import React, { useState, useEffect, useMemo } from "react";
+import { View, Text, StyleSheet, ScrollView, StatusBar, Platform, Switch } from "react-native";
+import AnimatedPressable from "../components/AnimatedPressable";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Svg, { Path } from "react-native-svg";
 import { COLORS as C } from "../config/theme";
@@ -155,6 +147,19 @@ export default function NotificationSettingsScreen({ navigation }) {
   const updatePrayerSetting = (prayerKey, notificationType, value) =>
     saveSettings({ ...settings, [prayerKey]: { ...settings[prayerKey], [notificationType]: value } });
 
+  // Static content — only depends on the active language, not on `settings`,
+  // so it shouldn't be rebuilt on every toggle (each toggle calls saveSettings
+  // -> setSettings -> re-render).
+  const prayers = useMemo(() => [
+    { key: "fajr", label: t("prayers.fajr"), arabic: t("prayers.fajrArabic"), color: "#E8C97A" },
+    { key: "dhuhr", label: t("prayers.dhuhr"), arabic: t("prayers.dhuhrArabic"), color: H.gold },
+    { key: "asr", label: t("prayers.asr"), arabic: t("prayers.asrArabic"), color: "#B8963A" },
+    { key: "maghrib", label: t("prayers.maghrib"), arabic: t("prayers.maghribArabic"), color: "#D4B15C" },
+    { key: "isha", label: t("prayers.isha"), arabic: t("prayers.ishaArabic"), color: "#8E6A24" },
+    { key: "sunrise", label: t("prayers.sunrise"), arabic: t("prayers.sunriseArabic"), color: H.textMuted },
+    { key: "jummah", label: t("prayers.jummah"), arabic: t("prayers.jummahArabic"), color: "#B8863A" },
+  ], [t]);
+
   if (loading || !settings) {
     return (
       <View style={styles.center}>
@@ -163,24 +168,14 @@ export default function NotificationSettingsScreen({ navigation }) {
     );
   }
 
-  const prayers = [
-    { key: "fajr", label: t("prayers.fajr"), arabic: t("prayers.fajrArabic"), color: "#E8C97A" },
-    { key: "dhuhr", label: t("prayers.dhuhr"), arabic: t("prayers.dhuhrArabic"), color: H.gold },
-    { key: "asr", label: t("prayers.asr"), arabic: t("prayers.asrArabic"), color: "#B8963A" },
-    { key: "maghrib", label: t("prayers.maghrib"), arabic: t("prayers.maghribArabic"), color: "#D4B15C" },
-    { key: "isha", label: t("prayers.isha"), arabic: t("prayers.ishaArabic"), color: "#8E6A24" },
-    { key: "sunrise", label: t("prayers.sunrise"), arabic: t("prayers.sunriseArabic"), color: H.textMuted },
-    { key: "jummah", label: t("prayers.jummah"), arabic: t("prayers.jummahArabic"), color: "#B8863A" },
-  ];
-
   return (
     <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={H.headerDeep} />
 
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} android_ripple={{ color: 'transparent' }}>
+        <AnimatedPressable style={styles.backBtn} onPress={() => navigation.goBack()} android_ripple={{ color: 'transparent' }}>
           <BackIcon />
-        </TouchableOpacity>
+        </AnimatedPressable>
         <Text allowFontScaling={false} style={styles.headerTitle}>{t("notificationSettings.title")}</Text>
         <View style={styles.headerSpacer} />
       </View>

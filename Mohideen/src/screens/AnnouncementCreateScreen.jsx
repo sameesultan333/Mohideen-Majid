@@ -5,23 +5,8 @@
  */
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  TextInput,
-  Modal,
-  Alert,
-  Platform,
-  ActivityIndicator,
-  StatusBar,
-  Animated,
-  Image,
-  Switch,
-  Dimensions,
-} from "react-native";
+import { View, Text, StyleSheet, FlatList, TextInput, Modal, Alert, Platform, ActivityIndicator, StatusBar, Animated, Image, Switch, Dimensions } from "react-native";
+import AnimatedPressable from "../components/AnimatedPressable";
 import { useTranslation } from "react-i18next";
 import { PermissionsAndroid } from "react-native";
 import { launchImageLibrary } from "react-native-image-picker";
@@ -32,7 +17,8 @@ import Slider from "@react-native-community/slider";
 import AudioRecord from "../lib/audioRecord";
 import { getToken } from "../utils/secureStorage";
 import { apiAxios, authApiFetch, buildAbsoluteUrl } from "../config/server";
-import { COLORS as C, RADII, SPACING, FONTS } from "../config/theme";
+import { COLORS as C, RADII, FONTS } from "../config/theme";
+import { logger } from "../utils/logger";
 
 const { width: SW } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
@@ -240,9 +226,9 @@ const CompactHeader = ({ title, subtitle, onAdd }) => (
       <View style={hs.titleContainer}>
         <Text style={hs.title}>{title}</Text>
       </View>
-      <TouchableOpacity onPress={onAdd} style={hs.addBtn} activeOpacity={0.85}>
+      <AnimatedPressable onPress={onAdd} style={hs.addBtn} activeOpacity={0.85}>
         <PlusIcon />
-      </TouchableOpacity>
+      </AnimatedPressable>
     </View>
 
     <View style={hs.subRow}>
@@ -296,7 +282,7 @@ export default function AnnouncementScreen() {
       const res = await apiAxios({ method: "get", url: "/announcements/", params: { all: true } });
       setAnnouncements(res.data || []);
     } catch (err) {
-      console.log("ANNOUNCEMENTS FETCH ERROR:", err?.response?.data || err.message);
+      logger.log("ANNOUNCEMENTS FETCH ERROR:", err?.response?.data || err.message);
     } finally {
       setFetching(false);
       Animated.timing(listFade, { toValue: 1, duration: 300, useNativeDriver: true }).start();
@@ -535,7 +521,7 @@ export default function AnnouncementScreen() {
       resetForm();
       fetchAnnouncements();
     } catch (err) {
-      console.log("ANNOUNCEMENT POST ERROR:", err?.response?.data || err.message || err);
+      logger.log("ANNOUNCEMENT POST ERROR:", err?.response?.data || err.message || err);
       Alert.alert(t("announcements.errorTitle"), err?.response?.data?.detail || err.message || t("announcements.postError"));
     } finally {
       setLoading(false);
@@ -559,7 +545,7 @@ export default function AnnouncementScreen() {
       await apiAxios({ method: "delete", url: `/announcements/${id}`, headers: await authHeader() });
       setAnnouncements((prev) => prev.filter((a) => a.id !== id));
     } catch (err) {
-      console.log("ANNOUNCEMENT DELETE ERROR:", err?.response?.data || err.message);
+      logger.log("ANNOUNCEMENT DELETE ERROR:", err?.response?.data || err.message);
       Alert.alert(
         t("announcements.errorTitle"),
         err?.response?.data?.detail || t("announcements.deleteError")
@@ -606,7 +592,7 @@ export default function AnnouncementScreen() {
                       {item.posted_by} · {formatRelativeTime(item.created_at, t)}
                     </Text>
                   </View>
-                  <TouchableOpacity
+                  <AnimatedPressable
                     onPress={() => confirmDelete(item)}
                     style={styles.deleteBtn}
                     disabled={deletingId === item.id}
@@ -617,7 +603,7 @@ export default function AnnouncementScreen() {
                     ) : (
                       <TrashIcon />
                     )}
-                  </TouchableOpacity>
+                  </AnimatedPressable>
                 </View>
 
                 {!!item.body && <Text style={styles.cardBody}>{item.body}</Text>}
@@ -661,9 +647,9 @@ export default function AnnouncementScreen() {
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>{t("announcements.modalTitle")}</Text>
-            <TouchableOpacity onPress={closeModal}>
+            <AnimatedPressable onPress={closeModal}>
               <Text style={styles.closeBtnText}>{t("common.close")}</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           </View>
 
           <Animated.ScrollView
@@ -712,7 +698,7 @@ export default function AnnouncementScreen() {
             {image && (
               <View style={styles.previewSection}>
                 <Text style={styles.previewLabel}>{t("announcements.imageLabel")}</Text>
-                <TouchableOpacity
+                <AnimatedPressable
                   style={styles.imagePreviewBox}
                   activeOpacity={0.85}
                   onPress={() => setImagePreviewVisible(true)}
@@ -722,10 +708,10 @@ export default function AnnouncementScreen() {
                     <Text style={styles.fileName} numberOfLines={1}>{getAssetName(image)}</Text>
                     <Text style={styles.tapHint}>{t("announcements.tapToView")}</Text>
                   </View>
-                  <TouchableOpacity onPress={() => setImage(null)} style={styles.removeChip}>
+                  <AnimatedPressable onPress={() => setImage(null)} style={styles.removeChip}>
                     <TrashIcon />
-                  </TouchableOpacity>
-                </TouchableOpacity>
+                  </AnimatedPressable>
+                </AnimatedPressable>
               </View>
             )}
 
@@ -735,18 +721,18 @@ export default function AnnouncementScreen() {
                 <Text style={styles.previewLabel}>{t("announcements.audioLabel")}</Text>
                 <View style={styles.audioPreviewBox}>
                   <View style={styles.audioTopRow}>
-                    <TouchableOpacity style={styles.playBtn} onPress={togglePlayback} activeOpacity={0.85}>
+                    <AnimatedPressable style={styles.playBtn} onPress={togglePlayback} activeOpacity={0.85}>
                       {isPlaying ? <PauseIcon /> : <PlayIcon />}
-                    </TouchableOpacity>
+                    </AnimatedPressable>
                     <View style={styles.audioPreviewMeta}>
                       <Text style={styles.audioPreviewTitle}>{t("announcements.voiceNote")}</Text>
                       <Text style={styles.audioDuration}>
                         {formatDuration(playbackPosition)} / {formatDuration(playbackDuration || recordedDuration)}
                       </Text>
                     </View>
-                    <TouchableOpacity onPress={removeAudio} style={styles.removeChip}>
+                    <AnimatedPressable onPress={removeAudio} style={styles.removeChip}>
                       <TrashIcon />
-                    </TouchableOpacity>
+                    </AnimatedPressable>
                   </View>
 
                   <Slider
@@ -769,7 +755,7 @@ export default function AnnouncementScreen() {
                     onLoad={handlePlaybackLoad}
                     onProgress={handlePlaybackProgress}
                     onEnd={handlePlaybackEnd}
-                    onError={(e) => console.log("AUDIO PLAYBACK ERROR:", e)}
+                    onError={(e) => logger.log("AUDIO PLAYBACK ERROR:", e)}
                     style={styles.hiddenPlayer}
                   />
                 </View>
@@ -792,7 +778,7 @@ export default function AnnouncementScreen() {
             )}
 
             <View style={styles.buttonGroup}>
-              <TouchableOpacity
+              <AnimatedPressable
                 style={[styles.secondaryBtn, image && styles.activeBtn]}
                 onPress={pickImage}
                 disabled={recording}
@@ -802,9 +788,9 @@ export default function AnnouncementScreen() {
                 <Text style={[styles.secondaryBtnText, image && { color: H.headerDeep }]}>
                   {image ? t("announcements.changeImage") : t("announcements.addImage")}
                 </Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
 
-              <TouchableOpacity
+              <AnimatedPressable
                 style={[styles.recordBtn, recording && styles.recordingBtnActive]}
                 onPress={recording ? stopRecording : startRecording}
                 activeOpacity={0.85}
@@ -815,10 +801,10 @@ export default function AnnouncementScreen() {
                 <Text style={[styles.recordBtnText, recording && { color: H.error }]}>
                   {recording ? t("announcements.stop") : t("announcements.record")}
                 </Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
             </View>
 
-            <TouchableOpacity
+            <AnimatedPressable
               style={[styles.submit, loading && styles.submitDisabled]}
               onPress={submitAnnouncement}
               disabled={loading}
@@ -831,7 +817,7 @@ export default function AnnouncementScreen() {
                   {recording ? t("announcements.stopAndPost") : t("announcements.submit")}
                 </Text>
               )}
-            </TouchableOpacity>
+            </AnimatedPressable>
             <View style={{ height: 40 }} />
           </Animated.ScrollView>
         </View>
@@ -844,7 +830,7 @@ export default function AnnouncementScreen() {
         animationType="fade"
         onRequestClose={() => setImagePreviewVisible(false)}
       >
-        <TouchableOpacity
+        <AnimatedPressable
           style={styles.imageViewerBackdrop}
           activeOpacity={1}
           onPress={() => setImagePreviewVisible(false)}
@@ -852,10 +838,10 @@ export default function AnnouncementScreen() {
           {image && (
             <Image source={{ uri: image.uri }} style={styles.imageViewerFull} resizeMode="contain" />
           )}
-          <TouchableOpacity style={styles.imageViewerClose} onPress={() => setImagePreviewVisible(false)}>
+          <AnimatedPressable style={styles.imageViewerClose} onPress={() => setImagePreviewVisible(false)}>
             <CloseIcon color={H.white} />
-          </TouchableOpacity>
-        </TouchableOpacity>
+          </AnimatedPressable>
+        </AnimatedPressable>
       </Modal>
     </View>
   );

@@ -35,6 +35,10 @@ import HadithFeedScreen from "../screens/HadithFeedScreen"
 
 import CollectorScreen from "../screens/CollectorScreen"
 
+import FamilySearchScreen from "../screens/FamilySearchScreen"
+
+import CollectorDashboardScreen from "../screens/CollectorDashboardScreen"
+
 import ChandaHistoryScreen from "../screens/ChandaHistoryScreen"
 
 import CollectorHistoryScreen from "../screens/CollectorHistoryScreen"
@@ -70,6 +74,8 @@ const AppNavigator = () => {
 
       gestureEnabled: false,
 
+      freezeOnBlur: true,
+
     }}>
 
       <Stack.Screen name="Logo" component={LogoScreen} />
@@ -103,6 +109,10 @@ const AppNavigator = () => {
       <Stack.Screen name="HadithFeed" component={HadithFeedScreen} />
 
       <Stack.Screen name="Collector" component={CollectorScreen} />
+
+      <Stack.Screen name="FamilySearch" component={FamilySearchScreen} />
+
+      <Stack.Screen name="CollectorDashboard" component={CollectorDashboardScreen} />
 
       <Stack.Screen name="Chanda" component={ChandaHistoryScreen} />
 

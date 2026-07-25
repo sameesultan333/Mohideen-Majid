@@ -5,19 +5,8 @@
  */
 
 import React, { useEffect, useState, useRef, useCallback, memo } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Animated,
-  ScrollView,
-  StatusBar,
-  Platform,
-  Alert,
-  Dimensions,
-  RefreshControl,
-} from "react-native";
+import { View, Text, StyleSheet, Animated, ScrollView, StatusBar, Platform, Alert, Dimensions, RefreshControl } from "react-native";
+import AnimatedPressable from "../components/AnimatedPressable";
 import { useTranslation } from "react-i18next";
 import { useFocusEffect } from "@react-navigation/native";
 import Svg, { Path, Circle, Rect, Line, Defs, LinearGradient, Stop } from "react-native-svg";
@@ -218,7 +207,7 @@ const FeatureCard = ({ title, arabic, description, icon: Icon, onPress, badgeCou
     onPress();
   };
   return (
-    <TouchableOpacity onPress={handlePress} activeOpacity={0.9}>
+    <AnimatedPressable onPress={handlePress} activeOpacity={0.9}>
       <Animated.View style={[styles.featureCard, { transform: [{ scale }] }]}>
         <View style={styles.iconCircle}>
           <Icon color={H.gold} size={32} />
@@ -235,7 +224,7 @@ const FeatureCard = ({ title, arabic, description, icon: Icon, onPress, badgeCou
           </View>
         )}
       </Animated.View>
-    </TouchableOpacity>
+    </AnimatedPressable>
   );
 };
 
@@ -258,7 +247,7 @@ export default function DeenScreen({ navigation, route }) {
   }, []);
 
   useEffect(() => {
-    const interval = setInterval(() => setCurrentTime(new Date()), 1000);
+    const interval = setInterval(() => setCurrentTime(new Date()), 60000); // minute granularity is enough — only date/greeting text depends on this
     return () => clearInterval(interval);
   }, []);
 
@@ -411,7 +400,7 @@ export default function DeenScreen({ navigation, route }) {
         <View style={styles.careerSection}>
           <Text style={styles.sectionTitle}>{t("deen.careerTitle")}</Text>
           <Text style={styles.sectionArabic}>{t("deen.careerArabic")}</Text>
-          <TouchableOpacity
+          <AnimatedPressable
             style={styles.careerCard}
             onPress={() => navigation.navigate("JobsFeed")}
             activeOpacity={0.9}
@@ -427,7 +416,7 @@ export default function DeenScreen({ navigation, route }) {
               </View>
             </View>
             <ArrowIcon color={H.gold} size={16} />
-          </TouchableOpacity>
+          </AnimatedPressable>
         </View>
 
         {/* Footer Dua */}

@@ -1,15 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  Animated,
-  ScrollView,
-  Platform,
-  StatusBar,
-  Dimensions,
-  TouchableOpacity,
-} from "react-native";
+import { View, Text, StyleSheet, Animated, ScrollView, Platform, StatusBar, Dimensions } from "react-native";
+import AnimatedPressable from "../components/AnimatedPressable";
 import Svg, { Rect, Defs, LinearGradient, Stop, Path } from "react-native-svg";
 import { formatCoveredMonths, formatServerDateTime } from "../utils/datetime";
 import { getWsUrl } from "../config/server";
@@ -395,14 +386,14 @@ const ReceiptScreen = ({ route, navigation }) => {
         <HeaderPattern w={width} h={HEADER_H} />
 
         <View style={styles.headerRow}>
-          <TouchableOpacity
+          <AnimatedPressable
             onPress={() => navigation.reset({ index: 0, routes: [{ name: "Home" }] })}
             style={styles.backBtn}
             activeOpacity={0.85}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <Text style={styles.backArrow}>←</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
 
           <View style={{ flex: 1 }}>
             <Text style={styles.eyebrow}>Mohideen Masjid</Text>

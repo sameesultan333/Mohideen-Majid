@@ -1,18 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, memo } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-  Animated,
-  Dimensions,
-  KeyboardAvoidingView,
-  Platform,
-  StatusBar,
-  Easing,
-} from "react-native";
+import { View, Text, TextInput, StyleSheet, ActivityIndicator, Animated, Dimensions, KeyboardAvoidingView, Platform, StatusBar, Easing } from "react-native";
+import AnimatedPressable from "../components/AnimatedPressable";
 import Svg, { Path, Circle, Rect, Defs, LinearGradient, Stop, G } from "react-native-svg";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { saveToken, saveRefreshToken } from "../utils/secureStorage";
@@ -84,7 +72,7 @@ const TypeToggle = ({ value, onChange, disabled }) => {
     <View style={toggleS.container}>
       <Animated.View style={[toggleS.slider, { transform: [{ translateX }] }]} />
       {options.map((option) => (
-        <TouchableOpacity
+        <AnimatedPressable
           key={option}
           style={toggleS.option}
           onPress={() => !disabled && onChange(option)}
@@ -95,7 +83,7 @@ const TypeToggle = ({ value, onChange, disabled }) => {
           <Text allowFontScaling={false} style={[toggleS.text, value === option && toggleS.textActive]}>
             {option}
           </Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
       ))}
     </View>
   );
@@ -411,7 +399,7 @@ export default function RegisterScreen({ navigation }) {
               onChangeText={(t) => updateForm("confirm_password", t)}
             />
 
-            <TouchableOpacity
+            <AnimatedPressable
               style={[s.goldBtn, loading && s.goldBtnDisabled]}
               onPress={handleRegister}
               disabled={loading}
@@ -423,13 +411,13 @@ export default function RegisterScreen({ navigation }) {
                     {type === "HEAD" && phase === "extra" ? "SUBMIT FOR APPROVAL" : "CREATE ACCOUNT"}
                   </Text>
               }
-            </TouchableOpacity>
+            </AnimatedPressable>
 
             <View style={s.footerRow}>
               <Text allowFontScaling={false} style={s.footerText}>Already have an account? </Text>
-              <TouchableOpacity onPress={() => navigation.goBack()} android_ripple={{ color: "transparent" }}>
+              <AnimatedPressable onPress={() => navigation.goBack()} android_ripple={{ color: "transparent" }}>
                 <Text allowFontScaling={false} style={s.footerLink}>Sign In</Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
             </View>
           </Animated.View>
         </Animated.View>

@@ -1,19 +1,15 @@
 /**
- * CollectorHistoryScreen — Mohideen Masjid
+ * CollectorHistoryScreen — Mohideen Masjid (Premium Compact)
  *
- * Shows the logged-in collector's own payment collection history.
- * Offline-first: cache shown immediately, network refresh in background.
- * Max 2-second wait before falling back to cache.
- * Local search + filter after first load (no API call per keystroke).
+ * Clean, premium design with search outside header.
+ * Compact cards with elegant typography.
  */
 
 import React, {
   useEffect, useRef, useState, useCallback, useMemo,
 } from "react";
-import {
-  View, Text, FlatList, StyleSheet, TouchableOpacity,
-  TextInput, Animated, Platform, StatusBar, Dimensions,
-} from "react-native";
+import { View, Text, FlatList, StyleSheet, TextInput, Animated, Platform, StatusBar, Dimensions, RefreshControl } from "react-native";
+import AnimatedPressable from "../components/AnimatedPressable";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Svg, { Path, Rect, Defs, LinearGradient, Stop } from "react-native-svg";
 import { useIsFocused } from "@react-navigation/native";
@@ -25,7 +21,7 @@ import BottomNav from "../components/BottomNav";
 const { width: SW } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
 const STATUSBAR_H = IOS ? 48 : (StatusBar.currentHeight || 0) + 6;
-const HEADER_H = 130;
+const HEADER_H = 110;
 const BOTTOM_NAV_H = Platform.select({ ios: 89, android: 73 });
 const CACHE_KEY = "collector_history_cache";
 const FETCH_TIMEOUT = 2000;
@@ -34,9 +30,9 @@ const FETCH_TIMEOUT = 2000;
 const H = {
   bg:         "#FBF9F4",
   card:       "#FFFFFF",
-  cardBorder: "rgba(11,61,46,0.08)",
+  cardBorder: "rgba(11,61,46,0.05)",
   headerDeep: C.bg,
-  headerLight:C.bgVivid,
+  headerLight: C.bgVivid,
   gold:       C.gold,
   goldDeep:   C.goldDeep,
   goldLight:  C.goldLight,
@@ -44,15 +40,16 @@ const H = {
   textDark:   C.textDark,
   textMuted:  C.textMuted,
   amber:      "#9A6B2E",
-  amberBg:    "rgba(154,107,46,0.1)",
+  amberBg:    "rgba(154,107,46,0.06)",
   errorBg:    C.errorBg,
   error:      C.error,
+  subtleGreen: "rgba(14,107,69,0.04)",
 };
 
-const sh = (y = 6, op = 0.1) =>
+const sh = (y = 3, op = 0.04) =>
   Platform.select({
-    ios: { shadowColor: "#0B3D2E", shadowOffset: { width: 0, height: y }, shadowOpacity: op, shadowRadius: y * 1.6 },
-    android: { elevation: Math.round(y * 1.2) },
+    ios: { shadowColor: "rgba(0,0,0,0.02)", shadowOffset: { width: 0, height: y }, shadowOpacity: op, shadowRadius: y * 1.2 },
+    android: { elevation: Math.round(y * 0.5) },
   });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -83,7 +80,6 @@ const yesterdayStr = () => {
 const itemDateStr = (item) => {
   const iso = item.collected_at || item.created_at || "";
   if (!iso) return "";
-  // Add Z so JS treats it as UTC, then format in device local timezone (IST)
   const d = new Date(iso.includes("Z") ? iso : iso + "Z");
   if (isNaN(d.getTime())) return iso.slice(0, 10);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -102,9 +98,9 @@ const groupLabel = (dateStr, t) => {
 
 // ── Status config ─────────────────────────────────────────────────────────────
 const STATUS_CFG = {
-  verified: { label: (t) => t("collectorHistory.status.verified"),   color: H.green,  bg: "rgba(14,107,69,0.1)" },
+  verified: { label: (t) => t("collectorHistory.status.verified"),   color: H.green,  bg: "rgba(14,107,69,0.06)" },
   pending:  { label: (t) => t("collectorHistory.status.pending"),    color: H.amber,  bg: H.amberBg },
-  partial:  { label: (t) => t("collectorHistory.status.partial"),    color: "#6B3FA0", bg: "rgba(107,63,160,0.1)" },
+  partial:  { label: (t) => t("collectorHistory.status.partial"),    color: "#6B3FA0", bg: "rgba(107,63,160,0.06)" },
   rejected: { label: (t) => t("collectorHistory.status.rejected"),   color: H.error,  bg: H.errorBg },
 };
 
@@ -162,9 +158,51 @@ function passesFilter(item, filterKey) {
   }
 }
 
-// ── Header pattern ────────────────────────────────────────────────────────────
+// ─── SVG Icons ───────────────────────────────────────────────────────────────
+const SearchIcon = () => (
+  <Svg width={18} height={18} viewBox="0 0 24 24">
+    <Path d="M11 19C15.4183 19 19 15.4183 19 11C19 6.58172 15.4183 3 11 3C6.58172 3 3 6.58172 3 11C3 15.4183 6.58172 19 11 19 Z" stroke="#5A7B65" strokeWidth={1.8} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    <Path d="M21 21 L17 17" stroke="#5A7B65" strokeWidth={1.8} fill="none" strokeLinecap="round" />
+  </Svg>
+);
+
+const CloseIcon = () => (
+  <Svg width={16} height={16} viewBox="0 0 24 24">
+    <Path d="M6 6 L18 18 M6 18 L18 6" stroke="#5A7B65" strokeWidth={2} fill="none" strokeLinecap="round" />
+  </Svg>
+);
+
+const RupeeIcon = () => (
+  <Svg width={14} height={14} viewBox="0 0 24 24">
+    <Path d="M6 3H18M6 8H18M10 8L6 17H18L14 8" stroke={H.goldDeep} strokeWidth={2.2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+const CashIcon = () => (
+  <Svg width={12} height={12} viewBox="0 0 24 24">
+    <Rect x="2" y="6" width="20" height="12" rx="2" stroke={H.green} strokeWidth={1.8} fill="none" />
+    <Path d="M6 12H6.01M12 12H12.01M18 12H18.01" stroke={H.green} strokeWidth={2} fill="none" strokeLinecap="round" />
+  </Svg>
+);
+
+const UpiIcon = () => (
+  <Svg width={12} height={12} viewBox="0 0 24 24">
+    <Path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="#2563EB" strokeWidth={1.8} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    <Path d="M2 17L12 22L22 17" stroke="#2563EB" strokeWidth={1.8} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    <Path d="M2 12L12 17L22 12" stroke="#2563EB" strokeWidth={1.8} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+const ReceiptIcon = () => (
+  <Svg width={11} height={11} viewBox="0 0 24 24">
+    <Path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke={H.textMuted} strokeWidth={1.8} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    <Path d="M14 2V8h6M16 13H8M16 17H8M10 9H8" stroke={H.textMuted} strokeWidth={1.8} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+// ─── Header pattern ────────────────────────────────────────────────────────────
 const HeaderPattern = () => {
-  const step = 42;
+  const step = 48;
   const cols = Math.ceil(SW / step) + 1;
   const rows = Math.ceil(HEADER_H / step) + 1;
   const stars = [];
@@ -172,115 +210,148 @@ const HeaderPattern = () => {
     for (let c = 0; c < cols; c++) {
       const cx = c * step + (r % 2 === 0 ? 0 : step / 2);
       const cy = r * step;
-      stars.push(`M${cx} ${cy - 6} L${cx + 6} ${cy} L${cx} ${cy + 6} L${cx - 6} ${cy} Z`);
+      stars.push(`M${cx} ${cy - 5} L${cx + 5} ${cy} L${cx} ${cy + 5} L${cx - 5} ${cy} Z`);
     }
   return (
     <Svg width={SW} height={HEADER_H} style={StyleSheet.absoluteFill}>
-      {stars.map((d, i) => <Path key={i} d={d} fill={H.gold} opacity={0.06} />)}
+      {stars.map((d, i) => <Path key={i} d={d} fill={C.gold} opacity={0.04} />)}
     </Svg>
   );
 };
 
-// ── Summary card ──────────────────────────────────────────────────────────────
-const SummaryCard = ({ today, stats, isOffline, lastSync }) => {
-  const { t } = useTranslation();
+// ─── Premium Today's Collection Card ─────────────────────────────────────────
+const TodayCard = ({ today, isOffline, lastSync, t }) => {
+  const total = today?.total || 0;
+  const count = today?.count || 0;
+  const cash = today?.cash || 0;
+  const upi = today?.upi || 0;
+  const partial = today?.partial || 0;
+  const advance = today?.advance || 0;
+
   return (
-  <View style={s.summaryCard}>
-    <View style={s.summaryHeader}>
-      <Text allowFontScaling={false} style={s.summaryTitle}>
-        {t("collectorHistory.todayCollection")}
-      </Text>
-      {isOffline ? (
-        <View style={s.offlinePill}>
-          <Text allowFontScaling={false} style={s.offlinePillTxt}>{t("collectorHistory.cached")}</Text>
+    <View style={s.todayCard}>
+      <View style={s.todayAccentLine} />
+      <View style={s.todayHeaderRow}>
+        <View>
+          <Text allowFontScaling={false} style={s.todayLabel}>
+            {t("collectorHistory.todayCollection")}
+          </Text>
+          <Text allowFontScaling={false} style={s.todayDate}>
+            {fmtDate(new Date().toISOString())}
+          </Text>
         </View>
-      ) : null}
-    </View>
-    <View style={s.summaryRow}>
-      <View style={s.summaryItem}>
-        <Text allowFontScaling={false} style={s.summaryVal}>₹{(today?.total || 0).toLocaleString("en-IN")}</Text>
-        <Text allowFontScaling={false} style={s.summaryLbl}>{t("collectorHistory.totalCollected")}</Text>
-      </View>
-      <View style={s.summaryDivider} />
-      <View style={s.summaryItem}>
-        <Text allowFontScaling={false} style={s.summaryVal}>{today?.count || 0}</Text>
-        <Text allowFontScaling={false} style={s.summaryLbl}>{t("collectorHistory.payments")}</Text>
-      </View>
-      <View style={s.summaryDivider} />
-      <View style={s.summaryItem}>
-        <Text allowFontScaling={false} style={s.summaryVal}>₹{(today?.cash || 0).toLocaleString("en-IN")}</Text>
-        <Text allowFontScaling={false} style={s.summaryLbl}>{t("collectorHistory.cash")}</Text>
-      </View>
-      <View style={s.summaryDivider} />
-      <View style={s.summaryItem}>
-        <Text allowFontScaling={false} style={s.summaryVal}>₹{(today?.upi || 0).toLocaleString("en-IN")}</Text>
-        <Text allowFontScaling={false} style={s.summaryLbl}>{t("collectorHistory.upi")}</Text>
-      </View>
-    </View>
-    {(today?.partial > 0 || today?.advance > 0) && (
-      <View style={s.summaryRow2}>
-        {today?.partial > 0 && (
-          <View style={s.tagPill}>
-            <Text allowFontScaling={false} style={s.tagPillTxt}>{today.partial} {t("collectorHistory.filters.partial")}</Text>
-          </View>
-        )}
-        {today?.advance > 0 && (
-          <View style={[s.tagPill, { backgroundColor: "rgba(14,107,69,0.1)", borderColor: H.green }]}>
-            <Text allowFontScaling={false} style={[s.tagPillTxt, { color: H.green }]}>{today.advance} {t("collectorHistory.filters.advance")}</Text>
+        {isOffline && (
+          <View style={s.offlinePill}>
+            <View style={[s.dot, { backgroundColor: H.amber }]} />
+            <Text allowFontScaling={false} style={s.offlinePillTxt}>{t("collectorHistory.cached")}</Text>
           </View>
         )}
       </View>
-    )}
-    {stats ? (
-      <>
-        <View style={s.statsDivider} />
-        <View style={s.summaryRow}>
-          <View style={s.summaryItem}>
-            <Text allowFontScaling={false} style={s.summaryValSm}>₹{(stats.monthly_chanda_total || 0).toLocaleString("en-IN")}</Text>
-            <Text allowFontScaling={false} style={s.summaryLbl}>{t("collectorHistory.stats.chanda")}</Text>
-          </View>
-          <View style={s.summaryDivider} />
-          <View style={s.summaryItem}>
-            <Text allowFontScaling={false} style={s.summaryValSm}>₹{(stats.donations_total || 0).toLocaleString("en-IN")}</Text>
-            <Text allowFontScaling={false} style={s.summaryLbl}>{t("collectorHistory.stats.donations")}</Text>
-          </View>
-          <View style={s.summaryDivider} />
-          <View style={s.summaryItem}>
-            <Text allowFontScaling={false} style={s.summaryValSm}>₹{(stats.funds_total || 0).toLocaleString("en-IN")}</Text>
-            <Text allowFontScaling={false} style={s.summaryLbl}>{t("collectorHistory.stats.funds")}</Text>
-          </View>
+
+      <View style={s.todayTotalWrap}>
+        <View style={s.rupeeWrap}>
+          <RupeeIcon />
         </View>
-        <View style={s.summaryRow}>
-          <View style={s.summaryItem}>
-            <Text allowFontScaling={false} style={s.summaryVal}>₹{(stats.total_collection || 0).toLocaleString("en-IN")}</Text>
-            <Text allowFontScaling={false} style={s.summaryLbl}>{t("collectorHistory.stats.totalCollection")}</Text>
-          </View>
-          <View style={s.summaryDivider} />
-          <View style={s.summaryItem}>
-            <Text allowFontScaling={false} style={[s.summaryVal, stats.pending_count > 0 && { color: H.amber }]}>{stats.pending_count || 0}</Text>
-            <Text allowFontScaling={false} style={s.summaryLbl}>{t("collectorHistory.stats.pending")}</Text>
-          </View>
+        <Text allowFontScaling={false} style={s.todayTotal}>
+          {total.toLocaleString("en-IN")}
+        </Text>
+      </View>
+
+      <View style={s.todayDivider} />
+
+      <View style={s.todayStatsRow}>
+        <View style={s.todayStatItem}>
+          <Text allowFontScaling={false} style={s.todayStatValue}>{count}</Text>
+          <Text allowFontScaling={false} style={s.todayStatLabel}>{t("collectorHistory.payments")}</Text>
         </View>
-      </>
-    ) : null}
-    {lastSync ? (
-      <Text allowFontScaling={false} style={s.lastSyncTxt}>
-        {t("collectorHistory.lastSync")}: {fmtTime(lastSync.toISOString())}
-      </Text>
-    ) : null}
-  </View>
-);
+        <View style={s.todayStatDivider} />
+        <View style={s.todayStatItem}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+            <CashIcon />
+            <Text allowFontScaling={false} style={s.todayStatValue}>₹{cash.toLocaleString("en-IN")}</Text>
+          </View>
+          <Text allowFontScaling={false} style={s.todayStatLabel}>{t("collectorHistory.cash")}</Text>
+        </View>
+        <View style={s.todayStatDivider} />
+        <View style={s.todayStatItem}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+            <UpiIcon />
+            <Text allowFontScaling={false} style={s.todayStatValue}>₹{upi.toLocaleString("en-IN")}</Text>
+          </View>
+          <Text allowFontScaling={false} style={s.todayStatLabel}>{t("collectorHistory.upi")}</Text>
+        </View>
+      </View>
+
+      {(partial > 0 || advance > 0) && (
+        <View style={s.todayTags}>
+          {partial > 0 && (
+            <View style={[s.tagPill, { backgroundColor: H.amberBg }]}>
+              <Text allowFontScaling={false} style={[s.tagPillTxt, { color: H.amber }]}>
+                {partial} {t("collectorHistory.filters.partial")}
+              </Text>
+            </View>
+          )}
+          {advance > 0 && (
+            <View style={[s.tagPill, { backgroundColor: H.subtleGreen }]}>
+              <Text allowFontScaling={false} style={[s.tagPillTxt, { color: H.green }]}>
+                {advance} {t("collectorHistory.filters.advance")}
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
+
+      {lastSync && (
+        <Text allowFontScaling={false} style={s.lastSyncTxt}>
+          {t("collectorHistory.lastSync")}: {fmtTime(lastSync.toISOString())}
+        </Text>
+      )}
+    </View>
+  );
 };
 
-// ── Payment card ──────────────────────────────────────────────────────────────
-const PaymentCard = ({ item }) => {
-  const { t } = useTranslation();
+// ─── Overall Stats Card ─────────────────────────────────────────────────────
+const StatsCard = ({ stats, t }) => {
+  if (!stats) return null;
+  return (
+    <View style={s.statsCard}>
+      <Text allowFontScaling={false} style={s.statsTitle}>
+        {t("collectorHistory.stats.overall")}
+      </Text>
+      <View style={s.statsGrid}>
+        <View style={s.statsItem}>
+          <Text allowFontScaling={false} style={s.statsVal}>₹{(stats.monthly_chanda_total || 0).toLocaleString("en-IN")}</Text>
+          <Text allowFontScaling={false} style={s.statsLbl}>{t("collectorHistory.stats.chanda")}</Text>
+        </View>
+        <View style={s.statsItem}>
+          <Text allowFontScaling={false} style={s.statsVal}>₹{(stats.donations_total || 0).toLocaleString("en-IN")}</Text>
+          <Text allowFontScaling={false} style={s.statsLbl}>{t("collectorHistory.stats.donations")}</Text>
+        </View>
+        <View style={s.statsItem}>
+          <Text allowFontScaling={false} style={s.statsVal}>₹{(stats.funds_total || 0).toLocaleString("en-IN")}</Text>
+          <Text allowFontScaling={false} style={s.statsLbl}>{t("collectorHistory.stats.funds")}</Text>
+        </View>
+        <View style={[s.statsItem, s.statsItemHighlight]}>
+          <Text allowFontScaling={false} style={[s.statsVal, { color: H.goldDeep }]}>₹{(stats.total_collection || 0).toLocaleString("en-IN")}</Text>
+          <Text allowFontScaling={false} style={s.statsLbl}>{t("collectorHistory.stats.totalCollection")}</Text>
+        </View>
+        <View style={s.statsItem}>
+          <Text allowFontScaling={false} style={[s.statsVal, stats.pending_count > 0 && { color: H.amber }]}>{stats.pending_count || 0}</Text>
+          <Text allowFontScaling={false} style={s.statsLbl}>{t("collectorHistory.stats.pending")}</Text>
+        </View>
+      </View>
+    </View>
+  );
+};
+
+// ─── Payment Card ─────────────────────────────────────────────────────────────
+const PaymentCard = React.memo(({ item, t }) => {
   const cfg = cfgFor(item);
   return (
     <View style={s.card}>
       <View style={s.cardTop}>
         <View style={{ flex: 1, marginRight: 8 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
             <Text allowFontScaling={false} style={s.cardName} numberOfLines={1}>{item.head_name}</Text>
             {item.entry_type !== "chanda" && (
               <View style={s.purposePill}>
@@ -288,9 +359,9 @@ const PaymentCard = ({ item }) => {
               </View>
             )}
           </View>
-          {item.chanda_no ? (
+          {item.chanda_no && (
             <Text allowFontScaling={false} style={s.cardChandaNo}>{item.chanda_no}</Text>
-          ) : null}
+          )}
         </View>
         <View style={[s.statusBadge, { backgroundColor: cfg.bg }]}>
           <Text allowFontScaling={false} style={[s.statusTxt, { color: cfg.color }]}>{cfg.label(t)}</Text>
@@ -300,16 +371,14 @@ const PaymentCard = ({ item }) => {
       <View style={s.cardMid}>
         <Text allowFontScaling={false} style={s.cardAmount}>₹{Number(item.amount).toLocaleString("en-IN")}</Text>
         <View style={s.cardMeta}>
-          <Text allowFontScaling={false} style={s.cardMetaTxt}>
-            {(item.method || "cash").toUpperCase()}
-          </Text>
+          <Text allowFontScaling={false} style={s.cardMetaTxt}>{(item.method || "cash").toUpperCase()}</Text>
           {item.is_advance && (
             <View style={s.advancePill}>
               <Text allowFontScaling={false} style={s.advancePillTxt}>{t("collectorHistory.filters.advance")}</Text>
             </View>
           )}
           {item.status === "partial" && (
-            <View style={[s.advancePill, { backgroundColor: "rgba(107,63,160,0.1)", borderColor: "#6B3FA0" }]}>
+            <View style={[s.advancePill, { backgroundColor: "rgba(107,63,160,0.06)", borderColor: "#6B3FA0" }]}>
               <Text allowFontScaling={false} style={[s.advancePillTxt, { color: "#6B3FA0" }]}>{t("collectorHistory.filters.partial")}</Text>
             </View>
           )}
@@ -317,9 +386,12 @@ const PaymentCard = ({ item }) => {
       </View>
 
       <View style={s.cardBottom}>
-        <Text allowFontScaling={false} style={s.cardReceipt} numberOfLines={1}>
-          {item.receipt_id || "—"}
-        </Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+          <ReceiptIcon />
+          <Text allowFontScaling={false} style={s.cardReceipt} numberOfLines={1}>
+            {item.receipt_id || "—"}
+          </Text>
+        </View>
         <Text allowFontScaling={false} style={s.cardTime}>
           {fmtTime(item.collected_at || item.created_at)}
         </Text>
@@ -335,16 +407,39 @@ const PaymentCard = ({ item }) => {
       )}
     </View>
   );
-};
+});
 
-// ── Date group header ─────────────────────────────────────────────────────────
-const GroupHeader = ({ label }) => (
+// ─── Group header ────────────────────────────────────────────────────────────
+const GroupHeader = React.memo(({ label }) => (
   <View style={s.groupHeader}>
+    <View style={s.groupHeaderLine} />
     <Text allowFontScaling={false} style={s.groupHeaderTxt}>{label}</Text>
+    <View style={s.groupHeaderLine} />
+  </View>
+));
+
+// ─── Search Card ─────────────────────────────────────────────────────────────
+const SearchCard = ({ search, setSearch, t }) => (
+  <View style={s.searchCard}>
+    <SearchIcon />
+    <TextInput
+      style={s.searchInput}
+      placeholder={t("collectorHistory.searchPlaceholder")}
+      placeholderTextColor="#A0B8AC"
+      value={search}
+      onChangeText={setSearch}
+      allowFontScaling={false}
+      returnKeyType="search"
+    />
+    {search.length > 0 && (
+      <AnimatedPressable onPress={() => setSearch("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} activeOpacity={0.7}>
+        <CloseIcon />
+      </AnimatedPressable>
+    )}
   </View>
 );
 
-// ── Main screen ───────────────────────────────────────────────────────────────
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function CollectorHistoryScreen({ navigation }) {
   const { t } = useTranslation();
   const isFocused = useIsFocused();
@@ -354,11 +449,12 @@ export default function CollectorHistoryScreen({ navigation }) {
   const [stats, setStats]         = useState(null);
   const [search, setSearch]       = useState("");
   const [activeFilters, setFilters] = useState(new Set(["all"]));
-  const [syncStatus, setSyncStatus] = useState("idle"); // idle | syncing | synced | offline
+  const [syncStatus, setSyncStatus] = useState("idle");
   const [lastSync, setLastSync]    = useState(null);
   const [page, setPage]            = useState(1);
   const [hasMore, setHasMore]      = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const debounceRef = useRef(null);
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -368,22 +464,20 @@ export default function CollectorHistoryScreen({ navigation }) {
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(headerFade, { toValue: 1, duration: 280, useNativeDriver: true }),
-      Animated.timing(listFade,   { toValue: 1, duration: 360, delay: 80, useNativeDriver: true }),
+      Animated.timing(headerFade, { toValue: 1, duration: 300, useNativeDriver: true }),
+      Animated.timing(listFade,   { toValue: 1, duration: 400, delay: 100, useNativeDriver: true }),
     ]).start();
   }, []);
 
-  // Debounce search
   useEffect(() => {
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => setDebouncedSearch(search), 300);
     return () => clearTimeout(debounceRef.current);
   }, [search]);
 
-  const fetchHistory = useCallback(async (pageNum = 1, append = false) => {
-    if (pageNum === 1) setSyncStatus("syncing");
+  const fetchHistory = useCallback(async (pageNum = 1, append = false, isManualRefresh = false) => {
+    if (pageNum === 1 && !isManualRefresh) setSyncStatus("syncing");
 
-    // Cache-first: load immediately
     if (pageNum === 1) {
       try {
         const raw = await AsyncStorage.getItem(CACHE_KEY);
@@ -393,12 +487,11 @@ export default function CollectorHistoryScreen({ navigation }) {
           setToday(cached.today || null);
           setStats(cached.stats || null);
           setLastSync(cached.cachedAt ? new Date(cached.cachedAt) : null);
-          setSyncStatus("offline");
+          if (!isManualRefresh) setSyncStatus("offline");
         }
       } catch {}
     }
 
-    // Network with 2-second timeout
     try {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT);
@@ -424,6 +517,7 @@ export default function CollectorHistoryScreen({ navigation }) {
       setSyncStatus("offline");
     } finally {
       setLoadingMore(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -431,13 +525,17 @@ export default function CollectorHistoryScreen({ navigation }) {
     if (isFocused) fetchHistory(1);
   }, [isFocused, fetchHistory]);
 
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchHistory(1, false, true);
+  }, [fetchHistory]);
+
   const loadMore = useCallback(async () => {
     if (!hasMore || loadingMore) return;
     setLoadingMore(true);
     await fetchHistory(page + 1, true);
   }, [hasMore, loadingMore, page, fetchHistory]);
 
-  // Toggle filter — "all" is exclusive
   const toggleFilter = (key) => {
     setFilters(prev => {
       const next = new Set(prev);
@@ -449,16 +547,12 @@ export default function CollectorHistoryScreen({ navigation }) {
     });
   };
 
-  // Local filter + search
   const displayed = useMemo(() => {
     const q = normalize(debouncedSearch);
     const filters = [...activeFilters];
-
     return allItems.filter(item => {
-      // filter chips
       const matchesFilter = filters.every(f => f === "all" || passesFilter(item, f));
       if (!matchesFilter) return false;
-      // search
       if (!q) return true;
       const hay = normalize(
         `${item.head_name} ${item.chanda_no} ${item.phone} ${item.address} ${item.receipt_id}`
@@ -467,7 +561,6 @@ export default function CollectorHistoryScreen({ navigation }) {
     });
   }, [allItems, debouncedSearch, activeFilters]);
 
-  // Group by date
   const sections = useMemo(() => {
     const map = new Map();
     displayed.forEach(item => {
@@ -478,7 +571,7 @@ export default function CollectorHistoryScreen({ navigation }) {
     const result = [];
     for (const [ds, items] of map.entries()) {
       result.push({ type: "header", key: `h-${ds}`, label: groupLabel(ds, t) });
-      items.forEach(item => result.push({ type: "item", key: `i-${item.id}`, item }));
+      items.forEach(item => result.push({ type: "item", key: `i-${item.entry_type}-${item.id}`, item }));
     }
     return result;
   }, [displayed]);
@@ -486,14 +579,11 @@ export default function CollectorHistoryScreen({ navigation }) {
   const syncDotColor =
     syncStatus === "synced"  ? H.green :
     syncStatus === "syncing" ? H.gold  : H.amber;
-  const syncLabel =
-    syncStatus === "synced"  ? t("collectorHistory.synced")  :
-    syncStatus === "syncing" ? t("collectorHistory.syncing") : t("collectorHistory.offline");
 
-  const renderRow = ({ item: row }) => {
+  const renderRow = useCallback(({ item: row }) => {
     if (row.type === "header") return <GroupHeader label={row.label} />;
-    return <PaymentCard item={row.item} />;
-  };
+    return <PaymentCard item={row.item} t={t} />;
+  }, [t]);
 
   const ListEmpty = () => (
     <View style={s.empty}>
@@ -509,13 +599,13 @@ export default function CollectorHistoryScreen({ navigation }) {
   );
 
   const ListFooter = () => {
-    if (!hasMore) return <View style={{ height: 100 }} />;
+    if (!hasMore) return <View style={{ height: 80 }} />;
     return (
-      <TouchableOpacity style={s.loadMoreBtn} onPress={loadMore} disabled={loadingMore}>
+      <AnimatedPressable style={s.loadMoreBtn} onPress={loadMore} disabled={loadingMore} activeOpacity={0.7}>
         <Text allowFontScaling={false} style={s.loadMoreTxt}>
           {loadingMore ? t("collectorHistory.loading") : t("collectorHistory.loadMore")}
         </Text>
-      </TouchableOpacity>
+      </AnimatedPressable>
     );
   };
 
@@ -523,7 +613,6 @@ export default function CollectorHistoryScreen({ navigation }) {
     <View style={s.root}>
       <StatusBar barStyle="light-content" backgroundColor={H.headerDeep} />
 
-      {/* ── Header ── */}
       <Animated.View style={[s.header, { opacity: headerFade }]}>
         <Svg width={SW} height={HEADER_H} style={StyleSheet.absoluteFill}>
           <Defs>
@@ -537,40 +626,16 @@ export default function CollectorHistoryScreen({ navigation }) {
         <HeaderPattern />
 
         <View style={s.headerRow}>
-          <TouchableOpacity
-            style={s.backBtn}
-            onPress={() => navigation.replace("Home")}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Text allowFontScaling={false} style={s.backArrow}>←</Text>
-          </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <Text allowFontScaling={false} style={s.headerEyebrow}>Mohideen Masjid</Text>
             <Text allowFontScaling={false} style={s.headerTitle}>{t("collectorHistory.title")}</Text>
           </View>
-          <View style={[s.syncBadge, { borderColor: syncDotColor + "44" }]}>
+          <View style={[s.syncBadge, { borderColor: syncDotColor + "33" }]}>
             <View style={[s.syncDot, { backgroundColor: syncDotColor }]} />
-            <Text allowFontScaling={false} style={[s.syncTxt, { color: syncDotColor }]}>{syncLabel}</Text>
+            <Text allowFontScaling={false} style={[s.syncTxt, { color: syncDotColor }]}>
+              {syncStatus === "synced" ? t("collectorHistory.synced") : syncStatus === "syncing" ? t("collectorHistory.syncing") : t("collectorHistory.offline")}
+            </Text>
           </View>
-        </View>
-
-        {/* Search */}
-        <View style={s.searchBox}>
-          <Text allowFontScaling={false} style={s.searchIcon}>⌕</Text>
-          <TextInput
-            style={s.searchInput}
-            placeholder={t("collectorHistory.searchPlaceholder")}
-            placeholderTextColor={H.textMuted}
-            value={search}
-            onChangeText={setSearch}
-            allowFontScaling={false}
-            returnKeyType="search"
-          />
-          {search.length > 0 && (
-            <TouchableOpacity onPress={() => setSearch("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text allowFontScaling={false} style={s.searchClear}>✕</Text>
-            </TouchableOpacity>
-          )}
         </View>
       </Animated.View>
 
@@ -584,15 +649,25 @@ export default function CollectorHistoryScreen({ navigation }) {
           onEndReached={loadMore}
           onEndReachedThreshold={0.3}
           contentContainerStyle={s.listContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={H.gold}
+              colors={[H.gold]}
+              progressBackgroundColor="#fff"
+            />
+          }
           ListHeaderComponent={() => (
             <View>
-              <SummaryCard
+              <SearchCard search={search} setSearch={setSearch} t={t} />
+              <TodayCard
                 today={todaySummary}
-                stats={stats}
                 isOffline={syncStatus === "offline"}
                 lastSync={lastSync}
+                t={t}
               />
-              {/* Filter chips */}
+              <StatsCard stats={stats} t={t} />
               <FlatList
                 horizontal
                 data={FILTERS}
@@ -602,7 +677,7 @@ export default function CollectorHistoryScreen({ navigation }) {
                 renderItem={({ item: f }) => {
                   const isActive = activeFilters.has(f.key);
                   return (
-                    <TouchableOpacity
+                    <AnimatedPressable
                       style={[s.filterChip, isActive && s.filterChipActive]}
                       onPress={() => toggleFilter(f.key)}
                       activeOpacity={0.75}
@@ -610,7 +685,7 @@ export default function CollectorHistoryScreen({ navigation }) {
                       <Text allowFontScaling={false} style={[s.filterChipTxt, isActive && s.filterChipTxtActive]}>
                         {f.label(t)}
                       </Text>
-                    </TouchableOpacity>
+                    </AnimatedPressable>
                   );
                 }}
               />
@@ -625,118 +700,279 @@ export default function CollectorHistoryScreen({ navigation }) {
   );
 }
 
+// ─── Styles ──────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: H.bg },
 
-  // Header
+  // Header — Clean, no search
   header: {
     height: HEADER_H,
     paddingTop: STATUSBAR_H,
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
     overflow: "hidden",
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-    ...sh(8, 0.16),
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    ...sh(8, 0.1),
   },
-  headerRow: { flexDirection: "row", alignItems: "center", marginBottom: 10 },
-  backBtn: {
-    width: 34, height: 34, borderRadius: RADII.sm,
-    backgroundColor: "rgba(255,255,255,0.13)",
-    borderWidth: 1, borderColor: "rgba(212,175,55,0.35)",
-    alignItems: "center", justifyContent: "center", marginRight: 12,
-  },
-  backArrow: { color: H.gold, fontSize: 17, lineHeight: 18 },
-  headerEyebrow: { fontSize: 10, fontWeight: "700", color: "rgba(255,255,255,0.6)", letterSpacing: 1.3, textTransform: "uppercase" },
-  headerTitle: { fontSize: 19, fontWeight: "800", color: H.gold, fontFamily: FONTS.display, letterSpacing: -0.2 },
+  headerRow: { flexDirection: "row", alignItems: "center", marginBottom: 4 },
+  headerEyebrow: { fontSize: 10, fontWeight: "700", color: "rgba(255,255,255,0.55)", letterSpacing: 1.4, textTransform: "uppercase" },
+  headerTitle: { fontSize: 20, fontWeight: "800", color: C.gold, fontFamily: FONTS.display, letterSpacing: -0.3, marginTop: 2 },
 
   syncBadge: {
-    flexDirection: "row", alignItems: "center", gap: 5,
-    backgroundColor: "rgba(255,255,255,0.11)",
-    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1,
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1,
   },
-  syncDot: { width: 6, height: 6, borderRadius: 3 },
+  syncDot: { width: 5, height: 5, borderRadius: 2.5 },
   syncTxt: { fontSize: 10, fontWeight: "700" },
 
-  searchBox: {
+  // Search card
+  searchCard: {
     flexDirection: "row", alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.13)",
-    borderRadius: 12, borderWidth: 1, borderColor: "rgba(212,175,55,0.25)",
-    paddingHorizontal: 10, gap: 6, height: 36,
+    backgroundColor: H.card,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: H.cardBorder,
+    marginHorizontal: 16,
+    marginTop: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    ...sh(4, 0.05),
+    gap: 10,
   },
-  searchIcon: { color: "rgba(255,255,255,0.55)", fontSize: 15 },
-  searchInput: { flex: 1, color: "#fff", fontSize: 13, paddingVertical: 0 },
-  searchClear: { color: "rgba(255,255,255,0.55)", fontSize: 13 },
+  searchInput: { flex: 1, color: H.textDark, fontSize: 14, paddingVertical: 0, fontWeight: "500" },
 
-  // Summary card
-  summaryCard: {
-    backgroundColor: H.card, borderRadius: 14, borderWidth: 1,
-    borderColor: H.cardBorder, marginHorizontal: 14, marginTop: 14, marginBottom: 4,
-    padding: 14, ...sh(4, 0.07),
+  // ── Premium Today Card ─────────────────────────────────────────────────────
+  todayCard: {
+    backgroundColor: H.card,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: H.cardBorder,
+    marginHorizontal: 16,
+    marginTop: 14,
+    padding: 18,
+    ...sh(6, 0.06),
+    position: "relative",
+    overflow: "hidden",
   },
-  summaryHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
-  summaryTitle: { fontSize: 12, fontWeight: "800", color: H.textDark, textTransform: "uppercase", letterSpacing: 0.7 },
-  offlinePill: { backgroundColor: H.amberBg, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 },
-  offlinePillTxt: { fontSize: 10, fontWeight: "700", color: H.amber },
-  summaryRow: { flexDirection: "row", alignItems: "center" },
-  summaryItem: { flex: 1, alignItems: "center" },
-  summaryVal: { fontSize: 15, fontWeight: "800", color: H.textDark },
-  summaryValSm: { fontSize: 13, fontWeight: "800", color: H.textDark },
-  summaryLbl: { fontSize: 9, fontWeight: "600", color: H.textMuted, marginTop: 2, textAlign: "center" },
-  summaryDivider: { width: 1, height: 30, backgroundColor: H.cardBorder },
-  statsDivider: { height: 1, backgroundColor: H.cardBorder, marginVertical: 10 },
-  summaryRow2: { flexDirection: "row", gap: 6, marginTop: 10 },
-  tagPill: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, backgroundColor: H.amberBg, borderWidth: 1, borderColor: H.amber },
-  tagPillTxt: { fontSize: 10, fontWeight: "700", color: H.amber },
-  lastSyncTxt: { fontSize: 10, color: H.textMuted, marginTop: 8 },
+  todayAccentLine: {
+    position: "absolute",
+    top: 0,
+    left: 18,
+    right: 18,
+    height: 2.5,
+    backgroundColor: H.gold,
+    borderBottomLeftRadius: 2.5,
+    borderBottomRightRadius: 2.5,
+    opacity: 0.6,
+  },
+  todayHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 12,
+  },
+  todayLabel: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: H.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: 1,
+  },
+  todayDate: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: H.textDark,
+  },
+  offlinePill: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: H.amberBg,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  dot: { width: 5, height: 5, borderRadius: 2.5 },
+  offlinePillTxt: { fontSize: 10, fontWeight: "800", color: H.amber },
+  todayTotalWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 14,
+  },
+  rupeeWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: "rgba(212,175,55,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(212,175,55,0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  todayTotal: {
+    fontSize: 30,
+    fontWeight: "800",
+    color: H.textDark,
+    letterSpacing: -0.8,
+  },
+  todayDivider: {
+    height: 1,
+    backgroundColor: "rgba(11,61,46,0.05)",
+    marginBottom: 12,
+  },
+  todayStatsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  todayStatItem: {
+    flex: 1,
+    alignItems: "center",
+  },
+  todayStatDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: "rgba(11,61,46,0.04)",
+  },
+  todayStatValue: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: H.textDark,
+  },
+  todayStatLabel: {
+    fontSize: 9,
+    fontWeight: "600",
+    color: H.textMuted,
+    marginTop: 2,
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
+  },
+  todayTags: {
+    flexDirection: "row",
+    gap: 6,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(11,61,46,0.03)",
+  },
+  tagPill: {
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  tagPillTxt: {
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  lastSyncTxt: {
+    fontSize: 10,
+    color: H.textMuted,
+    marginTop: 8,
+    textAlign: "right",
+  },
+
+  // ── Overall Stats Card ─────────────────────────────────────────────────────
+  statsCard: {
+    backgroundColor: H.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: H.cardBorder,
+    marginHorizontal: 16,
+    marginTop: 12,
+    padding: 14,
+    ...sh(4, 0.05),
+  },
+  statsTitle: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: H.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: 10,
+  },
+  statsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginHorizontal: -3,
+  },
+  statsItem: {
+    width: "33.33%",
+    paddingHorizontal: 3,
+    marginBottom: 8,
+    alignItems: "center",
+  },
+  statsItemHighlight: {
+    backgroundColor: "rgba(212,175,55,0.04)",
+    borderRadius: 8,
+    paddingVertical: 4,
+    marginHorizontal: 2,
+    width: "32%",
+  },
+  statsVal: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: H.textDark,
+  },
+  statsLbl: {
+    fontSize: 8,
+    fontWeight: "600",
+    color: H.textMuted,
+    marginTop: 1,
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
+  },
 
   // Filter chips
-  filterRow: { paddingHorizontal: 14, paddingVertical: 10, gap: 6 },
+  filterRow: { paddingHorizontal: 16, paddingVertical: 10, gap: 6 },
   filterChip: {
     borderRadius: 20, borderWidth: 1, borderColor: H.cardBorder,
-    backgroundColor: H.card, paddingHorizontal: 12, paddingVertical: 6,
+    backgroundColor: H.card, paddingHorizontal: 12, paddingVertical: 5,
+    ...sh(2, 0.03),
   },
   filterChipActive: { backgroundColor: H.green, borderColor: H.green },
-  filterChipTxt: { fontSize: 12, fontWeight: "600", color: H.textMuted },
+  filterChipTxt: { fontSize: 11, fontWeight: "600", color: H.textMuted },
   filterChipTxtActive: { color: "#fff" },
 
   // Group header
-  groupHeader: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 },
-  groupHeaderTxt: { fontSize: 11, fontWeight: "800", color: H.textMuted, textTransform: "uppercase", letterSpacing: 0.8 },
+  groupHeader: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4, gap: 8 },
+  groupHeaderLine: { flex: 1, height: 1, backgroundColor: "rgba(11,61,46,0.04)" },
+  groupHeaderTxt: { fontSize: 10, fontWeight: "800", color: H.textMuted, textTransform: "uppercase", letterSpacing: 0.7 },
 
-  // Card
+  // Compact Payment Card
   card: {
-    backgroundColor: H.card, borderRadius: 12, borderWidth: 1,
-    borderColor: H.cardBorder, marginHorizontal: 14, marginBottom: 8,
-    padding: 14, ...sh(3, 0.06),
+    backgroundColor: H.card, borderRadius: 14, borderWidth: 1,
+    borderColor: H.cardBorder, marginHorizontal: 16, marginBottom: 8,
+    padding: 14, ...sh(3, 0.04),
   },
-  cardTop: { flexDirection: "row", alignItems: "flex-start", marginBottom: 8 },
-  cardName: { fontSize: 14, fontWeight: "700", color: H.textDark },
-  cardChandaNo: { fontSize: 11, color: H.textMuted, marginTop: 1 },
-  purposePill: { backgroundColor: H.goldLight, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
-  purposePillTxt: { fontSize: 9, fontWeight: "800", color: H.goldDeep, textTransform: "uppercase" },
-  statusBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
-  statusTxt: { fontSize: 10, fontWeight: "800" },
-  cardMid: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
-  cardAmount: { fontSize: 20, fontWeight: "800", color: H.textDark },
-  cardMeta: { flexDirection: "row", alignItems: "center", gap: 6 },
-  cardMetaTxt: { fontSize: 11, fontWeight: "700", color: H.textMuted },
-  advancePill: { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, backgroundColor: "rgba(14,107,69,0.1)", borderWidth: 1, borderColor: H.green },
-  advancePillTxt: { fontSize: 9, fontWeight: "800", color: H.green },
+  cardTop: { flexDirection: "row", alignItems: "flex-start", marginBottom: 6 },
+  cardName: { fontSize: 13, fontWeight: "700", color: H.textDark },
+  cardChandaNo: { fontSize: 10, color: H.textMuted, marginTop: 1 },
+  purposePill: { backgroundColor: H.goldLight, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 },
+  purposePillTxt: { fontSize: 8, fontWeight: "800", color: H.goldDeep, textTransform: "uppercase" },
+  statusBadge: { borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
+  statusTxt: { fontSize: 9, fontWeight: "800" },
+  cardMid: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 },
+  cardAmount: { fontSize: 18, fontWeight: "800", color: H.textDark },
+  cardMeta: { flexDirection: "row", alignItems: "center", gap: 4 },
+  cardMetaTxt: { fontSize: 10, fontWeight: "700", color: H.textMuted },
+  advancePill: { borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1, borderWidth: 1, backgroundColor: "rgba(14,107,69,0.06)", borderColor: H.green },
+  advancePillTxt: { fontSize: 8, fontWeight: "800", color: H.green },
   cardBottom: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  cardReceipt: { fontSize: 11, color: H.textMuted, fontFamily: Platform.OS === "ios" ? "Courier New" : "monospace", flex: 1 },
-  cardTime: { fontSize: 11, color: H.textMuted, fontWeight: "600" },
-  cardCovered: { fontSize: 11, color: H.green, marginTop: 6, fontWeight: "600" },
+  cardReceipt: { fontSize: 10, color: H.textMuted, fontFamily: Platform.OS === "ios" ? "Courier New" : "monospace" },
+  cardTime: { fontSize: 10, color: H.textMuted, fontWeight: "600" },
+  cardCovered: { fontSize: 10, color: H.green, marginTop: 4, fontWeight: "600" },
 
   listContent: { paddingBottom: BOTTOM_NAV_H + 16 },
 
   loadMoreBtn: {
-    marginHorizontal: 14, marginTop: 8, marginBottom: 16,
+    marginHorizontal: 16, marginTop: 6, marginBottom: 16,
     borderRadius: 12, borderWidth: 1, borderColor: H.cardBorder,
-    backgroundColor: H.card, paddingVertical: 14, alignItems: "center",
+    backgroundColor: H.card, paddingVertical: 12, alignItems: "center",
+    ...sh(2, 0.03),
   },
-  loadMoreTxt: { fontSize: 13, fontWeight: "700", color: H.textMuted },
+  loadMoreTxt: { fontSize: 12, fontWeight: "700", color: H.textMuted },
 
   empty: { padding: 40, alignItems: "center" },
-  emptyTitle: { fontSize: 15, fontWeight: "700", color: H.textDark, marginBottom: 6 },
-  emptyHint: { fontSize: 12, color: H.textMuted, textAlign: "center" },
+  emptyTitle: { fontSize: 14, fontWeight: "700", color: H.textDark, marginBottom: 4 },
+  emptyHint: { fontSize: 12, color: H.textMuted, textAlign: "center", lineHeight: 18 },
 });

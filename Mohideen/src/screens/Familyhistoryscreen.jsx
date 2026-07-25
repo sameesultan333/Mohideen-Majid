@@ -7,7 +7,8 @@
  */
 
 import React, { useEffect, useState, useCallback } from "react";
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, StatusBar, Platform, Image, Linking } from "react-native";
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, StatusBar, Platform, Image, Linking } from "react-native";
+import AnimatedPressable from "../components/AnimatedPressable";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { authApiFetch, getFallbackBaseUrl } from "../config/server";
 import { COLORS as C } from "../config/theme";
@@ -111,10 +112,10 @@ const PaymentRow = ({ payment }) => {
         ) : null}
       </View>
       {proofUri ? (
-        <TouchableOpacity onPress={() => Linking.openURL(proofUri)} activeOpacity={0.8} style={s.proofThumb}>
+        <AnimatedPressable onPress={() => Linking.openURL(proofUri)} activeOpacity={0.8} style={s.proofThumb}>
           <Image source={{ uri: proofUri }} style={s.proofImg} resizeMode="cover" />
           <Text allowFontScaling={false} style={s.proofLabel}>Proof</Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
       ) : null}
     </View>
   );
@@ -188,9 +189,9 @@ export default function FamilyHistoryScreen({ navigation, route }) {
       <View style={s.center}>
         <StatusBar barStyle="dark-content" backgroundColor={H.bg} />
         <Text allowFontScaling={false} style={s.errorTxt}>{error || t("familyHistory.genericError")}</Text>
-        <TouchableOpacity style={s.retryBtn} onPress={load}>
+        <AnimatedPressable style={s.retryBtn} onPress={load}>
           <Text allowFontScaling={false} style={s.retryTxt}>{t("familyHistory.retry")}</Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
       </View>
     );
   }
@@ -206,9 +207,9 @@ export default function FamilyHistoryScreen({ navigation, route }) {
     <View style={s.root}>
       <StatusBar barStyle="dark-content" backgroundColor={H.bg} />
       <View style={s.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={s.backBtn}>
+        <AnimatedPressable onPress={() => navigation.goBack()} style={s.backBtn}>
           <Text allowFontScaling={false} style={s.backTxt}>‹ {t("familyHistory.back")}</Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
         <Text allowFontScaling={false} style={s.headerTitle} numberOfLines={1}>{familyName || data.family?.name || t("familyHistory.title")}</Text>
         <Text allowFontScaling={false} style={s.headerSub}>{data.family?.chanda_no} · {data.family?.phone}</Text>
       </View>
@@ -241,10 +242,10 @@ export default function FamilyHistoryScreen({ navigation, route }) {
                   ) : null}
                 </View>
                 {lastProofUri ? (
-                  <TouchableOpacity onPress={() => Linking.openURL(lastProofUri)} activeOpacity={0.8} style={s.proofThumb}>
+                  <AnimatedPressable onPress={() => Linking.openURL(lastProofUri)} activeOpacity={0.8} style={s.proofThumb}>
                     <Image source={{ uri: lastProofUri }} style={s.proofImg} resizeMode="cover" />
                     <Text allowFontScaling={false} style={s.proofLabel}>Proof</Text>
-                  </TouchableOpacity>
+                  </AnimatedPressable>
                 ) : null}
               </View>
             ) : null}

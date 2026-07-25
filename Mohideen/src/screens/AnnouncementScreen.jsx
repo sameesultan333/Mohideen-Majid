@@ -1,20 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback, memo } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  StatusBar,
-  Animated,
-  Platform,
-  Dimensions,
-  RefreshControl,
-  Image,
-  ActivityIndicator,
-  Modal,
-  Pressable,
-} from "react-native";
+import { View, Text, StyleSheet, ScrollView, StatusBar, Animated, Platform, Dimensions, RefreshControl, Image, ActivityIndicator, Modal, Pressable } from "react-native";
+import AnimatedPressable from "../components/AnimatedPressable";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTranslation } from "react-i18next";
 import Svg, { Path, Rect, Defs, LinearGradient, Stop } from "react-native-svg";
@@ -182,12 +168,12 @@ function ImagePreviewModal({ uri, onClose }) {
             resizeMode="contain"
           />
         </Animated.View>
-        <TouchableOpacity
+        <AnimatedPressable
           onPress={close}
           style={{ marginTop: 20, backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 99, paddingHorizontal: 28, paddingVertical: 10 }}
         >
           <Text allowFontScaling={false} style={{ color: "#fff", fontSize: 14, fontWeight: "700" }}>Close</Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
       </Animated.View>
     </Modal>
   );
@@ -224,7 +210,7 @@ export default function AnnouncementScreen({ navigation, route }) {
 
   // ─── Clock update ─────────────────────────────────────────────────
   useEffect(() => {
-    const interval = setInterval(() => setCurrentTime(new Date()), 1000);
+    const interval = setInterval(() => setCurrentTime(new Date()), 60000); // minute granularity is enough — only date/greeting text depends on this
     return () => clearInterval(interval);
   }, []);
 
@@ -434,7 +420,7 @@ export default function AnnouncementScreen({ navigation, route }) {
               const isRead = readIds.includes(item.id);
               
               return (
-                <TouchableOpacity
+                <AnimatedPressable
                   key={item.id || index}
                   activeOpacity={0.85}
                   onPress={() => markAsRead(item.id)}
@@ -447,7 +433,7 @@ export default function AnnouncementScreen({ navigation, route }) {
                     ]}
                   >
                   {hasImage && (
-                    <TouchableOpacity
+                    <AnimatedPressable
                       activeOpacity={0.88}
                       onPress={() => setPreviewUri(resolvedImageUrl)}
                       style={styles.imageContainer}
@@ -469,7 +455,7 @@ export default function AnnouncementScreen({ navigation, route }) {
                           <Text allowFontScaling={false} style={styles.zoomHintTxt}>Tap to view</Text>
                         </View>
                       )}
-                    </TouchableOpacity>
+                    </AnimatedPressable>
                   )}
                   
                   <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
@@ -500,7 +486,7 @@ export default function AnnouncementScreen({ navigation, route }) {
                     )}
                   </View>
                 </Animated.View>
-                </TouchableOpacity>
+                </AnimatedPressable>
               );
             })}
           </>

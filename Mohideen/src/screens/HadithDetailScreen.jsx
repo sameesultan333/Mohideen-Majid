@@ -4,26 +4,8 @@
  */
 
 import React, { useEffect, useState, useRef, useCallback, useMemo, memo } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  ActivityIndicator,
-  TextInput,
-  StatusBar,
-  Platform,
-  KeyboardAvoidingView,
-  Keyboard,
-  RefreshControl,
-  SafeAreaView,
-  Dimensions,
-  Modal,
-  Animated,
-  ScrollView,
-  Image,
-} from "react-native";
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TextInput, StatusBar, Platform, KeyboardAvoidingView, Keyboard, RefreshControl, SafeAreaView, Dimensions, Modal, Animated, ScrollView, Image } from "react-native";
+import AnimatedPressable from "../components/AnimatedPressable";
 import { useTranslation } from "react-i18next";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getToken } from "../utils/secureStorage";
@@ -196,9 +178,9 @@ const CompactHeader = ({ onBack, title, hijriDate, gregorianDate }) => {
       <HeaderPattern w={SW} h={148} />
 
       <View style={hs.row}>
-        <TouchableOpacity onPress={onBack} style={hs.backBtn}>
+        <AnimatedPressable onPress={onBack} style={hs.backBtn}>
           <BackIcon />
-        </TouchableOpacity>
+        </AnimatedPressable>
         <View style={hs.titleContainer}>
           <Text style={hs.title}>{safeTitle}</Text>
         </View>
@@ -339,10 +321,10 @@ const AudioPlayer = memo(({ audioUrl }) => {
       </View>
 
       <View style={styles.audioControls}>
-        <TouchableOpacity onPress={rewind10} style={styles.audioControlBtn}>
+        <AnimatedPressable onPress={rewind10} style={styles.audioControlBtn}>
           <RewindIcon color={H.textMuted} size={18} />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.audioPlayBtn} onPress={togglePlay} disabled={isLoading}>
+        </AnimatedPressable>
+        <AnimatedPressable style={styles.audioPlayBtn} onPress={togglePlay} disabled={isLoading}>
           {isLoading ? (
             <ActivityIndicator size="small" color={H.white} />
           ) : isPlaying ? (
@@ -350,16 +332,16 @@ const AudioPlayer = memo(({ audioUrl }) => {
           ) : (
             <PlayIcon color={H.white} size={22} />
           )}
-        </TouchableOpacity>
-        <TouchableOpacity onPress={stopAudio} style={styles.audioControlBtn}>
+        </AnimatedPressable>
+        <AnimatedPressable onPress={stopAudio} style={styles.audioControlBtn}>
           <StopIcon color={H.textMuted} size={18} />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={changeSpeed} style={styles.audioSpeedBtn}>
+        </AnimatedPressable>
+        <AnimatedPressable onPress={changeSpeed} style={styles.audioSpeedBtn}>
           <Text style={styles.audioSpeedText}>{rate}x</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={forward10} style={styles.audioControlBtn}>
+        </AnimatedPressable>
+        <AnimatedPressable onPress={forward10} style={styles.audioControlBtn}>
           <ForwardIcon color={H.textMuted} size={18} />
-        </TouchableOpacity>
+        </AnimatedPressable>
       </View>
     </View>
   );
@@ -422,11 +404,11 @@ const CommentsOverlay = ({
             <Text style={styles.commentTime}>{timeText}</Text>
           </View>
           <Text style={styles.commentText}>{replyText}</Text>
-          <TouchableOpacity onPress={() => onReplyPress(item)} activeOpacity={0.6}>
+          <AnimatedPressable onPress={() => onReplyPress(item)} activeOpacity={0.6}>
             <Text style={styles.commentReplyAction}>{t("hadithDetail.reply")}</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
           {hasChildren && (
-            <TouchableOpacity
+            <AnimatedPressable
               style={styles.viewRepliesBtn}
               activeOpacity={0.6}
               onPress={() => onToggleExpanded(item.id)}
@@ -436,7 +418,7 @@ const CommentsOverlay = ({
                   ? t("hadithDetail.hideReplies")
                   : t("hadithDetail.viewReplies", { count: item.childCount })}
               </Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           )}
         </View>
       </View>
@@ -445,15 +427,15 @@ const CommentsOverlay = ({
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
-      <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={onClose} />
+      <AnimatedPressable style={styles.modalBackdrop} activeOpacity={1} onPress={onClose} />
       <Animated.View style={[styles.overlayContainer, { transform: [{ translateY: slideAnim }] }]}>
         <View style={styles.overlayHeader}>
           <View style={styles.overlayHandle} />
           <View style={styles.overlayTitleRow}>
             <Text style={styles.overlayTitle}>{t("hadithDetail.comments")}</Text>
-            <TouchableOpacity onPress={onClose}>
+            <AnimatedPressable onPress={onClose}>
               <CloseIcon color={H.textMuted} size={24} />
-            </TouchableOpacity>
+            </AnimatedPressable>
           </View>
           <Text style={styles.overlaySubtitle}>
             {replies.length} {t("hadithDetail.repliesCount")}
@@ -493,9 +475,9 @@ const CommentsOverlay = ({
                 <Text style={styles.replyToText}>
                   {t("hadithDetail.replyingTo")} {replyTo.author}
                 </Text>
-                <TouchableOpacity onPress={() => setReplyTo(null)}>
+                <AnimatedPressable onPress={() => setReplyTo(null)}>
                   <Text style={styles.replyToCancel}>{t("hadithDetail.cancel")}</Text>
-                </TouchableOpacity>
+                </AnimatedPressable>
               </View>
             )}
             <View style={styles.inputWrapper}>
@@ -512,7 +494,7 @@ const CommentsOverlay = ({
                 multiline
                 maxLength={500}
               />
-              <TouchableOpacity
+              <AnimatedPressable
                 style={[styles.sendBtn, (!replyText.trim() || submitting) && styles.sendBtnDisabled]}
                 onPress={onSendReply}
                 disabled={!replyText.trim() || submitting}
@@ -523,7 +505,7 @@ const CommentsOverlay = ({
                 ) : (
                   <SendIcon color={H.white} size={18} />
                 )}
-              </TouchableOpacity>
+              </AnimatedPressable>
             </View>
           </View>
         </KeyboardAvoidingView>
@@ -560,7 +542,7 @@ export default function HadithDetailScreen({ navigation, route }) {
   }, [hadithId]);
 
   useEffect(() => {
-    const interval = setInterval(() => setCurrentTime(new Date()), 1000);
+    const interval = setInterval(() => setCurrentTime(new Date()), 60000); // minute granularity is enough — only date/greeting text depends on this
     return () => clearInterval(interval);
   }, []);
 
@@ -750,7 +732,7 @@ export default function HadithDetailScreen({ navigation, route }) {
           )}
 
           {/* Comments Button */}
-          <TouchableOpacity
+          <AnimatedPressable
             style={styles.commentsButton}
             onPress={() => setCommentsVisible(true)}
             activeOpacity={0.8}
@@ -759,7 +741,7 @@ export default function HadithDetailScreen({ navigation, route }) {
             <Text style={styles.commentsButtonText}>
               {t("hadithDetail.viewComments")} ({replies.length})
             </Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
           <View style={{ height: 20 }} />
         </ScrollView>
       </KeyboardAvoidingView>

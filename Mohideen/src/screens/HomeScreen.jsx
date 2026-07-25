@@ -28,19 +28,8 @@
 
 import React, { useEffect, useState, useRef, useCallback, useMemo, memo } from "react";
 import { useFocusEffect } from "@react-navigation/native";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ActivityIndicator,
-  TouchableOpacity,
-  StatusBar,
-  Animated,
-  Platform,
-  Dimensions,
-  Vibration,
-  PermissionsAndroid,
-} from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator, StatusBar, Animated, Platform, Dimensions, Vibration, PermissionsAndroid } from "react-native";
+import AnimatedPressable from "../components/AnimatedPressable";
 import messaging, {
   getToken as getFcmToken,
   subscribeToTopic,
@@ -61,6 +50,7 @@ import { getDeenUnreadCount } from "../utils/deenUnread";
 import { COLORS as C } from "../config/theme";
 import { useTranslation } from "react-i18next";
 import BottomNav from "../components/BottomNav";
+import { logger } from "../utils/logger";
 
 const { width: SW } = Dimensions.get("window");
 const PRAYER_CACHE_KEY = "cached_prayer_timings";
@@ -835,23 +825,23 @@ const CompactHeader = ({ userName, greetingKey, hijriDate, gregorianDate, unread
       <HeaderPattern w={SW} h={HEADER_H} />
 
       <View style={hs.row}>
-        <TouchableOpacity style={hs.avatar} onPress={onAvatarPress} activeOpacity={0.8}>
+        <AnimatedPressable style={hs.avatar} onPress={onAvatarPress} activeOpacity={0.8}>
           <Text allowFontScaling={false} style={hs.avatarTxt}>{initial}</Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
 
         <View style={hs.mid}>
           <Text allowFontScaling={false} style={hs.greeting}>{t(greetingKey)}</Text>
           <Text allowFontScaling={false} style={hs.name} numberOfLines={1}>{userName || t("common.welcome")}</Text>
         </View>
 
-        <TouchableOpacity accessibilityLabel={t("header.notifications")} onPress={onBellPress} style={hs.bell} activeOpacity={0.8}>
+        <AnimatedPressable accessibilityLabel={t("header.notifications")} onPress={onBellPress} style={hs.bell} activeOpacity={0.8}>
           <BellIcon />
           {unreadCount > 0 && (
             <View style={hs.badge}>
               <Text allowFontScaling={false} style={hs.badgeTxt}>{unreadCount > 9 ? "9+" : unreadCount}</Text>
             </View>
           )}
-        </TouchableOpacity>
+        </AnimatedPressable>
       </View>
 
       <View style={hs.dateRow}>
@@ -910,7 +900,7 @@ const TimelineRow = ({ item, status, confirmed, onToggle, isLast }) => {
   const isMissed = status === "missed";
 
   return (
-    <TouchableOpacity
+    <AnimatedPressable
       activeOpacity={0.75}
       onPress={() => onToggle(item.key)}
       style={[
@@ -941,7 +931,7 @@ const TimelineRow = ({ item, status, confirmed, onToggle, isLast }) => {
           </Text>
         </View>
       )}
-    </TouchableOpacity>
+    </AnimatedPressable>
   );
 };
 
@@ -1011,7 +1001,7 @@ export default function HomeScreen({ navigation, route }) {
   }, []);
 
   useEffect(() => {
-    const interval = setInterval(() => setCurrentTime(new Date()), 1000);
+    const interval = setInterval(() => setCurrentTime(new Date()), 60000); // minute granularity is enough — only date/greeting text depends on this
     return () => clearInterval(interval);
   }, []);
 
@@ -1160,7 +1150,7 @@ export default function HomeScreen({ navigation, route }) {
     const setupNotifications = async () => {
       // Step 1: verify Firebase Messaging is initialized
       const fcm = messaging();
-      console.log("[FCM] Messaging initialized:", !!fcm);
+      logger.log("[FCM] Messaging initialized:", !!fcm);
 
       // Step 2: request permission and log result
       let granted = false;
@@ -1168,18 +1158,18 @@ export default function HomeScreen({ navigation, route }) {
         const status = await fcm.requestPermission();
         granted = status === messaging.AuthorizationStatus.AUTHORIZED ||
                   status === messaging.AuthorizationStatus.PROVISIONAL;
-        console.log("[FCM] iOS permission status:", status, "granted:", granted);
+        logger.log("[FCM] iOS permission status:", status, "granted:", granted);
       } else if (Platform.Version >= 33) {
         const result = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
         granted = result === PermissionsAndroid.RESULTS.GRANTED;
-        console.log("[FCM] Android POST_NOTIFICATIONS result:", result, "granted:", granted);
+        logger.log("[FCM] Android POST_NOTIFICATIONS result:", result, "granted:", granted);
       } else {
         granted = true;
-        console.log("[FCM] Android < 13 — permission auto-granted");
+        logger.log("[FCM] Android < 13 — permission auto-granted");
       }
 
       if (!granted) {
-        console.log("[FCM] Permission denied — notifications disabled");
+        logger.log("[FCM] Permission denied — notifications disabled");
         return;
       }
 
@@ -1187,15 +1177,15 @@ export default function HomeScreen({ navigation, route }) {
       try {
         await subscribeToTopic(fcm, "announcements");
         await subscribeToTopic(fcm, "prayer_times"); // silent data updates for rescheduling alarms
-        console.log("[FCM] Subscribed to announcements + prayer_times");
+        logger.log("[FCM] Subscribed to announcements + prayer_times");
       } catch (e) {
-        console.log("[FCM ERROR] Topic subscription failed:", e);
+        logger.log("[FCM ERROR] Topic subscription failed:", e);
       }
 
       // Step 4: get device token, log it, and register with backend
       try {
         const token = await getFcmToken(fcm);
-        console.log("[FCM] Device token acquired:", token ? `${token.slice(0, 8)}…` : null);
+        logger.log("[FCM] Device token acquired:", token ? `${token.slice(0, 8)}…` : null);
         if (token) {
           const userRaw = await AsyncStorage.getItem("user");
           const userObj = userRaw ? JSON.parse(userRaw) : null;
@@ -1203,11 +1193,11 @@ export default function HomeScreen({ navigation, route }) {
           await subscribeRoleTopics(fcm, userObj?.role);
         }
       } catch (e) {
-        console.log("[FCM ERROR] getToken/register failed:", e);
+        logger.log("[FCM ERROR] getToken/register failed:", e);
       }
 
       unsubTokenRefresh = onTokenRefresh(fcm, async (newToken) => {
-        console.log("[FCM] Token refreshed:", newToken ? `${newToken.slice(0, 8)}…` : null);
+        logger.log("[FCM] Token refreshed:", newToken ? `${newToken.slice(0, 8)}…` : null);
         try {
           const userRaw = await AsyncStorage.getItem("user");
           const userObj = userRaw ? JSON.parse(userRaw) : null;
@@ -1278,7 +1268,7 @@ export default function HomeScreen({ navigation, route }) {
       unsubOpen = onNotificationOpenedApp(fcm, () => {});
     };
 
-    setupNotifications().catch((e) => console.log("[FCM ERROR] setupNotifications:", e));
+    setupNotifications().catch((e) => logger.log("[FCM ERROR] setupNotifications:", e));
 
     return () => {
       unsubMessage();
@@ -1359,7 +1349,7 @@ export default function HomeScreen({ navigation, route }) {
             </Text>
           </View>
 
-          <TouchableOpacity
+          <AnimatedPressable
             style={pending.logoutBtn}
             onPress={async () => {
               try { await apiAxios({ method: "post", url: "/auth/logout" }); } catch (_) {}
@@ -1369,7 +1359,7 @@ export default function HomeScreen({ navigation, route }) {
             }}
           >
             <Text allowFontScaling={false} style={pending.logoutTxt}>Sign Out</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
         </View>
       </View>
     );
@@ -1395,9 +1385,9 @@ export default function HomeScreen({ navigation, route }) {
         <StatusBar barStyle="light-content" backgroundColor={H.headerDeep} />
         <View style={s.emptyState}>
           <Text allowFontScaling={false} style={s.errorTxt}>{t("errors.loadPrayerTimes")}</Text>
-          <TouchableOpacity onPress={fetchPrayerTimes} style={s.retryBtn}>
+          <AnimatedPressable onPress={fetchPrayerTimes} style={s.retryBtn}>
             <Text allowFontScaling={false} style={s.retryTxt}>{t("errors.retry")}</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
         </View>
         <BottomNav navigation={navigation} currentRoute={currentRoute} badges={{ Donation: chandaPending, Announcement: unreadCount, Deen: deenUnread }} />
       </View>
@@ -1426,10 +1416,10 @@ export default function HomeScreen({ navigation, route }) {
         <View style={s.timelineHeader}>
           <Text allowFontScaling={false} style={s.sectionTitle}>{t("sections.prayerTimeline")}</Text>
           {isOffline ? (
-            <TouchableOpacity onPress={fetchPrayerTimes} style={s.offlinePill}>
+            <AnimatedPressable onPress={fetchPrayerTimes} style={s.offlinePill}>
               <RefreshIcon />
               <Text allowFontScaling={false} style={s.offlinePillTxt}>Offline · last saved</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           ) : (
             <Text allowFontScaling={false} style={s.sectionArabic}>{t("sections.prayerTimelineArabic")}</Text>
           )}

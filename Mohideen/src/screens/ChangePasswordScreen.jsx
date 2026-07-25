@@ -1,15 +1,6 @@
 import React, { useState, useCallback } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  StatusBar,
-  Platform,
-  ActivityIndicator,
-  Alert,
-} from "react-native";
+import { View, Text, StyleSheet, ScrollView, StatusBar, Platform, ActivityIndicator, Alert } from "react-native";
+import AnimatedPressable from "../components/AnimatedPressable";
 import { useTranslation } from "react-i18next";
 import { saveToken, saveRefreshToken, deleteToken, deleteRefreshToken } from "../utils/secureStorage";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -72,9 +63,9 @@ export default function ChangePasswordScreen({ navigation }) {
       <StatusBar barStyle="light-content" backgroundColor={C.bg} />
 
       <View style={[s.header, { paddingTop: IOS ? 52 : (StatusBar.currentHeight || 0) + 12 }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={s.backBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+        <AnimatedPressable onPress={() => navigation.goBack()} style={s.backBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
           <View style={s.backArrow} />
-        </TouchableOpacity>
+        </AnimatedPressable>
         <Text allowFontScaling={false} style={s.headerTitle}>{t("changePassword.title")}</Text>
         <View style={{ width: 40 }} />
       </View>
@@ -116,7 +107,7 @@ export default function ChangePasswordScreen({ navigation }) {
             />
           </View>
 
-          <TouchableOpacity
+          <AnimatedPressable
             style={[s.saveBtn, (loading || !current || !next || !confirm) && s.saveBtnDisabled]}
             onPress={handleSave}
             disabled={loading || !current || !next || !confirm}
@@ -127,7 +118,7 @@ export default function ChangePasswordScreen({ navigation }) {
             ) : (
               <Text allowFontScaling={false} style={s.saveBtnTxt}>{t("changePassword.save")}</Text>
             )}
-          </TouchableOpacity>
+          </AnimatedPressable>
         </View>
 
         <Text allowFontScaling={false} style={s.hint}>

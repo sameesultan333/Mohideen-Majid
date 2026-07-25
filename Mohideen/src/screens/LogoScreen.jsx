@@ -16,7 +16,6 @@ import Svg, {
   Stop,
   G,
 } from "react-native-svg";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getToken } from "../utils/secureStorage";
 import { authApiFetch } from "../config/server";
 import { colors } from "../config/theme";

@@ -1,19 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, memo } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
-  TouchableOpacity,
-  Animated,
-  Dimensions,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StatusBar,
-  Easing,
-  Modal,
-} from "react-native";
+import { View, Text, TextInput, StyleSheet, Animated, Dimensions, KeyboardAvoidingView, Platform, ScrollView, StatusBar, Easing, Modal } from "react-native";
+import AnimatedPressable from "../components/AnimatedPressable";
 import Svg, { Path, Circle, Rect, Defs, LinearGradient, Stop, G } from "react-native-svg";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { saveToken, saveRefreshToken } from "../utils/secureStorage";
@@ -264,18 +251,18 @@ export default function LoginScreen({ navigation, route }) {
                 onChangeText={(t) => { setPassword(t); setError(""); }}
               />
 
-              <TouchableOpacity onPress={handleForgotPassword} style={s.forgotRow}>
+              <AnimatedPressable onPress={handleForgotPassword} style={s.forgotRow}>
                 <Text allowFontScaling={false} style={s.forgotTxt}>Forgot Password?</Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
 
-              <TouchableOpacity
+              <AnimatedPressable
                 style={[s.goldBtn, (!canSubmit || loading) && s.goldBtnDisabled]}
                 onPress={handleLogin}
                 disabled={!canSubmit || loading}
                 activeOpacity={0.85}
               >
                 <Text allowFontScaling={false} style={s.goldBtnTxt}>{loading ? "SIGNING IN…" : "SIGN IN"}</Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
 
               <View style={s.dividerRow}>
                 <View style={s.dividerLine} />
@@ -283,9 +270,9 @@ export default function LoginScreen({ navigation, route }) {
                 <View style={s.dividerLine} />
               </View>
 
-              <TouchableOpacity style={s.outlineBtn} onPress={() => navigation.navigate("Register")} activeOpacity={0.85}>
+              <AnimatedPressable style={s.outlineBtn} onPress={() => navigation.navigate("Register")} activeOpacity={0.85}>
                 <Text allowFontScaling={false} style={s.outlineBtnTxt}>CREATE ACCOUNT</Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
             </Animated.View>
           </Animated.View>
 
@@ -308,13 +295,13 @@ export default function LoginScreen({ navigation, route }) {
             <Text allowFontScaling={false} style={s.modalBody}>
               Please contact your mosque administrator to reset your password.
             </Text>
-            <TouchableOpacity
+            <AnimatedPressable
               style={s.modalBtn}
               onPress={() => setForgotVisible(false)}
               activeOpacity={0.85}
             >
               <Text allowFontScaling={false} style={s.modalBtnTxt}>OK</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           </View>
         </View>
       </Modal>

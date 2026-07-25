@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import i18n from "./index";
+import { logger } from "../utils/logger";
 
 export const STORAGE_LANGUAGE_KEY = "@mohideen:language";
 
@@ -32,7 +33,7 @@ export async function setStoredLanguage(
   try {
     await AsyncStorage.setItem(STORAGE_LANGUAGE_KEY, language);
   } catch (error) {
-    console.warn("Failed to save language:", error);
+    logger.warn("Failed to save language:", error);
   }
 }
 

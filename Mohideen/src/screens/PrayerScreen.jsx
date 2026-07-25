@@ -20,21 +20,9 @@
  *    rather than relying on raw truthiness.
  */
 
-import React, { useEffect, useState, useRef, useCallback, memo } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  StatusBar,
-  Platform,
-  Dimensions,
-  RefreshControl,
-  ActivityIndicator,
-  Animated,
-  Easing,
-} from "react-native";
+import React, { useEffect, useState, useRef, useCallback, useMemo, memo } from "react";
+import { View, Text, StyleSheet, ScrollView, StatusBar, Platform, Dimensions, RefreshControl, ActivityIndicator, Animated, Easing } from "react-native";
+import AnimatedPressable from "../components/AnimatedPressable";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Svg, { Path, Rect, Circle, Defs, LinearGradient, Stop } from "react-native-svg";
 import { apiAxios, getWsUrl } from "../config/server";
@@ -353,11 +341,11 @@ const CompactHeader = ({ title, hijriDate, gregorianDate, onSettingsPress }) => 
       <View style={hs.iconContainer}>
         <MosqueIcon color={H.goldLight} size={26} />
       </View>
-      <TouchableOpacity style={hs.settingsBtn} onPress={onSettingsPress} android_ripple={{ color: 'transparent' }}>
+      <AnimatedPressable style={hs.settingsBtn} onPress={onSettingsPress} android_ripple={{ color: 'transparent' }}>
         <Svg width={22} height={22} viewBox="0 0 24 24">
           <Path d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94L14.4 2.81c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41L9.25 5.35C8.66 5.59 8.12 5.92 7.63 6.29L5.24 5.33c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58C4.84 11.36 4.8 11.69 4.8 12s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61L19.14 12.94zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" fill={H.white} />
         </Svg>
-      </TouchableOpacity>
+      </AnimatedPressable>
     </View>
 
     <View style={hs.dateRow}>
@@ -478,7 +466,7 @@ export default function PrayerScreen({ navigation, route }) {
   const wsRef = useRef(null);
 
   useEffect(() => {
-    const interval = setInterval(() => setCurrentTime(new Date()), 1000);
+    const interval = setInterval(() => setCurrentTime(new Date()), 60000); // minute granularity is enough — only date/greeting text depends on this
     return () => clearInterval(interval);
   }, []);
 
@@ -571,11 +559,11 @@ export default function PrayerScreen({ navigation, route }) {
   const onRefresh = useCallback(() => fetchPrayerTimes(true), [fetchPrayerTimes]);
 
   const friday = isFriday();
-  const prayerList = buildPrayerList(timings, friday, t);
-  const nextIndex = getNextIndex(prayerList);
-  const activeIndex = getActiveIndex(prayerList);
-  const timeUntil = getTimeUntil(prayerList, nextIndex);
-  const windowProgress = getWindowProgress(prayerList, nextIndex);
+  const prayerList = useMemo(() => buildPrayerList(timings, friday, t), [timings, friday, t]);
+  const nextIndex = useMemo(() => getNextIndex(prayerList), [prayerList, currentTime]);
+  const activeIndex = useMemo(() => getActiveIndex(prayerList), [prayerList, currentTime]);
+  const timeUntil = useMemo(() => getTimeUntil(prayerList, nextIndex), [prayerList, nextIndex, currentTime]);
+  const windowProgress = useMemo(() => getWindowProgress(prayerList, nextIndex), [prayerList, nextIndex, currentTime]);
 
   const hijriDate = getHijriDateString(currentTime);
   const gregorianDate = currentTime.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
@@ -602,9 +590,9 @@ export default function PrayerScreen({ navigation, route }) {
         <View style={styles.center}>
           <Text allowFontScaling={false} style={styles.errorTitle}>{t("prayer.errorTitle")}</Text>
           <Text allowFontScaling={false} style={styles.errorSub}>{t("prayer.fetchError")}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={() => fetchPrayerTimes(true)}>
+          <AnimatedPressable style={styles.retryButton} onPress={() => fetchPrayerTimes(true)}>
             <Text allowFontScaling={false} style={styles.retryButtonText}>{t("prayer.retry")}</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
         </View>
         <BottomNav navigation={navigation} currentRoute={currentRoute} />
       </View>

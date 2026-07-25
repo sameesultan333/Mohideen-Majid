@@ -49,36 +49,31 @@
  * - Added pull-to-refresh (RefreshControl) on both the main member list
  *   and the payment sheet, so a pull-down re-fetches the latest data
  *   from the server instead of relying only on the WebSocket/manual sync.
+ *
+ * REDESIGN PASS (this revision):
+ * - Removed the top "Pending / Total" summary cards — that data already
+ *   lives in the filter pill counts, so the header no longer duplicates
+ *   it and users reach the list faster.
+ * - Removed the duplicate primary action in the payment sheet. For chanda
+ *   payments the sticky bottom bar ("Continue") is now the single primary
+ *   action; the in-sheet SubmitButton only renders for donation/fund/other
+ *   payment types, which have no sticky bar of their own.
+ * - Payment method selection is now a dedicated, larger touch-target
+ *   component (PaymentMethodButton) instead of the small generic
+ *   OptionPill, with a clearer selected state.
  */
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  FlatList,
-  TouchableOpacity,
-  ActivityIndicator,
-  Animated,
-  StyleSheet,
-  Alert,
-  Image,
-  Modal,
-  Pressable,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  RefreshControl,
-  StatusBar,
-  Dimensions,
-  Linking,
-} from "react-native";
+import { View, Text, TextInput, FlatList, Animated, StyleSheet, Alert, Image, Modal, Pressable, KeyboardAvoidingView, Platform, ScrollView, RefreshControl, StatusBar, Dimensions, Linking } from "react-native";
+import AnimatedPressable from "../components/AnimatedPressable";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 // DateTimePicker removed — replaced with custom JS-only date modal
 import { launchImageLibrary } from "react-native-image-picker";
 import { authApiFetch, apiFetch, getWsUrl } from "../config/server";
+import { getToken } from "../utils/secureStorage";
 import { COLORS as C } from "../config/theme";
-import { useTranslation } from "react-i18next";
+import { t } from "../i18n";
+import SearchPickerModal from "../components/SearchPickerModal";
 
 const { width: SW } = Dimensions.get("window");
 const MEMBERS_CACHE_KEY = "collector_members_cache";
@@ -90,11 +85,6 @@ const canAccessCollector = (role) => {
   const r = normalizeRole(role);
   return r === "collector" || SUPERADMIN_ROLES.includes(r);
 };
-// Deactivation hits /admin/families/{id}/deactivate, which the backend only
-// allows for admin/superadmin — plain collectors would get a 403, so the
-// button is hidden for them rather than shown-then-failing.
-const isSuperadmin = (role) => SUPERADMIN_ROLES.includes(normalizeRole(role));
-
 const H = {
   bg: "#FBF9F4",
   card: "#FFFFFF",
@@ -194,19 +184,10 @@ const pb = StyleSheet.create({
   fill: { height: "100%", width: "100%", borderRadius: 99, transformOrigin: "left" },
 });
 
-const SummaryCard = React.memo(({ label, value, sub, onPress }) => (
-  <TouchableOpacity style={s.sumCard} onPress={onPress} activeOpacity={0.85}>
-    <Text allowFontScaling={false} style={s.sumLabel}>{label}</Text>
-    <Text allowFontScaling={false} style={s.sumValue}>{value}</Text>
-    {sub ? <Text allowFontScaling={false} style={s.sumSub}>{sub}</Text> : null}
-  </TouchableOpacity>
-));
-
 // No entrance fade/slide — cards just render. With removeClippedSubviews
 // on the parent FlatList, an entrance animation replays every time a card
 // re-mounts on scroll, which is what was causing the stutter.
 const MemberCard = React.memo(({ item, selectedMonth, onPress, onCall, onNavigate, onHistory }) => {
-  const { t } = useTranslation();
   const { total, paid, balance, status } = getMemberStatus(item, selectedMonth);
   const ratio = total > 0 ? paid / total : 0;
   const sColor = status === "paid" ? H.green : status === "partial" ? H.amber : H.warn;
@@ -227,6 +208,13 @@ const MemberCard = React.memo(({ item, selectedMonth, onPress, onCall, onNavigat
     .filter(c => Number(c.amount_due || 0) > 0 && Number(c.total_paid || 0) < Number(c.amount_due || 0))
     .sort((a, b) => a.month.localeCompare(b.month));
   const pendingCount = pendingCollections.length;
+  // Full outstanding balance across every unpaid/partial month — not just the
+  // currently-selected month — so "Pending" never reads the same as "Monthly"
+  // when only the selected month happens to be unpaid.
+  const totalPendingAmount = pendingCollections.reduce(
+    (sum, c) => sum + Math.max(Number(c.amount_due || 0) - Number(c.total_paid || 0), 0),
+    0
+  );
   // Show up to 4 month names; "+N more" for the remainder
   const pendingMonthNames = pendingCollections
     .slice(0, 4)
@@ -237,7 +225,7 @@ const MemberCard = React.memo(({ item, selectedMonth, onPress, onCall, onNavigat
 
   return (
     // Tap card body → FamilyHistory. Buttons inside handle their own actions.
-    <TouchableOpacity onPress={() => onHistory(item)} activeOpacity={0.75}>
+    <AnimatedPressable onPress={() => onHistory(item)} activeOpacity={0.75}>
       <View style={[s.card, { borderLeftColor: sColor }, status === "paid" && s.cardPaid]}>
         <View style={s.cardRow1}>
           <View style={s.cardLeft}>
@@ -280,7 +268,7 @@ const MemberCard = React.memo(({ item, selectedMonth, onPress, onCall, onNavigat
         <View style={s.statsRow}>
           <MiniStat label={t("collector.monthly")} value={`₹${total}`} color={H.gold} />
           <MiniStat label={t("collector.dueMonths")} value={String(Math.max(overdue, total > 0 && balance > 0 ? 1 : 0))} color={H.textDark} />
-          <MiniStat label={t("collector.pending")} value={balance === 0 ? t("collector.clearBalance") : `₹${balance}`} color={sColor} />
+          <MiniStat label={t("collector.pending")} value={totalPendingAmount === 0 ? t("collector.clearBalance") : `₹${totalPendingAmount}`} color={sColor} />
         </View>
 
         {(lastPaymentDate || lastCollector) ? (
@@ -290,25 +278,25 @@ const MemberCard = React.memo(({ item, selectedMonth, onPress, onCall, onNavigat
         ) : null}
 
         <View style={s.actionsRow}>
-          <TouchableOpacity style={s.actionBtnPrimary} onPress={() => onPress(item)} activeOpacity={0.85}>
+          <AnimatedPressable style={s.actionBtnPrimary} onPress={() => onPress(item)} activeOpacity={0.85}>
             <Text allowFontScaling={false} style={s.actionBtnPrimaryTxt}>{t("collector.collect")}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={s.actionBtn} onPress={() => onHistory(item)} activeOpacity={0.85}>
+          </AnimatedPressable>
+          <AnimatedPressable style={s.actionBtn} onPress={() => onHistory(item)} activeOpacity={0.85}>
             <Text allowFontScaling={false} style={s.actionBtnTxt}>{t("collector.history")}</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
           {phone ? (
-            <TouchableOpacity style={s.actionBtn} onPress={() => onCall(phone)} activeOpacity={0.85}>
+            <AnimatedPressable style={s.actionBtn} onPress={() => onCall(phone)} activeOpacity={0.85}>
               <Text allowFontScaling={false} style={s.actionBtnTxt}>{t("collector.call")}</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           ) : null}
           {address ? (
-            <TouchableOpacity style={s.actionBtn} onPress={() => onNavigate(address)} activeOpacity={0.85}>
+            <AnimatedPressable style={s.actionBtn} onPress={() => onNavigate(address)} activeOpacity={0.85}>
               <Text allowFontScaling={false} style={s.actionBtnTxt}>{t("collector.directions")}</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           ) : null}
         </View>
       </View>
-    </TouchableOpacity>
+    </AnimatedPressable>
   );
 });
 
@@ -332,12 +320,59 @@ function OptionPill({ label, active, onPress }) {
   };
   return (
     <Animated.View style={{ transform: [{ scale: sc }] }}>
-      <TouchableOpacity onPress={tap} activeOpacity={0.8} style={[s.optPill, active && s.optPillOn]}>
+      <AnimatedPressable onPress={tap} activeOpacity={0.8} style={[s.optPill, active && s.optPillOn]}>
         <Text allowFontScaling={false} style={[s.optPillTxt, active && s.optPillTxtOn]}>{label}</Text>
-      </TouchableOpacity>
+      </AnimatedPressable>
     </Animated.View>
   );
 }
+
+// ─── Payment method button ────────────────────────────────────────────
+// Larger, dedicated touch target for the 4 payment methods, distinct
+// from the generic OptionPill used for type/fund selection. Roomier
+// hit area, clearer selected state (filled + border), no crowding.
+function PaymentMethodButton({ label, active, onPress }) {
+  const sc = useRef(new Animated.Value(1)).current;
+  const tap = () => {
+    Animated.sequence([
+      Animated.timing(sc, { toValue: 0.95, duration: 60, useNativeDriver: true }),
+      Animated.timing(sc, { toValue: 1, duration: 110, useNativeDriver: true }),
+    ]).start();
+    onPress();
+  };
+  return (
+    <Animated.View style={{ flex: 1, transform: [{ scale: sc }] }}>
+      <AnimatedPressable
+        onPress={tap}
+        activeOpacity={0.85}
+        style={[pm.btn, active && pm.btnOn]}
+      >
+        <Text allowFontScaling={false} style={[pm.btnTxt, active && pm.btnTxtOn]}>{label}</Text>
+      </AnimatedPressable>
+    </Animated.View>
+  );
+}
+const pm = StyleSheet.create({
+  row: { flexDirection: "row", gap: 8 },
+  btn: {
+    minHeight: 52,
+    borderRadius: 13,
+    borderWidth: 1.5,
+    borderColor: H.cardBorder,
+    backgroundColor: H.card,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+  },
+  btnOn: {
+    backgroundColor: H.gold,
+    borderColor: H.gold,
+    ...shadow(3, 0.14),
+  },
+  btnTxt: { fontSize: 13, fontWeight: "700", color: H.textMuted, letterSpacing: 0.3 },
+  btnTxtOn: { color: H.headerDeep, fontWeight: "800" },
+});
 
 // ─── Month allocation picker ─────────────────────────────────────────
 // Replaces fixed 1M/2M/3M/6M/12M buttons.
@@ -358,7 +393,6 @@ function MonthPicker({
   customExpanded, setCustomExpanded,
   monthlyRate, totalOutstanding, pendingCount,
 }) {
-  const { t } = useTranslation();
   if (!months || months.length === 0) return null;
 
   const pendingGenerated = months.filter(m => m.is_generated && m.remaining > 0);
@@ -377,7 +411,7 @@ function MonthPicker({
   const Row = ({ item }) => {
     const sel = selectedKeys.has(item.month);
     return (
-      <TouchableOpacity
+      <AnimatedPressable
         onPress={() => onToggle(item.month, item.remaining)}
         activeOpacity={0.7}
         style={[mp.row, sel && mp.rowSelected]}
@@ -403,7 +437,7 @@ function MonthPicker({
         <Text allowFontScaling={false} style={[mp.amtTxt, sel && mp.amtTxtSelected]}>
           ₹{item.remaining}
         </Text>
-      </TouchableOpacity>
+      </AnimatedPressable>
     );
   };
 
@@ -457,7 +491,7 @@ function MonthPicker({
               <Text allowFontScaling={false} style={mp.lockIcon}>🔒</Text>
             </View>
           ) : (
-            <TouchableOpacity
+            <AnimatedPressable
               style={mp.advanceSectionHeader}
               onPress={() => setAdvanceExpanded(!advanceExpanded)}
               activeOpacity={0.7}
@@ -468,7 +502,7 @@ function MonthPicker({
                 </Text>
               </View>
               <Text allowFontScaling={false} style={mp.chevron}>{advanceExpanded ? "▲" : "▼"}</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           )}
 
           {/* Only show contents when pending is cleared */}
@@ -477,7 +511,7 @@ function MonthPicker({
               {/* Quick action buttons */}
               <View style={mp.quickRow}>
                 {[3, 6, 12].filter(n => futureMonths.length >= n).map(n => (
-                  <TouchableOpacity
+                  <AnimatedPressable
                     key={n}
                     style={mp.quickBtn}
                     onPress={() => onQuickSelect(n)}
@@ -486,19 +520,19 @@ function MonthPicker({
                     <Text allowFontScaling={false} style={mp.quickBtnTxt}>
                       {n} {t("collector.months")}
                     </Text>
-                  </TouchableOpacity>
+                  </AnimatedPressable>
                 ))}
               </View>
 
               {/* Custom months toggle */}
-              <TouchableOpacity
+              <AnimatedPressable
                 style={mp.customToggle}
                 onPress={() => setCustomExpanded(!customExpanded)}
                 activeOpacity={0.7}
               >
                 <Text allowFontScaling={false} style={mp.customToggleTxt}>{t("collector.chooseCustomMonths")}</Text>
                 <Text allowFontScaling={false} style={mp.chevron}>{customExpanded ? "▲" : "▼"}</Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
 
               {/* Year-grouped custom months — advance badge + full month+year */}
               {customExpanded && years.map(yr => (
@@ -531,7 +565,6 @@ function MonthPicker({
 }
 
 function StickySelectionBar({ count, total, onContinue, loading }) {
-  const { t } = useTranslation();
   if (count === 0) return null;
   return (
     <View style={sb.bar}>
@@ -541,11 +574,11 @@ function StickySelectionBar({ count, total, onContinue, loading }) {
         </Text>
         <Text allowFontScaling={false} style={sb.total}>₹{Math.round(total)}</Text>
       </View>
-      <TouchableOpacity style={sb.btn} onPress={onContinue} disabled={loading} activeOpacity={0.85}>
+      <AnimatedPressable style={sb.btn} onPress={onContinue} disabled={loading} activeOpacity={0.85}>
         <Text allowFontScaling={false} style={sb.btnTxt}>
           {loading ? t("collector.processing") : t("collector.continueBtn")}
         </Text>
-      </TouchableOpacity>
+      </AnimatedPressable>
     </View>
   );
 }
@@ -604,8 +637,7 @@ const sb = StyleSheet.create({
   btnTxt: { color: "#fff", fontSize: 14, fontWeight: "800" },
 });
 
-function SubmitButton({ loading, onPress }) {
-  const { t } = useTranslation();
+function SubmitButton({ loading, onPress, label }) {
   const pulse = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     if (loading) {
@@ -620,15 +652,14 @@ function SubmitButton({ loading, onPress }) {
   }, [loading]);
   return (
     <Animated.View style={{ transform: [{ scale: pulse }] }}>
-      <TouchableOpacity style={s.submitBtn} onPress={onPress} disabled={loading} activeOpacity={0.85}>
-        <Text allowFontScaling={false} style={s.submitBtnTxt}>{loading ? t("collector.processing") : t("collector.recordPayment")}</Text>
-      </TouchableOpacity>
+      <AnimatedPressable style={s.submitBtn} onPress={onPress} disabled={loading} activeOpacity={0.85}>
+        <Text allowFontScaling={false} style={s.submitBtnTxt}>{loading ? t("collector.processing") : (label || t("collector.recordPayment"))}</Text>
+      </AnimatedPressable>
     </Animated.View>
   );
 }
 
 function QRViewerModal({ visible, onClose, imageSource }) {
-  const { t } = useTranslation();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.85)).current;
 
@@ -660,8 +691,8 @@ function QRViewerModal({ visible, onClose, imageSource }) {
   );
 }
 
-export default function CollectorScreen({ navigation }) {
-  const { t } = useTranslation();
+export default function CollectorScreen({ navigation, route }) {
+  const initialTab = route?.params?.initialTab || "collections";
   const searchRef = useRef(null);
 
   const [role, setRole] = useState(null);
@@ -674,8 +705,10 @@ export default function CollectorScreen({ navigation }) {
   const [sortBy, setSortBy] = useState("overdue");
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [zones, setZones] = useState([]);
-  const [zoneSearch, setZoneSearch] = useState("");
   const [selectedZone, setSelectedZone] = useState("");
+  const [streets, setStreets] = useState([]);
+  const [selectedStreet, setSelectedStreet] = useState("");
+  const [showStreetDropdown, setShowStreetDropdown] = useState(false);
 
   const [selected, setSelected] = useState(null);
   const [paymentType, setPaymentType] = useState("chanda");
@@ -711,29 +744,10 @@ export default function CollectorScreen({ navigation }) {
 
   const hFade = useRef(new Animated.Value(0)).current;
 
-  const [activeTab, setActiveTab] = useState("collections");
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [showZoneDropdown, setShowZoneDropdown] = useState(false);
-  const [showAddFamily, setShowAddFamily] = useState(false);
-  const [addForm, setAddForm] = useState({ name: "", chanda_no: "", phone: "", monthly_amount: "", address: "", zone: "", registration_date: "" });
-  const [addSaving, setAddSaving] = useState(false);
-  const [showEditFamily, setShowEditFamily] = useState(false);
-  const [editItem, setEditItem] = useState(null);
-  const [editForm, setEditForm] = useState({ name: "", chanda_no: "", phone: "", monthly_amount: "", address: "", zone: "", registration_date: "" });
-  const [editSaving, setEditSaving] = useState(false);
-  // Zone dropdown + Chanda-Due-Since month picker for the Add/Edit Family
-  // forms (separate from the collections-list filter's zone dropdown above).
-  const [zoneFieldModal, setZoneFieldModal] = useState(null); // 'add' | 'edit' | null
-  const [zoneFieldSearch, setZoneFieldSearch] = useState("");
-  const [dueSinceModal, setDueSinceModal] = useState(null); // 'add' | 'edit' | null
-  const [dueSinceDraft, setDueSinceDraft] = useState(new Date());
   const [cashHistory, setCashHistory] = useState([]);
   const [cashHistoryLoading, setCashHistoryLoading] = useState(false);
-  // Deactivate Member — superadmin only (backend requires admin/superadmin role)
-  const [showDeactivateConfirm, setShowDeactivateConfirm] = useState(false);
-  const [deactivatePassword, setDeactivatePassword] = useState("");
-  const [deactivateReason, setDeactivateReason] = useState("");
-  const [deactivateBusy, setDeactivateBusy] = useState(false);
-  const [deactivateError, setDeactivateError] = useState("");
 
   const FILTERS = useMemo(() => ([
     { key: "all", label: t("collector.filters.all") },
@@ -885,6 +899,21 @@ export default function CollectorScreen({ navigation }) {
     })();
   }, []);
 
+  // Streets cascade from the selected zone (empty zone => all streets).
+  useEffect(() => {
+    (async () => {
+      try {
+        const qs = selectedZone ? `?zone=${encodeURIComponent(selectedZone)}` : "";
+        const res = await authApiFetch(`/admin/streets${qs}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const list = Array.isArray(data) ? data : [];
+        setStreets(list);
+        if (selectedStreet && !list.includes(selectedStreet)) setSelectedStreet("");
+      } catch { /* non-critical */ }
+    })();
+  }, [selectedZone]);
+
   // Load today's collection totals from the history endpoint
   const refreshTodayTotals = useCallback(async () => {
     try {
@@ -931,145 +960,6 @@ export default function CollectorScreen({ navigation }) {
       if (retryTimeout) clearTimeout(retryTimeout);
     };
   }, [fetchMembers]);
-
-  // Chanda numbers must be unique across all families — index the already-
-  // loaded list so Add/Edit Family can reject a duplicate locally instead of
-  // only finding out after a round trip to the server.
-  const chandaNoIndex = useMemo(() => {
-    const map = new Map();
-    members.forEach((item) => {
-      const fam = item.member;
-      const cn = (fam?.chanda_no || "").trim().toUpperCase();
-      if (cn) map.set(cn, fam.id);
-    });
-    return map;
-  }, [members]);
-
-  const isChandaNoTaken = useCallback((value, excludeId) => {
-    const cn = (value || "").trim().toUpperCase();
-    if (!cn) return false;
-    const ownerId = chandaNoIndex.get(cn);
-    return ownerId !== undefined && ownerId !== excludeId;
-  }, [chandaNoIndex]);
-
-  const openDueSince = useCallback((which) => {
-    const src = which === "add" ? addForm.registration_date : editForm.registration_date;
-    let d = new Date();
-    if (src && /^\d{4}-(0[1-9]|1[0-2])$/.test(src)) {
-      const [y, m] = src.split("-").map(Number);
-      d = new Date(y, m - 1, 1);
-    }
-    setDueSinceDraft(d);
-    setDueSinceModal(which);
-  }, [addForm.registration_date, editForm.registration_date]);
-
-  const addFamily = useCallback(async () => {
-    const amt = parseFloat(addForm.monthly_amount);
-    if (!addForm.name.trim() || !addForm.chanda_no.trim() || isNaN(amt) || amt <= 0) {
-      return Alert.alert("Required fields missing", "Name, Chanda No and Monthly Amount are required.");
-    }
-    if (isChandaNoTaken(addForm.chanda_no)) {
-      return Alert.alert("Chanda number in use", `Chanda number "${addForm.chanda_no.trim()}" is already assigned to another family.`);
-    }
-    const dueSince = addForm.registration_date.trim();
-    if (dueSince && !/^\d{4}-(0[1-9]|1[0-2])$/.test(dueSince)) {
-      return Alert.alert("Invalid month", "Chanda Due Since must be in YYYY-MM format, e.g. 2026-01.");
-    }
-    setAddSaving(true);
-    try {
-      const res = await authApiFetch("/collector/families", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: addForm.name.trim(),
-          chanda_no: addForm.chanda_no.trim(),
-          phone: addForm.phone.trim() || null,
-          monthly_amount: amt,
-          address: addForm.address.trim() || null,
-          zone: addForm.zone.trim() || null,
-          registration_date: dueSince ? `${dueSince}-01` : null,
-        }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body?.detail || "Failed to add family");
-      setShowAddFamily(false);
-      setAddForm({ name: "", chanda_no: "", phone: "", monthly_amount: "", address: "", zone: "", registration_date: "" });
-      fetchMembers(true);
-      Alert.alert("Family Added", `${addForm.name.trim()} has been added.`);
-    } catch (err) {
-      Alert.alert("Error", err.message || "Failed to add family");
-    } finally {
-      setAddSaving(false);
-    }
-  }, [addForm, fetchMembers, isChandaNoTaken]);
-
-  const saveEditFamily = useCallback(async () => {
-    if (!editItem) return;
-    if (editForm.chanda_no.trim() && isChandaNoTaken(editForm.chanda_no, editItem.id)) {
-      return Alert.alert("Chanda number in use", `Chanda number "${editForm.chanda_no.trim()}" is already assigned to another family.`);
-    }
-    const dueSince = editForm.registration_date.trim();
-    if (dueSince && !/^\d{4}-(0[1-9]|1[0-2])$/.test(dueSince)) {
-      return Alert.alert("Invalid month", "Chanda Due Since must be in YYYY-MM format, e.g. 2026-01.");
-    }
-    setEditSaving(true);
-    try {
-      const payload = {};
-      if (editForm.name.trim()) payload.name = editForm.name.trim();
-      if (editForm.chanda_no.trim()) payload.chanda_no = editForm.chanda_no.trim();
-      payload.phone = editForm.phone.trim() || null;
-      payload.address = editForm.address.trim() || null;
-      payload.zone = editForm.zone.trim() || null;
-      const amt = parseFloat(editForm.monthly_amount);
-      if (!isNaN(amt) && amt > 0) payload.monthly_amount = amt;
-      if (dueSince) payload.registration_date = `${dueSince}-01`;
-
-      const res = await authApiFetch(`/collector/families/${editItem.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.detail || "Failed to update family");
-      setShowEditFamily(false);
-      setEditItem(null);
-      fetchMembers(true);
-    } catch (err) {
-      Alert.alert("Error", err.message || "Failed to update family");
-    } finally {
-      setEditSaving(false);
-    }
-  }, [editItem, editForm, fetchMembers, isChandaNoTaken]);
-
-  const confirmDeactivate = useCallback(async () => {
-    if (!editItem) return;
-    if (!deactivatePassword) {
-      setDeactivateError("Enter your password to confirm.");
-      return;
-    }
-    setDeactivateBusy(true);
-    setDeactivateError("");
-    try {
-      const res = await authApiFetch(`/admin/families/${editItem.id}/deactivate`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: deactivatePassword, reason: deactivateReason.trim() || undefined }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.detail || "Failed to deactivate family");
-      setShowDeactivateConfirm(false);
-      setShowEditFamily(false);
-      setDeactivatePassword("");
-      setDeactivateReason("");
-      setEditItem(null);
-      fetchMembers(true);
-      Alert.alert("Deactivated", `${data.message || "Family deactivated."}`);
-    } catch (err) {
-      setDeactivateError(err.message || "Failed to deactivate family");
-    } finally {
-      setDeactivateBusy(false);
-    }
-  }, [editItem, deactivatePassword, deactivateReason, fetchMembers]);
 
   const loadCashHistory = useCallback(async () => {
     setCashHistoryLoading(true);
@@ -1328,6 +1218,7 @@ export default function CollectorScreen({ navigation }) {
     const q = normalize(search);
     const all = members.filter((m) => {
       if (selectedZone && m.member?.zone !== selectedZone) return false;
+      if (selectedStreet && m.member?.street !== selectedStreet) return false;
       if (!q) return true;
       const haystack = normalize(
         `${m.member?.name} ${m.member?.address} ${m.member?.chanda_no} ${m.member?.phone}`
@@ -1380,7 +1271,7 @@ export default function CollectorScreen({ navigation }) {
     const pendingCount = all.filter((m) => getMemberStatus(m, selectedMonth).status !== "paid").length;
 
     return { filtered: sorted, counts: cnt, pendingFamiliesCount: pendingCount };
-  }, [members, search, filterStatus, sortBy, selectedMonth, selectedZone]);
+  }, [members, search, filterStatus, sortBy, selectedMonth, selectedZone, selectedStreet]);
 
   if (!roleChecked) {
     return <View style={s.root}><StatusBar barStyle="dark-content" backgroundColor={H.bg} /></View>;
@@ -1392,9 +1283,9 @@ export default function CollectorScreen({ navigation }) {
         <View style={s.restricted}>
           <Text allowFontScaling={false} style={s.restrictedTitle}>{t("collector.restrictedTitle")}</Text>
           <Text allowFontScaling={false} style={s.restrictedSub}>{t("collector.restrictedSub")}</Text>
-          <TouchableOpacity style={s.restrictedBtn} onPress={() => navigation.navigate("Home")}>
+          <AnimatedPressable style={s.restrictedBtn} onPress={() => navigation.navigate("Home")}>
             <Text allowFontScaling={false} style={s.restrictedBtnTxt}>{t("collector.backToHome")}</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
         </View>
       </View>
     );
@@ -1407,30 +1298,27 @@ export default function CollectorScreen({ navigation }) {
       <Animated.View style={[s.header, { opacity: hFade }]}>
         <View style={s.navBar}>
           <View style={s.navLeft}>
-            <TouchableOpacity onPress={() => navigation.navigate("Home")} style={s.backBtn} activeOpacity={0.8} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <AnimatedPressable onPress={() => navigation.navigate("Home")} style={s.backBtn} activeOpacity={0.8} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Text allowFontScaling={false} style={s.backBtnTxt}>←</Text>
-            </TouchableOpacity>
-            <Text allowFontScaling={false} style={s.navTitle}>{t("collector.title")}</Text>
+            </AnimatedPressable>
+            <View>
+              <Text allowFontScaling={false} style={s.navTitle}>{t("collector.title")}</Text>
+              {/* Sync status folded into the nav row instead of its own
+                  full-width line below — only shown when there's actually
+                  something to say (offline, or a queued payment count). */}
+              {isOffline || queueCount > 0 ? (
+                <Text allowFontScaling={false} style={s.navSubtle}>
+                  {isOffline ? t("collector.showingCached") : ""}
+                  {isOffline && queueCount > 0 ? " · " : ""}
+                  {queueCount > 0 ? `${queueCount} ${t("collector.queued")}` : ""}
+                </Text>
+              ) : null}
+            </View>
           </View>
-          <TouchableOpacity onPress={onManualSync} style={s.syncBtn} activeOpacity={0.8}>
+          <AnimatedPressable onPress={onManualSync} style={s.syncBtn} activeOpacity={0.8}>
             <View style={[s.syncDot, isOffline && { backgroundColor: H.warn }]} />
             <Text allowFontScaling={false} style={s.syncTxt}>{isOffline ? t("collector.offline") : t("collector.sync")}</Text>
-          </TouchableOpacity>
-        </View>
-
-        {lastSync ? (
-          <Text allowFontScaling={false} style={s.cacheTime}>
-            {isOffline ? t("collector.showingCached") : t("collector.updated")}
-            {lastSync.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
-            {queueCount > 0 ? ` · ${queueCount} ${t("collector.queued")}` : ""}
-          </Text>
-        ) : null}
-
-        <View style={s.summaryRow}>
-          <SummaryCard label={t("collector.todayCash")} value={`₹${todaysSessionTotal.cash}`} onPress={() => {}} />
-          <SummaryCard label={t("collector.todayDigital")} value={`₹${todaysSessionTotal.digital}`} onPress={() => {}} />
-          <SummaryCard label={t("collector.pending")} value={String(pendingFamiliesCount)} sub={t("collector.families")} onPress={() => setFilterStatus("pending")} />
-          <SummaryCard label={t("collector.total")} value={String(members.length)} sub={t("collector.families")} onPress={() => setFilterStatus("all")} />
+          </AnimatedPressable>
         </View>
 
         <View style={s.tabBar}>
@@ -1439,89 +1327,121 @@ export default function CollectorScreen({ navigation }) {
             { key: "families",    label: t("collectorTabs.families") },
             { key: "history",     label: t("collectorTabs.history") },
           ].map((tab) => (
-            <TouchableOpacity
+            <AnimatedPressable
               key={tab.key}
               style={[s.tabItem, activeTab === tab.key && s.tabItemActive]}
-              onPress={() => setActiveTab(tab.key)}
+              onPress={() => (tab.key === "families" ? navigation.navigate("FamilySearch") : setActiveTab(tab.key))}
               activeOpacity={0.75}
             >
               <Text allowFontScaling={false} style={[s.tabLabel, activeTab === tab.key && s.tabLabelActive]}>
                 {tab.label}
               </Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           ))}
         </View>
 
         {activeTab === "collections" && <>{zones.length > 0 && (
-          <TouchableOpacity
-            style={[s.zoneDropdownBtn, selectedZone && s.zoneDropdownBtnActive]}
-            onPress={() => setShowZoneDropdown(true)}
-            activeOpacity={0.8}
-          >
-            <View style={{ flex: 1 }}>
-              <Text allowFontScaling={false} style={[s.zoneDropdownEye, selectedZone && { color: H.goldDeep }]}>Zone</Text>
-              <Text allowFontScaling={false} style={[s.zoneDropdownVal, selectedZone ? { color: H.goldDeep } : { color: H.textMuted }]}>
-                {selectedZone || t("collector.zone.all")}
-              </Text>
-            </View>
-            {selectedZone ? (
-              <TouchableOpacity
-                onPress={(e) => { e.stopPropagation?.(); setSelectedZone(""); }}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Text allowFontScaling={false} style={{ fontSize: 14, color: H.textMuted, marginRight: 6 }}>✕</Text>
-              </TouchableOpacity>
-            ) : null}
-            <Text allowFontScaling={false} style={s.zoneDropdownChevron}>▼</Text>
-          </TouchableOpacity>
-        )}
-        <View style={s.monthRow}>
-          <TouchableOpacity onPress={() => setSelectedMonth((p) => shiftMonth(p, -1))} style={s.mArrow}>
-            <Text allowFontScaling={false} style={s.mArrowTxt}>‹</Text>
-          </TouchableOpacity>
-          <View style={s.mCenter}>
-            {fetching ? <View style={s.fetchDot} /> : null}
-            <Text allowFontScaling={false} style={s.mValue}>{fmtMonth(selectedMonth)}</Text>
+          <View style={s.filterDropdownRow}>
+            <AnimatedPressable
+              style={[s.zoneDropdownBtn, selectedZone && s.zoneDropdownBtnActive]}
+              onPress={() => setShowZoneDropdown(true)}
+              activeOpacity={0.8}
+            >
+              <View style={{ flex: 1 }}>
+                <Text allowFontScaling={false} style={[s.zoneDropdownEye, selectedZone && { color: H.goldDeep }]}>Zone</Text>
+                <Text allowFontScaling={false} numberOfLines={1} style={[s.zoneDropdownVal, selectedZone ? { color: H.goldDeep } : { color: H.textMuted }]}>
+                  {selectedZone || t("collector.zone.all")}
+                </Text>
+              </View>
+              {selectedZone ? (
+                <AnimatedPressable
+                  onPress={(e) => { e.stopPropagation?.(); setSelectedZone(""); }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text allowFontScaling={false} style={{ fontSize: 14, color: H.textMuted, marginRight: 6 }}>✕</Text>
+                </AnimatedPressable>
+              ) : null}
+              <Text allowFontScaling={false} style={s.zoneDropdownChevron}>▼</Text>
+            </AnimatedPressable>
+
+            <AnimatedPressable
+              style={[s.zoneDropdownBtn, selectedStreet && s.zoneDropdownBtnActive, streets.length === 0 && { opacity: 0.5 }]}
+              onPress={() => streets.length > 0 && setShowStreetDropdown(true)}
+              activeOpacity={0.8}
+              disabled={streets.length === 0}
+            >
+              <View style={{ flex: 1 }}>
+                <Text allowFontScaling={false} style={[s.zoneDropdownEye, selectedStreet && { color: H.goldDeep }]}>Street</Text>
+                <Text allowFontScaling={false} numberOfLines={1} style={[s.zoneDropdownVal, selectedStreet ? { color: H.goldDeep } : { color: H.textMuted }]}>
+                  {selectedStreet || "All streets"}
+                </Text>
+              </View>
+              {selectedStreet ? (
+                <AnimatedPressable
+                  onPress={(e) => { e.stopPropagation?.(); setSelectedStreet(""); }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text allowFontScaling={false} style={{ fontSize: 14, color: H.textMuted, marginRight: 6 }}>✕</Text>
+                </AnimatedPressable>
+              ) : null}
+              <Text allowFontScaling={false} style={s.zoneDropdownChevron}>▼</Text>
+            </AnimatedPressable>
           </View>
-          <TouchableOpacity onPress={() => setSelectedMonth((p) => shiftMonth(p, 1))} style={s.mArrow}>
-            <Text allowFontScaling={false} style={s.mArrowTxt}>›</Text>
-          </TouchableOpacity>
+        )}
+        {/* Month nav + search combined into one row — was two full-width
+            rows before. The month pill is a fixed-width compact control,
+            search takes the remaining space. */}
+        <View style={s.monthSearchRow}>
+          <View style={s.monthPill}>
+            <AnimatedPressable onPress={() => setSelectedMonth((p) => shiftMonth(p, -1))} style={s.mArrowSm} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+              <Text allowFontScaling={false} style={s.mArrowSmTxt}>‹</Text>
+            </AnimatedPressable>
+            {fetching ? <View style={s.fetchDot} /> : null}
+            <Text allowFontScaling={false} numberOfLines={1} style={s.mValueSm}>{fmtMonth(selectedMonth)}</Text>
+            <AnimatedPressable onPress={() => setSelectedMonth((p) => shiftMonth(p, 1))} style={s.mArrowSm} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+              <Text allowFontScaling={false} style={s.mArrowSmTxt}>›</Text>
+            </AnimatedPressable>
+          </View>
+
+          <View style={s.searchBoxFlex}>
+            <TextInput
+              ref={searchRef}
+              placeholder={t("collector.searchPlaceholder")}
+              placeholderTextColor={H.textMuted}
+              value={search}
+              onChangeText={setSearch}
+              style={s.sInput}
+              returnKeyType="search"
+              autoCorrect={false}
+              autoCapitalize="none"
+            />
+            {search.length > 0 && (
+              <AnimatedPressable onPress={() => setSearch("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text allowFontScaling={false} style={s.clearTxt}>{t("collector.clear")}</Text>
+              </AnimatedPressable>
+            )}
+          </View>
         </View>
 
-        <View style={s.searchBox}>
-          <TextInput
-            ref={searchRef}
-            placeholder={t("collector.searchPlaceholder")}
-            placeholderTextColor={H.textMuted}
-            value={search}
-            onChangeText={setSearch}
-            style={s.sInput}
-            returnKeyType="search"
-            autoCorrect={false}
-            autoCapitalize="none"
-          />
-          {search.length > 0 && (
-            <TouchableOpacity onPress={() => setSearch("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text allowFontScaling={false} style={s.clearTxt}>{t("collector.clear")}</Text>
-            </TouchableOpacity>
-          )}
+        {/* Filter pills + sort trigger share one row — sort used to be its
+            own full-width row underneath. */}
+        <View style={s.filterSortRow}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingRight: 8 }}>
+            {FILTERS.map((f) => (
+              <OptionPill key={f.key} label={`${f.label} (${counts[f.key] ?? 0})`} active={filterStatus === f.key} onPress={() => setFilterStatus(f.key)} />
+            ))}
+          </ScrollView>
+          <AnimatedPressable style={s.sortChip} onPress={() => setShowSortMenu((v) => !v)} activeOpacity={0.8}>
+            <Text allowFontScaling={false} style={s.sortChipTxt}>{SORTS.find((x) => x.key === sortBy)?.label} ▾</Text>
+          </AnimatedPressable>
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterScroll} contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}>
-          {FILTERS.map((f) => (
-            <OptionPill key={f.key} label={`${f.label} (${counts[f.key] ?? 0})`} active={filterStatus === f.key} onPress={() => setFilterStatus(f.key)} />
-          ))}
-        </ScrollView>
-
-        <TouchableOpacity style={s.sortRow} onPress={() => setShowSortMenu((v) => !v)} activeOpacity={0.8}>
-          <Text allowFontScaling={false} style={s.sortTxt}>{t("collector.sortPrefix")}{SORTS.find((x) => x.key === sortBy)?.label}</Text>
-        </TouchableOpacity>
         {showSortMenu && (
           <View style={s.sortMenu}>
             {SORTS.map((opt) => (
-              <TouchableOpacity key={opt.key} style={s.sortItem} onPress={() => { setSortBy(opt.key); setShowSortMenu(false); }}>
+              <AnimatedPressable key={opt.key} style={s.sortItem} onPress={() => { setSortBy(opt.key); setShowSortMenu(false); }}>
                 <Text allowFontScaling={false} style={[s.sortItemTxt, sortBy === opt.key && { color: H.gold, fontWeight: "800" }]}>{opt.label}</Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
             ))}
           </View>
         )}
@@ -1554,109 +1474,6 @@ export default function CollectorScreen({ navigation }) {
         />
       )}
 
-      {activeTab === "families" && (
-        <View style={{ flex: 1 }}>
-          <View style={s.familiesHeader}>
-            <Text allowFontScaling={false} style={s.familiesCount}>{members.length} {t("collector.families")}</Text>
-            <TouchableOpacity
-              style={s.addFamilyBtn}
-              onPress={() => {
-                setAddForm({ name: "", chanda_no: "", phone: "", monthly_amount: "", address: "", zone: "", registration_date: "" });
-                setShowAddFamily(true);
-              }}
-              activeOpacity={0.85}
-            >
-              <Text allowFontScaling={false} style={s.addFamilyTxt}>+ Add Family</Text>
-            </TouchableOpacity>
-          </View>
-          <FlatList
-            data={members}
-            keyExtractor={(item) => String(item.member.id)}
-            contentContainerStyle={s.tabContent}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            initialNumToRender={12}
-            maxToRenderPerBatch={12}
-            removeClippedSubviews
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onListRefresh} tintColor={H.gold} colors={[H.gold]} />}
-            ListEmptyComponent={
-              <View style={s.empty}>
-                <Text allowFontScaling={false} style={s.emptyTxt}>{fetching ? t("collector.loading") : t("collector.noFamilies")}</Text>
-              </View>
-            }
-            renderItem={({ item }) => {
-              const fam = item.member;
-              const { status } = getMemberStatus(item, selectedMonth);
-              const sColor = status === "paid" ? H.green : status === "partial" ? H.amber : H.warn;
-              return (
-                <View style={[s.famCard, { borderLeftWidth: 3, borderLeftColor: sColor }]}>
-                  <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2 }}>
-                      {fam.chanda_no ? (
-                        <Text allowFontScaling={false} style={s.famChanda}>{fam.chanda_no}</Text>
-                      ) : null}
-                      <Text allowFontScaling={false} style={s.famName} numberOfLines={1}>{fam.name}</Text>
-                    </View>
-                    <Text allowFontScaling={false} style={s.famMeta}>
-                      {fam.phone || t("collectorTabs.noPhone")} · ₹{fam.monthly_amount ?? "—"}
-                    </Text>
-                    {fam.address ? (
-                      <Text allowFontScaling={false} style={[s.famMeta, { marginTop: 1 }]} numberOfLines={1}>{fam.address}</Text>
-                    ) : null}
-                    {fam.zone ? (
-                      <Text allowFontScaling={false} style={s.famZone}>{fam.zone}</Text>
-                    ) : null}
-                  </View>
-                  <View style={{ gap: 6, alignItems: "flex-end" }}>
-                    <TouchableOpacity
-                      style={s.famEditBtn}
-                      onPress={() => {
-                        setEditItem(fam);
-                        setEditForm({
-                          name: fam.name || "",
-                          chanda_no: fam.chanda_no || "",
-                          phone: fam.phone || "",
-                          monthly_amount: String(fam.monthly_amount ?? ""),
-                          address: fam.address || "",
-                          zone: fam.zone || "",
-                          registration_date: fam.registration_date ? fam.registration_date.slice(0, 7) : "",
-                        });
-                        setShowEditFamily(true);
-                      }}
-                      activeOpacity={0.85}
-                    >
-                      <Text allowFontScaling={false} style={s.famEditTxt}>Edit</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[s.famEditBtn, { backgroundColor: "transparent", borderColor: H.cardBorder }]}
-                      onPress={() => goToHistory(item)}
-                      activeOpacity={0.85}
-                    >
-                      <Text allowFontScaling={false} style={[s.famEditTxt, { color: H.textMuted }]}>History</Text>
-                    </TouchableOpacity>
-                    {isSuperadmin(role) && fam.is_active !== false && (
-                      <TouchableOpacity
-                        style={[s.famEditBtn, { backgroundColor: "#F8E9E9", borderColor: "#E8BBBB" }]}
-                        onPress={() => {
-                          setEditItem(fam);
-                          setDeactivateError("");
-                          setDeactivatePassword("");
-                          setDeactivateReason("");
-                          setShowDeactivateConfirm(true);
-                        }}
-                        activeOpacity={0.85}
-                      >
-                        <Text allowFontScaling={false} style={[s.famEditTxt, { color: "#A13A3A" }]}>Deactivate</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </View>
-              );
-            }}
-          />
-        </View>
-      )}
-
       {activeTab === "history" && (
         <View style={{ flex: 1 }}>
           <ScrollView style={{ flex: 1 }} contentContainerStyle={s.tabContent} showsVerticalScrollIndicator={false}
@@ -1680,408 +1497,38 @@ export default function CollectorScreen({ navigation }) {
               </View>
             ))}
           </ScrollView>
-          <TouchableOpacity style={s.submitCashBtn} onPress={() => navigation.navigate("CashSubmission")}>
+          <AnimatedPressable style={s.submitCashBtn} onPress={() => navigation.navigate("CashSubmission")}>
             <Text allowFontScaling={false} style={s.submitCashTxt}>{t("collectorTabs.submitCash")}</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
         </View>
       )}
 
       <QRViewerModal visible={qrViewerVisible} onClose={() => setQrViewerVisible(false)} imageSource={require("../../assests/upi_qr.png")} />
 
       {/* ── Zone dropdown modal ──────────────────────────────────────────── */}
-      <Modal visible={showZoneDropdown} transparent animationType="fade" onRequestClose={() => { setShowZoneDropdown(false); setZoneSearch(""); }}>
-        <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", paddingHorizontal: 24 }} onPress={() => { setShowZoneDropdown(false); setZoneSearch(""); }}>
-          <Pressable style={{ backgroundColor: H.card, borderRadius: 18, overflow: "hidden", maxHeight: 460 }} onPress={() => {}}>
-            <View style={{ paddingHorizontal: 18, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: H.cardBorder }}>
-              <Text allowFontScaling={false} style={{ fontSize: 14, fontWeight: "800", color: H.textDark, marginBottom: 10 }}>Select Zone</Text>
-              <TextInput
-                value={zoneSearch}
-                onChangeText={setZoneSearch}
-                placeholder="Search zones..."
-                placeholderTextColor={H.textMuted}
-                autoCapitalize="none"
-                style={{
-                  backgroundColor: H.bg, borderRadius: 10, borderWidth: 1, borderColor: H.cardBorder,
-                  paddingHorizontal: 12, paddingVertical: 8, fontSize: 13, color: H.textDark,
-                }}
-              />
-            </View>
-            <ScrollView style={{ maxHeight: 340 }} keyboardShouldPersistTaps="handled">
-              {/* All zones option */}
-              {!zoneSearch.trim() && (
-                <TouchableOpacity
-                  style={[s.zoneOption, !selectedZone && s.zoneOptionActive]}
-                  onPress={() => { setSelectedZone(""); setShowZoneDropdown(false); setZoneSearch(""); }}
-                >
-                  <Text allowFontScaling={false} style={[s.zoneOptionTxt, !selectedZone && s.zoneOptionTxtActive]}>
-                    {t("collector.zone.all")}
-                  </Text>
-                  {!selectedZone ? <Text allowFontScaling={false} style={{ color: H.gold, fontSize: 14 }}>✓</Text> : null}
-                </TouchableOpacity>
-              )}
-              {zones
-                .filter(z => !zoneSearch.trim() || z.toLowerCase().includes(zoneSearch.trim().toLowerCase()))
-                .map((z) => (
-                <TouchableOpacity
-                  key={z}
-                  style={[s.zoneOption, selectedZone === z && s.zoneOptionActive]}
-                  onPress={() => { setSelectedZone(z); setShowZoneDropdown(false); setZoneSearch(""); }}
-                >
-                  <Text allowFontScaling={false} style={[s.zoneOptionTxt, selectedZone === z && s.zoneOptionTxtActive]}>{z}</Text>
-                  {selectedZone === z ? <Text allowFontScaling={false} style={{ color: H.gold, fontSize: 14 }}>✓</Text> : null}
-                </TouchableOpacity>
-              ))}
-              {zones.filter(z => !zoneSearch.trim() || z.toLowerCase().includes(zoneSearch.trim().toLowerCase())).length === 0 && (
-                <Text allowFontScaling={false} style={{ padding: 18, textAlign: "center", color: H.textMuted, fontSize: 12 }}>
-                  No zones match "{zoneSearch}"
-                </Text>
-              )}
-            </ScrollView>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <SearchPickerModal
+        visible={showZoneDropdown}
+        title="Select Zone"
+        searchPlaceholder="Search zones..."
+        options={zones}
+        currentValue={selectedZone}
+        allTopOption={{ label: t("collector.zone.all"), active: !selectedZone }}
+        noMatchPrefix="No zones match"
+        onSelect={(z) => { setSelectedZone(z); setShowZoneDropdown(false); }}
+        onClose={() => setShowZoneDropdown(false)}
+      />
 
-      {/* ── Add Family modal ─────────────────────────────────────────────── */}
-      <Modal visible={showAddFamily} transparent animationType="slide" onRequestClose={() => setShowAddFamily(false)}>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-          <Pressable style={s.overlay} onPress={() => setShowAddFamily(false)}>
-            <View style={[s.sheet, { height: "90%" }]} onStartShouldSetResponder={() => true}>
-              <View style={s.handle} />
-              <Text allowFontScaling={false} style={[s.sheetEye, { marginBottom: 2 }]}>NEW FAMILY</Text>
-              <Text allowFontScaling={false} style={[s.sheetName, { marginBottom: 14 }]}>Add Family</Text>
-              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
-                {[
-                  { label: "Family Name *", key: "name", placeholder: "Full name", keyboard: "default" },
-                  { label: "Chanda Due Since", key: "registration_date", placeholder: "Select month", keyboard: "default" },
-                  { label: "Chanda No *", key: "chanda_no", placeholder: "e.g. MM001", keyboard: "default" },
-                  { label: "Monthly Amount (₹) *", key: "monthly_amount", placeholder: "0", keyboard: "numeric" },
-                  { label: "Phone", key: "phone", placeholder: "10-digit mobile", keyboard: "phone-pad" },
-                  { label: "Address", key: "address", placeholder: "Street, area", keyboard: "default" },
-                  { label: "Zone", key: "zone", placeholder: "Select or type a zone", keyboard: "default" },
-                ].map(({ label, key, placeholder, keyboard }) => (
-                  <View key={key} style={{ marginBottom: 12 }}>
-                    <Text allowFontScaling={false} style={s.secLabel}>{label}</Text>
-                    {key === "zone" ? (
-                      <TouchableOpacity
-                        style={[s.refInput, { justifyContent: "center" }]}
-                        onPress={() => { setZoneFieldSearch(""); setZoneFieldModal("add"); }}
-                      >
-                        <Text allowFontScaling={false} style={{ fontSize: 14, color: addForm.zone ? H.textDark : H.textMuted }}>
-                          {addForm.zone || placeholder}
-                        </Text>
-                      </TouchableOpacity>
-                    ) : key === "registration_date" ? (
-                      <TouchableOpacity
-                        style={[s.refInput, { justifyContent: "center" }]}
-                        onPress={() => openDueSince("add")}
-                      >
-                        <Text allowFontScaling={false} style={{ fontSize: 14, color: addForm.registration_date ? H.textDark : H.textMuted }}>
-                          {addForm.registration_date || placeholder}
-                        </Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <TextInput
-                        style={s.refInput}
-                        value={addForm[key]}
-                        onChangeText={(v) => setAddForm((f) => ({ ...f, [key]: v }))}
-                        keyboardType={keyboard}
-                        placeholder={placeholder}
-                        placeholderTextColor={H.textMuted}
-                        autoCapitalize={key === "name" || key === "address" ? "words" : "none"}
-                      />
-                    )}
-                    {key === "chanda_no" && addForm.chanda_no.trim() !== "" && isChandaNoTaken(addForm.chanda_no) && (
-                      <Text allowFontScaling={false} style={{ fontSize: 11, color: H.warn, marginTop: 4 }}>
-                        This chanda number is already in use.
-                      </Text>
-                    )}
-                    {key === "registration_date" && (
-                      <Text allowFontScaling={false} style={{ fontSize: 11, color: H.textMuted, marginTop: 4 }}>
-                        Pending chanda months will be generated from this month to now. Leave blank to start from this month only.
-                      </Text>
-                    )}
-                  </View>
-                ))}
-                <TouchableOpacity
-                  style={[s.submitBtn, addSaving && { opacity: 0.6 }, { marginTop: 8 }]}
-                  onPress={addFamily}
-                  disabled={addSaving}
-                >
-                  {addSaving
-                    ? <ActivityIndicator color={H.headerDeep} />
-                    : <Text allowFontScaling={false} style={s.submitBtnTxt}>Add Family</Text>
-                  }
-                </TouchableOpacity>
-              </ScrollView>
-            </View>
-          </Pressable>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {/* ── Edit Family modal ────────────────────────────────────────────── */}
-      <Modal visible={showEditFamily} transparent animationType="slide" onRequestClose={() => setShowEditFamily(false)}>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-          <Pressable style={s.overlay} onPress={() => setShowEditFamily(false)}>
-            <View style={[s.sheet, { height: "90%" }]} onStartShouldSetResponder={() => true}>
-              <View style={s.handle} />
-              <Text allowFontScaling={false} style={[s.sheetEye, { marginBottom: 2 }]}>EDIT FAMILY</Text>
-              <Text allowFontScaling={false} style={[s.sheetName, { marginBottom: 14 }]}>{editItem?.name || "Edit"}</Text>
-              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
-                {[
-                  { label: "Family Name", key: "name", placeholder: "Full name", keyboard: "default" },
-                  { label: "Chanda Due Since", key: "registration_date", placeholder: "Select month", keyboard: "default" },
-                  { label: "Chanda No", key: "chanda_no", placeholder: "e.g. MM001", keyboard: "default" },
-                  { label: "Monthly Amount (₹)", key: "monthly_amount", placeholder: "0", keyboard: "numeric" },
-                  { label: "Phone", key: "phone", placeholder: "10-digit mobile", keyboard: "phone-pad" },
-                  { label: "Address", key: "address", placeholder: "Street, area", keyboard: "default" },
-                  { label: "Zone", key: "zone", placeholder: "Select or type a zone", keyboard: "default" },
-                ].map(({ label, key, placeholder, keyboard }) => (
-                  <View key={key} style={{ marginBottom: 12 }}>
-                    <Text allowFontScaling={false} style={s.secLabel}>{label}</Text>
-                    {key === "zone" ? (
-                      <TouchableOpacity
-                        style={[s.refInput, { justifyContent: "center" }]}
-                        onPress={() => { setZoneFieldSearch(""); setZoneFieldModal("edit"); }}
-                      >
-                        <Text allowFontScaling={false} style={{ fontSize: 14, color: editForm.zone ? H.textDark : H.textMuted }}>
-                          {editForm.zone || placeholder}
-                        </Text>
-                      </TouchableOpacity>
-                    ) : key === "registration_date" ? (
-                      <TouchableOpacity
-                        style={[s.refInput, { justifyContent: "center" }]}
-                        onPress={() => openDueSince("edit")}
-                      >
-                        <Text allowFontScaling={false} style={{ fontSize: 14, color: editForm.registration_date ? H.textDark : H.textMuted }}>
-                          {editForm.registration_date || placeholder}
-                        </Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <TextInput
-                        style={s.refInput}
-                        value={editForm[key]}
-                        onChangeText={(v) => setEditForm((f) => ({ ...f, [key]: v }))}
-                        keyboardType={keyboard}
-                        placeholder={placeholder}
-                        placeholderTextColor={H.textMuted}
-                        autoCapitalize={key === "name" || key === "address" ? "words" : "none"}
-                      />
-                    )}
-                    {key === "chanda_no" && editForm.chanda_no.trim() !== "" && isChandaNoTaken(editForm.chanda_no, editItem?.id) && (
-                      <Text allowFontScaling={false} style={{ fontSize: 11, color: H.warn, marginTop: 4 }}>
-                        This chanda number is already in use.
-                      </Text>
-                    )}
-                    {key === "registration_date" && (
-                      <Text allowFontScaling={false} style={{ fontSize: 11, color: H.textMuted, marginTop: 4 }}>
-                        Changing this backfills any newly-covered pending months — existing collections are never removed or duplicated.
-                      </Text>
-                    )}
-                  </View>
-                ))}
-                <TouchableOpacity
-                  style={[s.submitBtn, editSaving && { opacity: 0.6 }, { marginTop: 8 }]}
-                  onPress={saveEditFamily}
-                  disabled={editSaving}
-                >
-                  {editSaving
-                    ? <ActivityIndicator color={H.headerDeep} />
-                    : <Text allowFontScaling={false} style={s.submitBtnTxt}>Save Changes</Text>
-                  }
-                </TouchableOpacity>
-              </ScrollView>
-            </View>
-          </Pressable>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {/* ── Deactivate Member confirmation ──────────────────────────────── */}
-      <Modal visible={showDeactivateConfirm} transparent animationType="fade" onRequestClose={() => setShowDeactivateConfirm(false)}>
-        <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", paddingHorizontal: 24 }} onPress={() => setShowDeactivateConfirm(false)}>
-          <Pressable style={{ backgroundColor: H.card, borderRadius: 18, padding: 20 }} onPress={() => {}}>
-            <Text allowFontScaling={false} style={{ fontSize: 16, fontWeight: "800", color: H.textDark, marginBottom: 4 }}>Deactivate Member</Text>
-            <Text allowFontScaling={false} style={{ fontSize: 12, color: H.textMuted, marginBottom: 14 }}>
-              {editItem?.name} will be hidden from active collection lists and can be restored within 30 days. Enter your password to confirm.
-            </Text>
-            <Text allowFontScaling={false} style={s.secLabel}>Your Password</Text>
-            <TextInput
-              style={s.refInput}
-              value={deactivatePassword}
-              onChangeText={setDeactivatePassword}
-              secureTextEntry
-              placeholder="Password"
-              placeholderTextColor={H.textMuted}
-            />
-            <Text allowFontScaling={false} style={[s.secLabel, { marginTop: 12 }]}>Reason (optional)</Text>
-            <TextInput
-              style={s.refInput}
-              value={deactivateReason}
-              onChangeText={setDeactivateReason}
-              placeholder="e.g. Moved out of area"
-              placeholderTextColor={H.textMuted}
-            />
-            {!!deactivateError && (
-              <Text allowFontScaling={false} style={{ fontSize: 12, color: H.warn, marginTop: 8 }}>{deactivateError}</Text>
-            )}
-            <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
-              <TouchableOpacity
-                style={[s.submitBtn, { flex: 1, backgroundColor: H.bg, borderWidth: 1, borderColor: H.cardBorder }]}
-                onPress={() => setShowDeactivateConfirm(false)}
-                disabled={deactivateBusy}
-              >
-                <Text allowFontScaling={false} style={[s.submitBtnTxt, { color: H.textDark }]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[s.submitBtn, { flex: 1, backgroundColor: "#A13A3A" }, deactivateBusy && { opacity: 0.6 }]}
-                onPress={confirmDeactivate}
-                disabled={deactivateBusy}
-              >
-                {deactivateBusy
-                  ? <ActivityIndicator color="#fff" />
-                  : <Text allowFontScaling={false} style={[s.submitBtnTxt, { color: "#fff" }]}>Confirm</Text>
-                }
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      {/* ── Zone dropdown for Add/Edit Family (replaces the old button grid) ── */}
-      <Modal visible={!!zoneFieldModal} transparent animationType="fade" onRequestClose={() => { setZoneFieldModal(null); setZoneFieldSearch(""); }}>
-        <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", paddingHorizontal: 24 }} onPress={() => { setZoneFieldModal(null); setZoneFieldSearch(""); }}>
-          <Pressable style={{ backgroundColor: H.card, borderRadius: 18, overflow: "hidden", maxHeight: 460 }} onPress={() => {}}>
-            <View style={{ paddingHorizontal: 18, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: H.cardBorder }}>
-              <Text allowFontScaling={false} style={{ fontSize: 14, fontWeight: "800", color: H.textDark, marginBottom: 10 }}>Select Zone</Text>
-              <TextInput
-                value={zoneFieldSearch}
-                onChangeText={setZoneFieldSearch}
-                placeholder="Search or type a new zone..."
-                placeholderTextColor={H.textMuted}
-                autoCapitalize="words"
-                style={{
-                  backgroundColor: H.bg, borderRadius: 10, borderWidth: 1, borderColor: H.cardBorder,
-                  paddingHorizontal: 12, paddingVertical: 8, fontSize: 13, color: H.textDark,
-                }}
-              />
-            </View>
-            <ScrollView style={{ maxHeight: 340 }} keyboardShouldPersistTaps="handled">
-              {zones
-                .filter(z => !zoneFieldSearch.trim() || z.toLowerCase().includes(zoneFieldSearch.trim().toLowerCase()))
-                .map((z) => {
-                  const current = zoneFieldModal === "add" ? addForm.zone : editForm.zone;
-                  return (
-                    <TouchableOpacity
-                      key={z}
-                      style={[s.zoneOption, current === z && s.zoneOptionActive]}
-                      onPress={() => {
-                        if (zoneFieldModal === "add") setAddForm((f) => ({ ...f, zone: z }));
-                        else setEditForm((f) => ({ ...f, zone: z }));
-                        setZoneFieldModal(null);
-                        setZoneFieldSearch("");
-                      }}
-                    >
-                      <Text allowFontScaling={false} style={[s.zoneOptionTxt, current === z && s.zoneOptionTxtActive]}>{z}</Text>
-                      {current === z ? <Text allowFontScaling={false} style={{ color: H.gold, fontSize: 14 }}>✓</Text> : null}
-                    </TouchableOpacity>
-                  );
-                })}
-              {zoneFieldSearch.trim() !== "" && !zones.some(z => z.toLowerCase() === zoneFieldSearch.trim().toLowerCase()) && (
-                <TouchableOpacity
-                  style={s.zoneOption}
-                  onPress={() => {
-                    const v = zoneFieldSearch.trim();
-                    if (zoneFieldModal === "add") setAddForm((f) => ({ ...f, zone: v }));
-                    else setEditForm((f) => ({ ...f, zone: v }));
-                    setZoneFieldModal(null);
-                    setZoneFieldSearch("");
-                  }}
-                >
-                  <Text allowFontScaling={false} style={[s.zoneOptionTxt, { fontStyle: "italic" }]}>Use "{zoneFieldSearch.trim()}"</Text>
-                </TouchableOpacity>
-              )}
-              {zones.length === 0 && !zoneFieldSearch.trim() && (
-                <Text allowFontScaling={false} style={{ padding: 18, textAlign: "center", color: H.textMuted, fontSize: 12 }}>
-                  No zones yet — type above to add one
-                </Text>
-              )}
-            </ScrollView>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      {/* ── Chanda Due Since month/year picker for Add/Edit Family ─────────
-          Custom JS-only spinner modal, matching the existing collected-date
-          picker below rather than the native DateTimePicker (see file header
-          notes on that removal). Lives as a top-level sibling, not nested
-          inside a ScrollView, for the same reason. */}
-      <Modal visible={!!dueSinceModal} transparent animationType="fade" onRequestClose={() => setDueSinceModal(null)}>
-        <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", alignItems: "center" }}
-          onPress={() => setDueSinceModal(null)}>
-          <Pressable style={{
-            backgroundColor: "#fff", borderRadius: 18, padding: 24,
-            width: 280, alignItems: "center",
-            shadowColor: "#000", shadowOpacity: 0.18, shadowRadius: 16, elevation: 10,
-          }} onPress={() => {}}>
-            <Text allowFontScaling={false} style={{ fontSize: 16, fontWeight: "700", color: "#1C231F", marginBottom: 20 }}>
-              Chanda Due Since
-            </Text>
-            {(() => {
-              const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-              const mo = dueSinceDraft.getMonth();
-              const y = dueSinceDraft.getFullYear();
-              const today = new Date();
-              const clamp = (d) => (d > today ? new Date(today.getFullYear(), today.getMonth(), 1) : d);
-              const bump = (field, delta) => {
-                const nd = new Date(dueSinceDraft);
-                if (field === "m") nd.setMonth(mo + delta);
-                else nd.setFullYear(y + delta);
-                setDueSinceDraft(clamp(nd));
-              };
-              const SpinCol = ({ label, onUp, onDown }) => (
-                <View style={{ alignItems: "center", flex: 1 }}>
-                  <TouchableOpacity onPress={onUp} style={{ padding: 8 }}>
-                    <Text allowFontScaling={false} style={{ fontSize: 22, color: "#0F5C4C", fontWeight: "700" }}>▲</Text>
-                  </TouchableOpacity>
-                  <Text allowFontScaling={false} style={{ fontSize: 20, fontWeight: "800", color: "#1C231F", minWidth: 76, textAlign: "center" }}>{label}</Text>
-                  <TouchableOpacity onPress={onDown} style={{ padding: 8 }}>
-                    <Text allowFontScaling={false} style={{ fontSize: 22, color: "#0F5C4C", fontWeight: "700" }}>▼</Text>
-                  </TouchableOpacity>
-                </View>
-              );
-              return (
-                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 20 }}>
-                  <SpinCol label={months[mo]} onUp={() => bump("m", 1)} onDown={() => bump("m", -1)} />
-                  <Text allowFontScaling={false} style={{ fontSize: 20, color: "#C8C0A8", marginHorizontal: 4 }}>/</Text>
-                  <SpinCol label={String(y)} onUp={() => bump("y", 1)} onDown={() => bump("y", -1)} />
-                </View>
-              );
-            })()}
-            <View style={{ flexDirection: "row", gap: 10 }}>
-              <TouchableOpacity
-                onPress={() => {
-                  if (dueSinceModal === "add") setAddForm((f) => ({ ...f, registration_date: "" }));
-                  else setEditForm((f) => ({ ...f, registration_date: "" }));
-                  setDueSinceModal(null);
-                }}
-                style={{ borderRadius: 12, paddingVertical: 12, paddingHorizontal: 20, borderWidth: 1, borderColor: "#0F5C4C" }}
-              >
-                <Text allowFontScaling={false} style={{ color: "#0F5C4C", fontWeight: "700", fontSize: 14 }}>Clear</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => {
-                  const val = `${dueSinceDraft.getFullYear()}-${String(dueSinceDraft.getMonth() + 1).padStart(2, "0")}`;
-                  if (dueSinceModal === "add") setAddForm((f) => ({ ...f, registration_date: val }));
-                  else setEditForm((f) => ({ ...f, registration_date: val }));
-                  setDueSinceModal(null);
-                }}
-                style={{ backgroundColor: "#0F5C4C", borderRadius: 12, paddingVertical: 12, paddingHorizontal: 28 }}
-              >
-                <Text allowFontScaling={false} style={{ color: "#fff", fontWeight: "700", fontSize: 14 }}>Done</Text>
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      {/* ── Street dropdown modal ────────────────────────────────────────── */}
+      <SearchPickerModal
+        visible={showStreetDropdown}
+        title={`Select Street${selectedZone ? ` — ${selectedZone}` : ""}`}
+        showSearch={false}
+        options={streets}
+        currentValue={selectedStreet}
+        allTopOption={{ label: "All streets", active: !selectedStreet }}
+        onSelect={(st) => { setSelectedStreet(st); setShowStreetDropdown(false); }}
+        onClose={() => setShowStreetDropdown(false)}
+      />
 
       <Modal visible={!!selected} transparent animationType="slide" onRequestClose={closeModal}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
@@ -2103,9 +1550,9 @@ export default function CollectorScreen({ navigation }) {
                       <Text allowFontScaling={false} style={s.sheetAddr}>{selected.member?.address}</Text>
                       <Text allowFontScaling={false} style={s.sheetAddr}>{selected.member?.phone}</Text>
                     </View>
-                    <TouchableOpacity onPress={closeModal} style={s.doneBtn}>
+                    <AnimatedPressable onPress={closeModal} style={s.doneBtn}>
                       <Text allowFontScaling={false} style={s.doneTxt}>{t("collector.done")}</Text>
-                    </TouchableOpacity>
+                    </AnimatedPressable>
                   </View>
 
                   <ScrollView
@@ -2138,7 +1585,7 @@ export default function CollectorScreen({ navigation }) {
                       ) : null}
                     </View>
 
-                    <TouchableOpacity onPress={openDatePicker} style={s.dateRow}>
+                    <AnimatedPressable onPress={openDatePicker} style={s.dateRow}>
                       <View>
                         <Text allowFontScaling={false} style={s.dateLabel}>{t("collector.visitDate")}</Text>
                         <Text allowFontScaling={false} style={[s.dateLabel, { fontSize: 10, marginTop: 1, opacity: 0.6 }]}>{t("collector.visitDateHint")}</Text>
@@ -2146,7 +1593,7 @@ export default function CollectorScreen({ navigation }) {
                       <Text allowFontScaling={false} style={s.dateVal}>
                         {collectedDate.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
                       </Text>
-                    </TouchableOpacity>
+                    </AnimatedPressable>
 
                     <View style={s.amtRow}>
                       <Text allowFontScaling={false} style={s.amtRupee}>₹</Text>
@@ -2209,9 +1656,12 @@ export default function CollectorScreen({ navigation }) {
 
                     <View style={s.section}>
                       <Text allowFontScaling={false} style={s.secLabel}>{t("collector.paymentMethod")}</Text>
-                      <View style={s.pillRow}>
+                      {/* Upgraded from OptionPill row to dedicated PaymentMethodButton
+                          row — larger touch targets, filled selected state, no
+                          crowding against the type/fund pills above. */}
+                      <View style={pm.row}>
                         {["cash", "upi", "bank", "cheque"].map((m) => (
-                          <OptionPill key={m} label={m.toUpperCase()} active={method === m} onPress={() => setMethod(m)} />
+                          <PaymentMethodButton key={m} label={m.toUpperCase()} active={method === m} onPress={() => setMethod(m)} />
                         ))}
                       </View>
                     </View>
@@ -2220,13 +1670,13 @@ export default function CollectorScreen({ navigation }) {
                       <View style={s.upiCard}>
                         <Text allowFontScaling={false} style={s.secLabel}>{t("collector.scanToPay")}</Text>
                         <View style={s.upiInner}>
-                          <TouchableOpacity onPress={() => setQrViewerVisible(true)} activeOpacity={0.9} style={s.qrThumbBox}>
+                          <AnimatedPressable onPress={() => setQrViewerVisible(true)} activeOpacity={0.9} style={s.qrThumbBox}>
                             <Image source={require("../../assests/upi_qr.png")} style={s.qrThumbImg} resizeMode="contain" />
-                          </TouchableOpacity>
+                          </AnimatedPressable>
                           <View style={s.upiRight}>
-                            <TouchableOpacity onPress={pickImage} style={[s.uploadBtn, proofImage && s.uploadBtnDone]}>
+                            <AnimatedPressable onPress={pickImage} style={[s.uploadBtn, proofImage && s.uploadBtnDone]}>
                               <Text allowFontScaling={false} style={s.uploadTxt}>{proofImage ? t("collector.changeScreenshot") : t("collector.uploadScreenshot")}</Text>
-                            </TouchableOpacity>
+                            </AnimatedPressable>
                             {proofImage ? (
                               <View style={s.proofBadge}><Text allowFontScaling={false} style={s.proofBadgeTxt}>{t("collector.attached")}</Text></View>
                             ) : (
@@ -2259,9 +1709,21 @@ export default function CollectorScreen({ navigation }) {
                       />
                     </View>
 
-                    <View style={s.submitWrap}>
-                      <SubmitButton loading={loading} onPress={submitPayment} />
-                    </View>
+                    {/*
+                      Single primary action rule: for chanda payments, the
+                      sticky bottom bar below ("Continue") IS the primary
+                      action — it opens the confirm dialog. We do not also
+                      render SubmitButton here, since that was the second,
+                      duplicate "Record Payment" action the redesign brief
+                      called out. Donation/fund/other payment types have no
+                      sticky bar (they aren't month-based), so they keep
+                      their own single primary action inline.
+                    */}
+                    {paymentType !== "chanda" && (
+                      <View style={s.submitWrap}>
+                        <SubmitButton loading={loading} onPress={submitPayment} />
+                      </View>
+                    )}
                   </ScrollView>
 
                   {paymentType === "chanda" && (
@@ -2309,13 +1771,13 @@ export default function CollectorScreen({ navigation }) {
               };
               const SpinCol = ({ label, onUp, onDown }) => (
                 <View style={{ alignItems: "center", flex: 1 }}>
-                  <TouchableOpacity onPress={onUp} style={{ padding: 8 }}>
+                  <AnimatedPressable onPress={onUp} style={{ padding: 8 }}>
                     <Text allowFontScaling={false} style={{ fontSize: 22, color: "#0F5C4C", fontWeight: "700" }}>▲</Text>
-                  </TouchableOpacity>
+                  </AnimatedPressable>
                   <Text allowFontScaling={false} style={{ fontSize: 20, fontWeight: "800", color: "#1C231F", minWidth: 52, textAlign: "center" }}>{label}</Text>
-                  <TouchableOpacity onPress={onDown} style={{ padding: 8 }}>
+                  <AnimatedPressable onPress={onDown} style={{ padding: 8 }}>
                     <Text allowFontScaling={false} style={{ fontSize: 22, color: "#0F5C4C", fontWeight: "700" }}>▼</Text>
-                  </TouchableOpacity>
+                  </AnimatedPressable>
                 </View>
               );
               return (
@@ -2328,12 +1790,12 @@ export default function CollectorScreen({ navigation }) {
                 </View>
               );
             })()}
-            <TouchableOpacity onPress={() => setShowDate(false)} style={{
+            <AnimatedPressable onPress={() => setShowDate(false)} style={{
               backgroundColor: "#0F5C4C", borderRadius: 12,
               paddingVertical: 12, paddingHorizontal: 36,
             }}>
               <Text allowFontScaling={false} style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>Done</Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           </Pressable>
         </Pressable>
       </Modal>
@@ -2413,18 +1875,18 @@ export default function CollectorScreen({ navigation }) {
                 </View>
 
                 <View style={{ flexDirection: "row", gap: 10 }}>
-                  <TouchableOpacity
+                  <AnimatedPressable
                     style={{ flex: 1, backgroundColor: H.bg, borderRadius: 10, paddingVertical: 13, alignItems: "center", borderWidth: 1, borderColor: H.cardBorder }}
                     onPress={() => setConfirmVisible(false)}
                   >
                     <Text allowFontScaling={false} style={{ color: H.textDark, fontWeight: "700", fontSize: 14 }}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
+                  </AnimatedPressable>
+                  <AnimatedPressable
                     style={{ flex: 2, backgroundColor: H.gold, borderRadius: 10, paddingVertical: 13, alignItems: "center" }}
                     onPress={() => { setConfirmVisible(false); doSubmitChanda(confirmPayload.finalAmount, confirmPayload.token); }}
                   >
                     <Text allowFontScaling={false} style={{ color: H.headerDeep, fontWeight: "800", fontSize: 14 }}>Confirm & Submit</Text>
-                  </TouchableOpacity>
+                  </AnimatedPressable>
                 </View>
               </>
             )}
@@ -2444,23 +1906,31 @@ const s = StyleSheet.create({
   restrictedBtn: { marginTop: 10, backgroundColor: H.gold, paddingHorizontal: 22, paddingVertical: 11, borderRadius: 12 },
   restrictedBtnTxt: { color: H.headerDeep, fontWeight: "800", fontSize: 13 },
 
-  // ── Header: trimmed paddings, subtitle removed, tighter summary row ──
-  header: { backgroundColor: H.bg, paddingTop: Platform.OS === "ios" ? 48 : 12, paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: H.cardBorder },
-  navBar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, marginBottom: 8 },
+  // ── Header: trimmed paddings, subtitle removed, summary cards removed ──
+  header: { backgroundColor: H.bg, paddingTop: Platform.OS === "ios" ? 14 : 10, paddingBottom: 4, borderBottomWidth: 1, borderBottomColor: H.cardBorder },
+  navBar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, marginBottom: 6 },
   navLeft: { flexDirection: "row", alignItems: "center", flex: 1, marginRight: 8 },
   backBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: H.card, borderWidth: 1, borderColor: H.cardBorder, justifyContent: "center", alignItems: "center", marginRight: 10 },
   backBtnTxt: { color: H.textDark, fontSize: 14, fontWeight: "700" },
   navTitle: { color: H.textDark, fontSize: 17, fontWeight: "800" },
+  navSubtle: { fontSize: 10, color: H.warn, fontWeight: "600", marginTop: 1 },
   syncBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: H.card, borderWidth: 1, borderColor: H.cardBorder, borderRadius: 20, paddingHorizontal: 11, paddingVertical: 6 },
   syncDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: H.green },
   syncTxt: { fontSize: 10.5, color: H.textDark, fontWeight: "700" },
   cacheTime: { fontSize: 9.5, color: H.textMuted, paddingHorizontal: 16, marginBottom: 6 },
 
-  summaryRow: { flexDirection: "row", gap: 6, paddingHorizontal: 16, marginBottom: 8 },
-  sumCard: { flex: 1, backgroundColor: H.card, borderRadius: 10, borderWidth: 1, borderColor: H.cardBorder, paddingVertical: 7, paddingHorizontal: 9, ...shadow(1, 0.03) },
-  sumLabel: { fontSize: 8, color: H.textMuted, fontWeight: "700", textTransform: "uppercase" },
-  sumValue: { fontSize: 13.5, color: H.textDark, fontWeight: "800", marginTop: 2 },
-  sumSub: { fontSize: 8, color: H.textMuted, marginTop: 1 },
+  // ── Compact month pill + search, sharing one row ──────────────────────
+  monthSearchRow: { flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 16, marginBottom: 6 },
+  monthPill: { flexDirection: "row", alignItems: "center", backgroundColor: H.card, borderRadius: 11, borderWidth: 1, borderColor: H.cardBorder, paddingHorizontal: 4, paddingVertical: 8, gap: 4 },
+  mArrowSm: { paddingHorizontal: 5 },
+  mArrowSmTxt: { color: H.gold, fontSize: 17, fontWeight: "400" },
+  mValueSm: { color: H.textDark, fontSize: 12, fontWeight: "700", maxWidth: 74 },
+  searchBoxFlex: { flex: 1, flexDirection: "row", alignItems: "center", backgroundColor: H.card, borderRadius: 11, borderWidth: 1, borderColor: H.cardBorder, paddingHorizontal: 12 },
+
+  // ── Filter pills + sort chip, sharing one row ──────────────────────────
+  filterSortRow: { flexDirection: "row", alignItems: "center", marginBottom: 4, paddingLeft: 16 },
+  sortChip: { backgroundColor: H.card, borderWidth: 1, borderColor: H.cardBorder, borderRadius: 99, paddingHorizontal: 12, paddingVertical: 7, marginRight: 16 },
+  sortChipTxt: { color: H.gold, fontSize: 11, fontWeight: "700" },
 
   monthRow: { flexDirection: "row", alignItems: "center", backgroundColor: H.card, borderRadius: 11, borderWidth: 1, borderColor: H.cardBorder, marginHorizontal: 16, marginBottom: 6, overflow: "hidden" },
   mArrow: { width: 40, alignItems: "center", justifyContent: "center", paddingVertical: 7 },
@@ -2484,39 +1954,39 @@ const s = StyleSheet.create({
   empty: { alignItems: "center", paddingTop: 56 },
   emptyTxt: { color: H.textMuted, fontSize: 14 },
 
-  card: { backgroundColor: H.card, borderRadius: 14, borderWidth: 1, borderColor: H.cardBorder, borderLeftWidth: 3, padding: 13, marginBottom: 10, ...shadow(2, 0.05) },
+  card: { backgroundColor: H.card, borderRadius: 16, borderWidth: 1, borderColor: H.cardBorder, borderLeftWidth: 4, padding: 17, marginBottom: 12, ...shadow(3, 0.08) },
   cardPaid: { opacity: 0.82 },
   cardRow1: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  cardLeft: { flexDirection: "row", alignItems: "center", flex: 1, gap: 7, marginRight: 8 },
-  chandaTag: { backgroundColor: "rgba(201,168,76,0.12)", borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2, borderWidth: 1, borderColor: "rgba(201,168,76,0.25)" },
-  chandaTagText: { color: H.goldDeep, fontSize: 9, fontWeight: "800" },
-  memberName: { color: H.textDark, fontSize: 14, fontWeight: "700", flex: 1 },
-  addrText: { color: H.textMuted, fontSize: 11, marginTop: 3 },
-  phoneText: { color: H.textMuted, fontSize: 11, marginTop: 1 },
-  sPill: { paddingHorizontal: 9, paddingVertical: 3, borderRadius: 99 },
-  sPillText: { fontSize: 10, fontWeight: "700" },
+  cardLeft: { flexDirection: "row", alignItems: "center", flex: 1, gap: 8, marginRight: 8 },
+  chandaTag: { backgroundColor: "rgba(201,168,76,0.12)", borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1, borderColor: "rgba(201,168,76,0.25)" },
+  chandaTagText: { color: H.goldDeep, fontSize: 10, fontWeight: "800" },
+  memberName: { color: H.textDark, fontSize: 16.5, fontWeight: "800", flex: 1 },
+  addrText: { color: H.textMuted, fontSize: 12.5, marginTop: 4 },
+  phoneText: { color: H.textMuted, fontSize: 12.5, marginTop: 2 },
+  sPill: { paddingHorizontal: 11, paddingVertical: 4, borderRadius: 99 },
+  sPillText: { fontSize: 11, fontWeight: "800" },
 
-  overdueBadge: { alignSelf: "flex-start", backgroundColor: H.warnDim, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, marginTop: 6, maxWidth: "100%" },
+  overdueBadge: { alignSelf: "flex-start", backgroundColor: H.warnDim, borderRadius: 9, paddingHorizontal: 9, paddingVertical: 5, marginTop: 8, maxWidth: "100%" },
   overdueBadgeRed: { backgroundColor: "#FEE8E8" },
-  overdueBadgeTxt: { color: H.warn, fontSize: 10, fontWeight: "800" },
+  overdueBadgeTxt: { color: H.warn, fontSize: 11, fontWeight: "800" },
   collectingForTxt: { color: H.textMuted, fontSize: 10.5, marginTop: 5, fontStyle: "italic" },
-  badgeRow: { flexDirection: "row", gap: 6, marginTop: 6 },
-  donationBadge: { backgroundColor: H.greenDim, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
-  donationBadgeTxt: { color: H.green, fontSize: 9.5, fontWeight: "700" },
-  fundBadge: { backgroundColor: "rgba(201,168,76,0.12)", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
-  fundBadgeTxt: { color: H.goldDeep, fontSize: 9.5, fontWeight: "700" },
+  badgeRow: { flexDirection: "row", gap: 6, marginTop: 8 },
+  donationBadge: { backgroundColor: H.greenDim, borderRadius: 9, paddingHorizontal: 9, paddingVertical: 4 },
+  donationBadgeTxt: { color: H.green, fontSize: 10.5, fontWeight: "700" },
+  fundBadge: { backgroundColor: "rgba(201,168,76,0.12)", borderRadius: 9, paddingHorizontal: 9, paddingVertical: 4 },
+  fundBadgeTxt: { color: H.goldDeep, fontSize: 10.5, fontWeight: "700" },
 
-  statsRow: { flexDirection: "row", gap: 6, marginTop: 9 },
-  miniStat: { flex: 1, backgroundColor: H.bg, borderRadius: 8, padding: 7 },
-  miniStatLabel: { color: H.textMuted, fontSize: 8.5, textTransform: "uppercase", marginBottom: 2 },
-  miniStatVal: { fontSize: 12, fontWeight: "700" },
-  lastMeta: { fontSize: 9.5, color: H.textMuted, marginTop: 6, fontStyle: "italic" },
+  statsRow: { flexDirection: "row", gap: 8, marginTop: 12 },
+  miniStat: { flex: 1, backgroundColor: H.bg, borderRadius: 10, paddingVertical: 9, paddingHorizontal: 8 },
+  miniStatLabel: { color: H.textMuted, fontSize: 9, textTransform: "uppercase", marginBottom: 3, fontWeight: "600", letterSpacing: 0.3 },
+  miniStatVal: { fontSize: 14, fontWeight: "800" },
+  lastMeta: { fontSize: 10.5, color: H.textMuted, marginTop: 8, fontStyle: "italic" },
 
-  actionsRow: { flexDirection: "row", gap: 6, marginTop: 10 },
-  actionBtnPrimary: { flex: 1, backgroundColor: H.gold, borderRadius: 9, paddingVertical: 9, alignItems: "center" },
-  actionBtnPrimaryTxt: { color: H.headerDeep, fontSize: 12, fontWeight: "800" },
-  actionBtn: { flex: 1, backgroundColor: H.bg, borderRadius: 9, paddingVertical: 9, alignItems: "center", borderWidth: 1, borderColor: H.cardBorder },
-  actionBtnTxt: { color: H.textDark, fontSize: 11.5, fontWeight: "700" },
+  actionsRow: { flexDirection: "row", gap: 8, marginTop: 13 },
+  actionBtnPrimary: { flex: 1, backgroundColor: H.gold, borderRadius: 11, paddingVertical: 12, alignItems: "center", ...shadow(2, 0.12) },
+  actionBtnPrimaryTxt: { color: H.headerDeep, fontSize: 13, fontWeight: "800" },
+  actionBtn: { flex: 1, backgroundColor: H.bg, borderRadius: 11, paddingVertical: 12, alignItems: "center", borderWidth: 1, borderColor: H.cardBorder },
+  actionBtnTxt: { color: H.textDark, fontSize: 12.5, fontWeight: "700" },
 
   optPill: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 99, backgroundColor: H.card, borderWidth: 1, borderColor: H.cardBorder },
   optPillOn: { backgroundColor: H.gold, borderColor: H.gold },
@@ -2601,19 +2071,12 @@ const s = StyleSheet.create({
   zonePillTxtActive: { color: H.headerDeep },
 
   tabBar: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: H.cardBorder, marginHorizontal: 0, backgroundColor: H.bg },
-  tabItem: { flex: 1, paddingVertical: 11, alignItems: "center", borderBottomWidth: 2, borderBottomColor: "transparent" },
+  tabItem: { flex: 1, paddingVertical: 9, alignItems: "center", borderBottomWidth: 2, borderBottomColor: "transparent" },
   tabItemActive: { borderBottomColor: H.gold },
   tabLabel: { fontSize: 12.5, fontWeight: "600", color: H.textMuted, textTransform: "uppercase", letterSpacing: 0.5 },
   tabLabelActive: { color: H.gold },
 
   tabContent: { padding: 16, paddingBottom: 40 },
-
-  famCard: { flexDirection: "row", alignItems: "center", backgroundColor: H.card, borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: H.cardBorder },
-  famName: { fontSize: 14, fontWeight: "700", color: H.textDark },
-  famMeta: { fontSize: 12, color: H.textMuted, marginTop: 2 },
-  famChanda: { fontSize: 11, color: H.gold, marginTop: 2, fontWeight: "700" },
-  famEditBtn: { paddingHorizontal: 14, paddingVertical: 8, backgroundColor: "rgba(201,168,76,0.12)", borderRadius: 8, borderWidth: 1, borderColor: "rgba(201,168,76,0.25)" },
-  famEditTxt: { fontSize: 12, fontWeight: "700", color: H.gold },
 
   subCard: { backgroundColor: H.card, borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: H.cardBorder },
   subAmt: { fontSize: 18, fontWeight: "800", color: H.textDark },
@@ -2628,24 +2091,11 @@ const s = StyleSheet.create({
   submitCashTxt: { color: H.headerDeep, fontSize: 15, fontWeight: "800" },
 
   // ── Zone dropdown button ──────────────────────────────────────────────
-  zoneDropdownBtn: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: H.card, borderWidth: 1.5, borderColor: H.cardBorder, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 11, marginHorizontal: 16, marginBottom: 8 },
+  filterDropdownRow: { flexDirection: "row", gap: 8, marginHorizontal: 16, marginBottom: 8 },
+  zoneDropdownBtn: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: H.card, borderWidth: 1.5, borderColor: H.cardBorder, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11 },
   zoneDropdownBtnActive: { borderColor: H.gold, backgroundColor: "rgba(201,168,76,0.07)" },
   zoneDropdownEye: { fontSize: 11, color: H.textMuted, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 2 },
   zoneDropdownVal: { fontSize: 15, color: H.textDark, fontWeight: "800" },
   zoneDropdownChevron: { fontSize: 11, color: H.textMuted },
 
-  // ── Zone dropdown modal options ───────────────────────────────────────
-  zoneOption: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 18, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: H.cardBorder },
-  zoneOptionActive: { backgroundColor: "rgba(201,168,76,0.08)" },
-  zoneOptionTxt: { fontSize: 14, color: H.textDark },
-  zoneOptionTxtActive: { fontWeight: "700", color: H.goldDeep },
-
-  // ── Families tab header + add button ─────────────────────────────────
-  familiesHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingTop: 10, paddingBottom: 6 },
-  familiesCount: { fontSize: 12, color: H.textMuted, fontWeight: "600" },
-  addFamilyBtn: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: H.gold, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7 },
-  addFamilyTxt: { fontSize: 12, color: H.headerDeep, fontWeight: "800" },
-
-  // ── Family card zone badge ────────────────────────────────────────────
-  famZone: { fontSize: 10, color: H.gold, fontWeight: "700", backgroundColor: "rgba(201,168,76,0.1)", borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2, alignSelf: "flex-start", marginTop: 4 },
 });

@@ -5,22 +5,8 @@
  */
 
 import React, { useEffect, useState, useRef, useCallback, memo } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  StatusBar,
-  Platform,
-  ActivityIndicator,
-  RefreshControl,
-  Image,
-  Modal,
-  Dimensions,
-  Animated,
-  SafeAreaView,
-} from "react-native";
+import { View, Text, StyleSheet, FlatList, StatusBar, Platform, ActivityIndicator, RefreshControl, Image, Modal, Dimensions, Animated, SafeAreaView } from "react-native";
+import AnimatedPressable from "../components/AnimatedPressable";
 import { useTranslation } from "react-i18next";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getToken, deleteToken } from "../utils/secureStorage";
@@ -30,6 +16,7 @@ import Svg, { Path, Rect, Defs, LinearGradient, Stop } from "react-native-svg";
 import { apiAxios, buildAbsoluteUrl, getWsUrl } from "../config/server";
 import BottomNav from "../components/BottomNav";
 import { COLORS as C } from "../config/theme";
+import { logger } from "../utils/logger";
 
 const { width: SW, height: SH } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
@@ -209,9 +196,9 @@ const CompactHeader = ({ onBack, title, hijriDate, gregorianDate, connectionStat
       <HeaderPattern w={SW} h={148} />
 
       <View style={hs.row}>
-        <TouchableOpacity onPress={onBack} style={hs.backBtn}>
+        <AnimatedPressable onPress={onBack} style={hs.backBtn}>
           <BackIcon />
-        </TouchableOpacity>
+        </AnimatedPressable>
         <View style={hs.titleContainer}>
           <Text style={hs.title}>{title}</Text>
         </View>
@@ -272,7 +259,7 @@ const AudioPlayer = memo(({ audioUrl, onClose }) => {
   }, []);
 
   const onError = useCallback((err) => {
-    console.error("Audio error:", err);
+    logger.error("Audio error:", err);
     setError("Failed to load audio");
     setIsLoading(false);
   }, []);
@@ -315,9 +302,9 @@ const AudioPlayer = memo(({ audioUrl, onClose }) => {
     return (
       <View style={styles.audioErrorContainer}>
         <Text style={styles.audioErrorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButtonSmall} onPress={onClose}>
+        <AnimatedPressable style={styles.retryButtonSmall} onPress={onClose}>
           <Text style={styles.retryButtonTextSmall}>Close</Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
       </View>
     );
   }
@@ -362,10 +349,10 @@ const AudioPlayer = memo(({ audioUrl, onClose }) => {
       </View>
 
       <View style={styles.controlsSection}>
-        <TouchableOpacity style={styles.controlButton} onPress={seekBackward} disabled={isLoading}>
+        <AnimatedPressable style={styles.controlButton} onPress={seekBackward} disabled={isLoading}>
           <RewindIcon color={isLoading ? H.textMuted : H.textDark} />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.playButton} onPress={togglePlayPause} disabled={isLoading}>
+        </AnimatedPressable>
+        <AnimatedPressable style={styles.playButton} onPress={togglePlayPause} disabled={isLoading}>
           {isLoading ? (
             <ActivityIndicator size="small" color={H.white} />
           ) : isPlaying ? (
@@ -373,10 +360,10 @@ const AudioPlayer = memo(({ audioUrl, onClose }) => {
           ) : (
             <PlayIcon color={H.white} size={28} />
           )}
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.controlButton} onPress={seekForward} disabled={isLoading}>
+        </AnimatedPressable>
+        <AnimatedPressable style={styles.controlButton} onPress={seekForward} disabled={isLoading}>
           <ForwardIcon color={isLoading ? H.textMuted : H.textDark} />
-        </TouchableOpacity>
+        </AnimatedPressable>
       </View>
     </View>
   );
@@ -410,7 +397,7 @@ const ImageViewerModal = memo(({ visible, imageUrl, onClose }) => {
       statusBarTranslucent
     >
       <View style={styles.imageModalOverlay}>
-        <TouchableOpacity style={styles.imageModalBackground} activeOpacity={1} onPress={onClose}>
+        <AnimatedPressable style={styles.imageModalBackground} activeOpacity={1} onPress={onClose}>
           <Animated.View style={[styles.imageModalContent, { transform: [{ scale: scaleAnim }] }]}>
             {isLoading && (
               <View style={styles.imageLoadingContainer}>
@@ -424,11 +411,11 @@ const ImageViewerModal = memo(({ visible, imageUrl, onClose }) => {
               onLoadStart={() => setIsLoading(true)}
               onLoadEnd={() => setIsLoading(false)}
             />
-            <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+            <AnimatedPressable style={styles.closeButton} onPress={onClose}>
               <CloseIcon color={H.white} size={24} />
-            </TouchableOpacity>
+            </AnimatedPressable>
           </Animated.View>
-        </TouchableOpacity>
+        </AnimatedPressable>
       </View>
     </Modal>
   );
@@ -474,7 +461,7 @@ const QACard = memo(({ item, isExpanded, onToggle, onImagePress, playingAudioId,
   };
 
   return (
-    <TouchableOpacity activeOpacity={0.95} style={styles.card} onPress={onToggle}>
+    <AnimatedPressable activeOpacity={0.95} style={styles.card} onPress={onToggle}>
       <View style={styles.cardHeader}>
         <View style={styles.questionIconContainer}>
           <Text style={styles.questionIcon}>Q</Text>
@@ -513,13 +500,13 @@ const QACard = memo(({ item, isExpanded, onToggle, onImagePress, playingAudioId,
           )}
 
           {imageUrl && (
-            <TouchableOpacity style={styles.imageContainer} onPress={() => onImagePress(imageUrl)} activeOpacity={0.9}>
+            <AnimatedPressable style={styles.imageContainer} onPress={() => onImagePress(imageUrl)} activeOpacity={0.9}>
               <Image source={{ uri: imageUrl }} style={styles.answerImage} resizeMode="cover" />
               <View style={styles.imageOverlay}>
                 <MagnifyIcon color={H.white} size={24} />
                 <Text style={styles.imageOverlayText}>{t("qaViewer.tapToView")}</Text>
               </View>
-            </TouchableOpacity>
+            </AnimatedPressable>
           )}
 
           {voiceUrl && (
@@ -531,16 +518,16 @@ const QACard = memo(({ item, isExpanded, onToggle, onImagePress, playingAudioId,
               {isPlaying ? (
                 <AudioPlayer audioUrl={voiceUrl} onClose={() => onAudioToggle(null)} />
               ) : (
-                <TouchableOpacity style={styles.playAudioButton} onPress={() => onAudioToggle(item.id)}>
+                <AnimatedPressable style={styles.playAudioButton} onPress={() => onAudioToggle(item.id)}>
                   <PlayCircleIcon color={H.white} size={20} />
                   <Text style={styles.playAudioText}>{t("qaViewer.listen")}</Text>
-                </TouchableOpacity>
+                </AnimatedPressable>
               )}
             </View>
           )}
         </View>
       </Animated.View>
-    </TouchableOpacity>
+    </AnimatedPressable>
   );
 });
 
@@ -572,7 +559,7 @@ export default function QAViewerScreen({ navigation, route }) {
           wsRef.current = new WebSocket(wsUrl);
 
           wsRef.current.onopen = () => {
-            console.log("✅ WS Connected");
+            logger.log("✅ WS Connected");
             setConnectionStatus("connected");
             setError(null);
           };
@@ -591,24 +578,24 @@ export default function QAViewerScreen({ navigation, route }) {
                 }
               }
             } catch (err) {
-              console.error("WS Parse Error:", err);
+              logger.error("WS Parse Error:", err);
             }
           };
 
           wsRef.current.onerror = (err) => {
-            console.log("⚠️ WS warning:", err);
+            logger.log("⚠️ WS warning:", err);
           };
 
           wsRef.current.onclose = () => {
-            console.log("⚠️ WS Disconnected");
+            logger.log("⚠️ WS Disconnected");
             setConnectionStatus("disconnected");
             reconnectTimeoutRef.current = setTimeout(() => {
-              console.log("🔄 Reconnecting...");
+              logger.log("🔄 Reconnecting...");
               connectWebSocket();
             }, 3000);
           };
         } catch (err) {
-          console.error("WS Connection Error:", err);
+          logger.error("WS Connection Error:", err);
           setConnectionStatus("error");
         }
       })();
@@ -645,7 +632,7 @@ export default function QAViewerScreen({ navigation, route }) {
 
       setQas(res.data || []);
     } catch (err) {
-      console.log("Fetch Error:", err);
+      logger.log("Fetch Error:", err);
       if (err?.response?.status === 401) {
         await deleteToken();
         navigation?.replace?.("Login");
@@ -709,9 +696,9 @@ export default function QAViewerScreen({ navigation, route }) {
     <View style={styles.errorContainer}>
       <Text style={styles.errorTitle}>{t("qaViewer.errorTitle")}</Text>
       <Text style={styles.errorSubtitle}>{error}</Text>
-      <TouchableOpacity style={styles.retryButton} onPress={handleRetry}>
+      <AnimatedPressable style={styles.retryButton} onPress={handleRetry}>
         <Text style={styles.retryButtonText}>{t("qaViewer.retry")}</Text>
-      </TouchableOpacity>
+      </AnimatedPressable>
     </View>
   ), [error, handleRetry, t]);
 

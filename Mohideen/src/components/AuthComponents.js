@@ -1,14 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
-  TouchableOpacity,
-  ActivityIndicator,
-  Animated,
-  Dimensions,
-} from "react-native";
+import { View, Text, TextInput, StyleSheet, ActivityIndicator, Animated, Dimensions, TouchableOpacity } from "react-native";
+import AnimatedPressable from "./AnimatedPressable";
 import Svg, { Path, Line, Circle } from "react-native-svg";
 import { COLORS as C, RADII, SPACING } from "../config/theme";
 
@@ -386,13 +378,13 @@ export const PasswordInput = ({ label = "Password", value, onChangeText, error, 
           selectionColor={C.gold}
           allowFontScaling={false}
         />
-        <TouchableOpacity
+        <AnimatedPressable
           onPress={() => setShow(s => !s)}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           style={pwS.eyeBtn}
         >
           {show ? <EyeOffIcon size={20} color={C.textMuted} /> : <EyeIcon size={20} color={C.textMuted} />}
-        </TouchableOpacity>
+        </AnimatedPressable>
       </View>
       {!!helper && !error && <Text allowFontScaling={false} style={pwS.helper}>{helper}</Text>}
     </View>

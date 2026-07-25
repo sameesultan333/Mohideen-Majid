@@ -1,8 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput, StatusBar,
-  Platform, Animated, ScrollView, Linking, Alert, Easing, Dimensions,
-} from "react-native";
+import { View, Text, StyleSheet, TextInput, StatusBar, Platform, Animated, ScrollView, Linking, Alert, Easing, Dimensions, TouchableOpacity } from "react-native";
+import AnimatedPressable from "../components/AnimatedPressable";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getToken } from "../utils/secureStorage";
 import { useFocusEffect } from "@react-navigation/native";
@@ -590,9 +588,9 @@ export default function DonationScreen({ navigation }) {
         <StatusBar barStyle="light-content" backgroundColor={G.deep} />
         <Text style={styles.restrictedTitle}>{t("donation.restricted.title")}</Text>
         <Text style={styles.restrictedSub}>{t("donation.restricted.sub")}</Text>
-        <TouchableOpacity style={styles.restrictedBtn} onPress={() => navigation.navigate("Home")}>
+        <AnimatedPressable style={styles.restrictedBtn} onPress={() => navigation.navigate("Home")}>
           <Text style={styles.restrictedBtnTxt}>{t("donation.restricted.backHome")}</Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
       </View>
     );
   }
@@ -619,9 +617,9 @@ export default function DonationScreen({ navigation }) {
         </Svg>
         <HeaderPattern w={width} h={HEADER_H} />
 
-        <TouchableOpacity onPress={() => navigation.navigate("Home")} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} style={styles.backBtn}>
+        <AnimatedPressable onPress={() => navigation.navigate("Home")} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} style={styles.backBtn}>
           <Text style={styles.backArrow}>←</Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerEye}>Mohideen Masjid</Text>
           <Text style={styles.headerTitle}>{t("donation.headerTitle")}</Text>
@@ -690,12 +688,12 @@ export default function DonationScreen({ navigation }) {
               <Text style={styles.advanceLabel}>{t("donation.payAhead")}</Text>
               <View style={styles.advanceRow}>
                 {[1, 3, 6, 12].map((n) => (
-                  <TouchableOpacity key={n} onPress={() => selectAdvanceMonths(n)}
+                  <AnimatedPressable key={n} onPress={() => selectAdvanceMonths(n)}
                     style={[styles.advancePill, advanceMonths === n && styles.advancePillOn]}>
                     <Text style={[styles.advancePillTxt, advanceMonths === n && styles.advancePillTxtOn]}>
                       {n} {monthWord(n, t)}
                     </Text>
-                  </TouchableOpacity>
+                  </AnimatedPressable>
                 ))}
               </View>
             </>
@@ -727,16 +725,16 @@ export default function DonationScreen({ navigation }) {
           </View>
         </View>
         <Animated.View style={{ transform: [{ scale: btnScale }] }}>
-          <TouchableOpacity onPress={handleUPIPay} activeOpacity={0.9} style={styles.payBtn}>
+          <AnimatedPressable onPress={handleUPIPay} activeOpacity={0.9} style={styles.payBtn}>
             <Text style={styles.payBtnLabel}>{t("donation.openUpiApp")}  →</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
         </Animated.View>
 
         <View style={styles.upiFallback}>
           <Text style={styles.upiFallbackLabel}>{t("donation.upiFallback.label")}</Text>
           <View style={styles.upiFallbackRow}>
             <Text style={styles.upiFallbackId} numberOfLines={1}>{mosqueUpiId}</Text>
-            <TouchableOpacity
+            <AnimatedPressable
               onPress={() => {
                 Clipboard.setString(mosqueUpiId);
                 setUpiCopied(true);
@@ -749,7 +747,7 @@ export default function DonationScreen({ navigation }) {
               <Text style={styles.upiCopyBtnTxt}>
                 {upiCopied ? t("donation.upiFallback.copied") : t("donation.upiFallback.copy")}
               </Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           </View>
         </View>
 
@@ -760,7 +758,7 @@ export default function DonationScreen({ navigation }) {
             <Text style={styles.stepDesc}>{t("donation.steps.upload.desc")}</Text>
           </View>
         </View>
-        <TouchableOpacity style={[styles.uploadBtn, selectedImage && styles.uploadBtnDone]} onPress={pickImage}>
+        <AnimatedPressable style={[styles.uploadBtn, selectedImage && styles.uploadBtnDone]} onPress={pickImage}>
           {selectedImage ? (
             <View style={styles.uploadDoneRow}>
               <Text style={styles.uploadDoneIcon}>✓</Text>
@@ -770,7 +768,7 @@ export default function DonationScreen({ navigation }) {
           ) : (
             <Text style={styles.uploadTxt}>{t("donation.uploadPrompt")}</Text>
           )}
-        </TouchableOpacity>
+        </AnimatedPressable>
 
         <View style={[styles.stepCard, { marginTop: 20 }]}>
           <View style={styles.stepNum}><Text style={styles.stepNumTxt}>3</Text></View>
@@ -779,10 +777,10 @@ export default function DonationScreen({ navigation }) {
             <Text style={styles.stepDesc}>{t("donation.steps.confirm.desc")}</Text>
           </View>
         </View>
-        <TouchableOpacity onPress={handleSubmit} activeOpacity={0.85} disabled={submitting}
+        <AnimatedPressable onPress={handleSubmit} activeOpacity={0.85} disabled={submitting}
           style={[styles.submitBtn, submitting && { opacity: 0.6 }]}>
           <Text style={styles.submitLabel}>{submitting ? t("donation.submitting") : t("donation.confirmSubmit")}</Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
 
         <Text style={styles.footerNote}>{t("donation.footerNote")}</Text>
 
