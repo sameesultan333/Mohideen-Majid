@@ -244,11 +244,28 @@ def apply_coverage_to_existing_collections(
     apply_coverage_to_collections(collections, coverage_map)
 
 
-def sync_generated_month(db: Session, collection: models.ChandaCollection) -> None:
+def sync_generated_month(
+    db: Session,
+    collection: models.ChandaCollection,
+    *,
+    verified_payments: list[models.PaymentEntry] | None = None,
+    source_payments_by_id: dict[int, models.PaymentEntry] | None = None,
+) -> None:
+    """Recompute a generated month's paid amount from its covering payments.
+
+    Callers looping over many months for one family (the Excel import) can pass
+    `verified_payments` and `source_payments_by_id` so the payment list is
+    fetched once instead of once per month. Omit both for the normal path.
+    """
     allocated_total = 0.0
     source_payment_id: int | None = None
 
-    for payment in verified_chanda_payments(db, collection.head_id):
+    payments = (
+        verified_chanda_payments(db, collection.head_id)
+        if verified_payments is None
+        else verified_payments
+    )
+    for payment in payments:
         allocated = float((payment.coverage_map or {}).get(collection.month, 0.0) or 0.0)
         if allocated > 0:
             allocated_total += allocated
@@ -261,7 +278,10 @@ def sync_generated_month(db: Session, collection: models.ChandaCollection) -> No
 
     # Mark as advance when the covering payment was collected in a different month
     if source_payment_id and allocated_total > 0:
-        source = db.query(models.PaymentEntry).filter_by(id=source_payment_id).first()
+        source = (
+            (source_payments_by_id or {}).get(source_payment_id)
+            or db.query(models.PaymentEntry).filter_by(id=source_payment_id).first()
+        )
         if source and source.collected_at:
             source_month = india_month_key(source.collected_at)
             if source_month != collection.month:

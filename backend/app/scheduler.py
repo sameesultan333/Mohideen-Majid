@@ -63,10 +63,14 @@ def job_generate_chanda_month():
 
 
 def job_send_chanda_reminders():
-    """Send FCM push notifications to members with 1+ pending chanda months."""
+    """Send FCM push notifications to members with 1+ pending chanda months.
+
+    Generated months only — see utils/chanda_months.
+    """
     import os
     from app.database import SessionLocal
     from app import models
+    from app.utils.chanda_months import pending_month_filter
     from app.utils.fcm import notify_user
 
     db = SessionLocal()
@@ -80,6 +84,7 @@ def job_send_chanda_reminders():
             pending = db.query(models.ChandaCollection).filter(
                 models.ChandaCollection.head_id == head.id,
                 models.ChandaCollection.status != "paid",
+                pending_month_filter(),
             ).all()
             if not pending:
                 continue

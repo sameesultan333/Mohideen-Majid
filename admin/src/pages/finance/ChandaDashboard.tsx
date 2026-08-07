@@ -67,8 +67,13 @@ function fmtYM(ym: string) {
 }
 
 // ─── Family Detail Modal ──────────────────────────────────────
-// Always shows ALL 12 months regardless of which month is selected at top.
+// Always shows ALL 12 month cells regardless of which month is selected at top.
 // Uses /finance/reports/family/{id} to get complete history.
+//
+// Months after the current month have not been generated yet. An unpaid one
+// renders as "Upcoming" and is never styled or counted as pending; one paid in
+// advance still renders as Paid. ChandaCollection is the single source of truth
+// — pending is never inferred from the calendar.
 
 function FamilyDetail({ memberId, memberName, memberNo, memberPhone, monthlyAmount, onClose, onEdit }: {
   memberId: number; memberName: string; memberNo: string;
@@ -178,7 +183,12 @@ function FamilyDetail({ memberId, memberName, memberNo, memberPhone, monthlyAmou
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
                 {MONTH_NAMES.map((name, i) => {
                   const key = `${year}-${String(i + 1).padStart(2, "0")}`;
-                  const c = colMap[key];
+                  const isFuture = key > currentMonthKey();
+                  const row = colMap[key];
+                  // A future month counts only when it was actually paid in
+                  // advance; an unpaid one is not generated yet, so it is never
+                  // pending no matter what the API sends back.
+                  const c = isFuture && !((row?.total_paid ?? 0) > 0) ? undefined : row;
 
                   let bg = "#F7F5EF", borderC = "#E7E2D3", textC = "#93998F";
                   if (c?.status === "paid")    { bg = "#E9F5F0"; borderC = "#BFE0D4"; textC = "#0F5C4C"; }
@@ -195,7 +205,9 @@ function FamilyDetail({ memberId, memberName, memberNo, memberPhone, monthlyAmou
                       <div style={{ fontSize: 12, fontWeight: 800, color: textC,
                         textTransform: "uppercase", letterSpacing: "0.05em" }}>{name}</div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: textC, marginTop: 3 }}>
-                        {c ? (c.status === "paid" ? "Paid" : c.status === "partial" ? "Partial" : "Pending") : "—"}
+                        {c
+                          ? (c.status === "paid" ? "Paid" : c.status === "partial" ? "Partial" : "Pending")
+                          : isFuture ? "Upcoming" : "—"}
                       </div>
                       {c && (
                         <div style={{ fontFamily: TYPOGRAPHY.fontMono, fontSize: 12, marginTop: 2, color: textC }}>
@@ -220,8 +232,9 @@ function FamilyDetail({ memberId, memberName, memberNo, memberPhone, monthlyAmou
                     Pending / Partial Months
                   </div>
                   {history?.collections
-                    ?.filter((c: any) => c.status !== "paid")
+                    ?.filter((c: any) => c.status !== "paid" && c.month <= currentMonthKey())
                     .map((c: any) => (
+                      // Generated + unsettled only: advance months are never overdue.
                       <div key={c.month} style={{
                         display: "flex", justifyContent: "space-between", alignItems: "center",
                         padding: "10px 14px", background: "#F8E9E9",

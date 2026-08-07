@@ -17,6 +17,12 @@ from app.utils.payment_ledger import (
     set_collection_status,
     sync_generated_month,
 )
+from app.utils.chanda_months import (
+    current_month_key,
+    generated_month_filter,
+    pending_month_filter,
+    visible_month_filter,
+)
 from app.utils.timezones import add_months, india_month_key, parse_frontend_datetime, utc_now, utc_now_naive
 from app.websocket_manager import manager
 from app.routes.finance import write_audit, write_ledger
@@ -36,7 +42,7 @@ def get_db():
 
 
 def get_current_month() -> str:
-    return india_month_key(utc_now())
+    return current_month_key()
 
 
 def normalize_purpose(raw_purpose: str | None) -> str:
@@ -70,9 +76,13 @@ def get_members(
 
     # Bulk load collections (single query instead of N)
     if include_history:
+        # Generated months + any month paid in advance — see utils/chanda_months.
         all_cols = (
             db.query(models.ChandaCollection)
-            .filter(models.ChandaCollection.head_id.in_(head_ids))
+            .filter(
+                models.ChandaCollection.head_id.in_(head_ids),
+                visible_month_filter(),
+            )
             .order_by(models.ChandaCollection.month.desc())
             .all()
         )
@@ -86,6 +96,7 @@ def get_members(
             .filter(
                 models.ChandaCollection.head_id.in_(head_ids),
                 models.ChandaCollection.month == target_month,
+                visible_month_filter(),
             )
             .all()
         )
@@ -93,7 +104,8 @@ def get_members(
         for c in all_cols:
             cols_by_head[c.head_id].append(c)
 
-    # Bulk load pending months count (single query)
+    # Bulk load pending months count (single query).
+    # Generated months only — see utils/chanda_months.
     pending_rows = (
         db.query(
             models.ChandaCollection.head_id,
@@ -102,6 +114,7 @@ def get_members(
         .filter(
             models.ChandaCollection.head_id.in_(head_ids),
             models.ChandaCollection.status != "paid",
+            pending_month_filter(),
         )
         .group_by(models.ChandaCollection.head_id)
         .all()
@@ -744,7 +757,16 @@ def get_report(
     db: Session = Depends(get_db),
     user=Depends(require_admin),
 ):
-    collections = db.query(models.ChandaCollection).filter_by(month=month).all()
+    # A future month reports only the families who paid it in advance — never
+    # the blank rows left behind by the historical import (utils/chanda_months).
+    collections = (
+        db.query(models.ChandaCollection)
+        .filter(
+            models.ChandaCollection.month == month,
+            visible_month_filter(),
+        )
+        .all()
+    )
     # "Expected" (amount_due) excludes families deactivated before paying —
     # already-paid amounts always count regardless of current active status.
     total_due = sum(
@@ -769,13 +791,21 @@ def get_member_history(
     db: Session = Depends(get_db),
     user=Depends(require_collector),
 ):
+    """Returns member's chanda collection history.
+
+    Generated months plus any month already paid in advance; unpaid ungenerated
+    months are excluded — see utils/chanda_months.
+    """
     head = db.query(models.ApprovedHead).filter_by(id=member_id).first()
     if not head:
         raise HTTPException(404, "Head not found")
 
     collections = (
         db.query(models.ChandaCollection)
-        .filter_by(head_id=head.id)
+        .filter(
+            models.ChandaCollection.head_id == head.id,
+            visible_month_filter(),
+        )
         .order_by(models.ChandaCollection.month)
         .all()
     )
@@ -843,10 +873,16 @@ def get_available_months(
         for mk, amt in (payment.coverage_map or {}).items():
             reserved[mk] = round(reserved.get(mk, 0.0) + float(amt or 0), 2)
 
-    # All generated collections
+    # Generated collections only — see utils/chanda_months. Rows beyond the
+    # current month are not generated and are offered below as advance months.
     generated = {
         c.month: c
-        for c in db.query(models.ChandaCollection).filter_by(head_id=head.id).all()
+        for c in db.query(models.ChandaCollection)
+        .filter(
+            models.ChandaCollection.head_id == head.id,
+            generated_month_filter(),
+        )
+        .all()
     }
 
     result = []
@@ -867,7 +903,7 @@ def get_available_months(
         })
 
     # Future months (not yet generated)
-    last_month = sorted(generated.keys())[-1] if generated else india_month_key(utc_now())
+    last_month = sorted(generated.keys())[-1] if generated else current_month_key()
     cursor = add_months(last_month, 1)
     for _ in range(future):
         already_reserved = round(float(reserved.get(cursor, 0.0)), 2)
@@ -957,10 +993,21 @@ def get_defaulters(
     db: Session = Depends(get_db),
     user=Depends(require_admin),
 ):
+    """Returns families with N+ pending generated months.
+
+    Generated months only — see utils/chanda_months.
+    """
     heads = db.query(models.ApprovedHead).filter(models.ApprovedHead.is_deleted.is_(False)).all()
     result = []
     for head in heads:
-        collections = db.query(models.ChandaCollection).filter_by(head_id=head.id).all()
+        collections = (
+            db.query(models.ChandaCollection)
+            .filter(
+                models.ChandaCollection.head_id == head.id,
+                pending_month_filter(),
+            )
+            .all()
+        )
         pending_months = len([c for c in collections if c.status != "paid"])
         if pending_months >= months:
             result.append({"head": head, "pending_months": pending_months})

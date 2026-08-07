@@ -11,6 +11,11 @@ from sqlalchemy.orm import Session, joinedload
 from app import models, schemas
 from app.database import SessionLocal
 from app.security import get_current_user
+from app.utils.chanda_months import (
+    current_month_key,
+    pending_month_filter,
+    visible_month_filter,
+)
 from app.utils.payment_ledger import build_coverage_map, generate_receipt_id
 from app.utils.timezones import india_month_key, utc_now, utc_now_naive
 from app.rate_limit import rate_limit
@@ -308,11 +313,13 @@ def get_unpaid_months(
         head = resolve_user_head(db, db_user, user)
     except HTTPException:
         return []   # collector / staff users have no linked family head
+    # Only generated months can be unpaid — see utils/chanda_months.
     cols = (
         db.query(models.ChandaCollection)
         .filter(
             models.ChandaCollection.head_id == head.id,
             models.ChandaCollection.status.in_(["pending", "partial"]),
+            pending_month_filter(),
         )
         .order_by(models.ChandaCollection.month.asc())
         .all()
@@ -339,13 +346,17 @@ def get_current_chanda(
         head = resolve_user_head(db, db_user, user)
     except HTTPException:
         return {"status": "no_head", "amount_due": 0, "balance": 0, "paid_months": 0, "pending_months": 0}
-    month = india_month_key(utc_now())
-    collection = db.query(models.ChandaCollection).filter_by(head_id=head.id, month=month).first()
-
-    all_cols = db.query(models.ChandaCollection).filter_by(head_id=head.id).all()
+    month = current_month_key()
+    # Generated months + months paid in advance; blank future rows are excluded.
+    all_cols = db.query(models.ChandaCollection).filter(
+        models.ChandaCollection.head_id == head.id,
+        visible_month_filter(month),
+    ).all()
+    # Advance months count towards Paid, but only generated months can be pending.
     paid_months = sum(1 for c in all_cols if c.status == "paid")
-    pending_months = sum(1 for c in all_cols if c.status != "paid")
+    pending_months = sum(1 for c in all_cols if c.status != "paid" and c.month <= month)
 
+    collection = next((c for c in all_cols if c.month == month), None)
     if not collection:
         # Month not yet generated — return family's configured rate so
         # the member can still pay and admin will allocate on verification.
@@ -390,18 +401,21 @@ def get_user_chanda_summary(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    """Lightweight endpoint: returns pending chanda month count for the badge."""
+    """Lightweight endpoint: returns pending chanda month count for the badge.
+
+    Counts only generated months — see utils/chanda_months.
+    """
     db_user = resolve_db_user(db, user)
     try:
         head = resolve_user_head(db, db_user, user)
     except HTTPException:
         return {"pending_months": 0, "head_linked": False}
-
     pending = (
         db.query(models.ChandaCollection)
         .filter(
             models.ChandaCollection.head_id == head.id,
             models.ChandaCollection.status != "paid",
+            pending_month_filter(),
         )
         .count()
     )

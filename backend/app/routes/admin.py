@@ -16,6 +16,7 @@ from app.security import require_admin, require_superadmin, require_admin_or_col
 from app.services.audit_service import AuditAction, log_action
 from app.services.registration_service import RegistrationApprovalService
 from app.services.chanda_number_service import generate_next_chanda_no
+from app.utils.chanda_months import current_month_key, visible_month_filter
 from app.utils.fcm import notify_user
 from app.utils.payment_ledger import generate_receipt_id
 from app.websocket_manager import manager
@@ -72,6 +73,7 @@ def _create_historical_records(
     receipt_seq_cache: dict[str, int],
 ):
     now = datetime.utcnow()
+    current_month = current_month_key()
     for month_label, amount_raw in payments.items():
         month_num = HISTORICAL_MONTHS.get(month_label.strip().lower())
         if month_num is None:
@@ -86,6 +88,14 @@ def _create_historical_records(
 
         month_key       = f"{year}-{month_num:02d}"
         collection_date = datetime(year, month_num, 1)
+
+        # A sheet always carries all twelve month columns, so months later in the
+        # year arrive here blank. Creating a row for one would invent a pending
+        # month that has not been generated yet — the bug where a member paid
+        # through July still showed Sep–Dec as due. Months paid in advance DO get
+        # a row; the generator fills in the blank ones when they come due.
+        if month_key > current_month and amount_paid <= 0:
+            continue
 
         existing = db.query(models.ChandaCollection).filter_by(
             head_id=head.id, month=month_key
@@ -676,13 +686,21 @@ def family_payment_history(
     db: Session = Depends(get_db),
     current_user=Depends(require_admin),
 ):
+    """Returns family's payment history.
+
+    Generated months plus any month already paid in advance; unpaid ungenerated
+    months are excluded — see utils/chanda_months.
+    """
     head = db.query(models.ApprovedHead).filter_by(id=family_id).first()
     if not head:
         raise HTTPException(404, "Family not found")
 
     collections = (
         db.query(models.ChandaCollection)
-        .filter_by(head_id=head.id)
+        .filter(
+            models.ChandaCollection.head_id == head.id,
+            visible_month_filter(),
+        )
         .order_by(models.ChandaCollection.month)
         .all()
     )
@@ -1095,8 +1113,7 @@ def dashboard_stats(
     db: Session = Depends(get_db),
     current_user=Depends(require_admin),
 ):
-    from app.utils.timezones import india_month_key, utc_now
-    current_month = india_month_key(utc_now())
+    current_month = current_month_key()
 
     total_families  = db.query(models.ApprovedHead).filter_by(is_active=True).count()
     registered      = db.query(models.ApprovedHead).filter_by(is_active=True, is_registered=True).count()
@@ -1104,6 +1121,8 @@ def dashboard_stats(
         models.User.role.in_(["head", "member"]), models.User.is_active == True,
     ).count()
 
+    # current_month is by definition generated, so no extra filter is needed here;
+    # families with no row for it are simply not pending (see utils/chanda_months).
     month_cols          = db.query(models.ChandaCollection).filter_by(month=current_month).all()
     pending_collections = sum(1 for c in month_cols if c.status != "paid")
     collected_month     = sum(c.total_paid   for c in month_cols)
@@ -1164,6 +1183,26 @@ def send_personal_notification(
     )
     db.commit()
     return {"message": f"Notification sent to {target.name}", "sent": sent}
+
+
+# ─────────────────────────────────────────────────────────────
+# DATA CONSISTENCY VALIDATION
+# ─────────────────────────────────────────────────────────────
+
+@router.get("/chanda/consistency-check")
+def chanda_consistency_check(
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    """
+    Detect data inconsistencies in ChandaCollection records.
+    Returns missing collections and orphaned payments that should be reported
+    and fixed rather than silently treating families as not pending.
+    """
+    from app.utils.chanda_validation import validate_chanda_consistency
+    
+    report = validate_chanda_consistency(db)
+    return report
 
 
 # ─────────────────────────────────────────────────────────────

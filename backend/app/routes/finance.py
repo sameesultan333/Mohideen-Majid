@@ -20,6 +20,11 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.database import SessionLocal
 from app.security import get_current_user, require_admin, require_admin_or_collector, require_collector, require_superadmin
+from app.utils.chanda_months import (
+    current_month_key,
+    pending_month_filter,
+    visible_month_filter,
+)
 from app.utils.timezones import india_month_key, utc_now, to_india
 from app.websocket_manager import manager
 from app.services.audit_service import AuditAction
@@ -116,7 +121,10 @@ def finance_dashboard(
             func.coalesce(func.sum(models.ChandaCollection.total_paid), 0.0),
         )
         .join(models.ApprovedHead, models.ApprovedHead.id == models.ChandaCollection.head_id)
-        .filter(models.ChandaCollection.month == target_month)
+        .filter(
+            models.ChandaCollection.month == target_month,
+            visible_month_filter(),
+        )
         .group_by(models.ChandaCollection.status)
         .all()
     )
@@ -129,26 +137,19 @@ def finance_dashboard(
         else:                  pending_count += _cnt
         due_month       += float(_due  or 0)
         collected_month += float(_paid or 0)
-    # Count active families without a record for this month (they are implicitly pending)
-    no_record_count = (
-        db.query(models.ApprovedHead)
-        .filter_by(is_active=True)
-        .filter(~models.ApprovedHead.id.in_(
-            db.query(models.ChandaCollection.head_id)
-            .filter(models.ChandaCollection.month == target_month)
-        ))
-        .count()
-    )
-    # Families without a collection record are implicitly "pending"
-    pending_count += no_record_count
+    # A family with no ChandaCollection row for target_month is NOT pending —
+    # the month simply has not been generated for them. ChandaCollection is the
+    # single source of truth; pending is never inferred from the calendar.
     outstanding    = max(due_month - collected_month, 0)
     collection_pct = round((collected_month / due_month * 100) if due_month else 0, 1)
 
     # ── All-time outstanding (SQL aggregation) ─────────────────
+    # Generated months only: a month not yet due cannot be outstanding, and the
+    # import's blank future rows must not inflate the total.
     _all_agg = db.query(
         func.coalesce(func.sum(models.ChandaCollection.amount_due), 0.0),
         func.coalesce(func.sum(models.ChandaCollection.total_paid), 0.0),
-    ).one()
+    ).filter(pending_month_filter()).one()
     total_due_all     = float(_all_agg[0] or 0)
     total_paid_all    = float(_all_agg[1] or 0)
     total_outstanding = max(total_due_all - total_paid_all, 0)
@@ -367,12 +368,17 @@ def finance_dashboard(
 
 
 def _count_defaulters(db: Session, threshold_months: int) -> int:
+    """Count families with threshold_months or more pending generated months.
+
+    Ungenerated future months never count — see utils/chanda_months.
+    """
     return (
         db.query(models.ChandaCollection.head_id)
         .join(models.ApprovedHead, models.ApprovedHead.id == models.ChandaCollection.head_id)
         .filter(
             models.ApprovedHead.is_active == True,
             models.ChandaCollection.status != "paid",
+            pending_month_filter(),
         )
         .group_by(models.ChandaCollection.head_id)
         .having(func.count(models.ChandaCollection.id) >= threshold_months)
@@ -446,6 +452,8 @@ def get_defaulters(
     """
     Returns defaulters grouped by all thresholds (1, 3, 6, 12 months).
     If ?months=N is passed, also returns a flat filtered list for that threshold.
+
+    Ungenerated future months never count — see utils/chanda_months.
     """
     heads = db.query(models.ApprovedHead).filter_by(is_active=True).all()
     head_map = {h.id: h for h in heads}
@@ -455,6 +463,7 @@ def get_defaulters(
         .filter(
             models.ChandaCollection.head_id.in_(list(head_map.keys())),
             models.ChandaCollection.status != "paid",
+            pending_month_filter(),
         )
         .all()
     )
@@ -520,6 +529,8 @@ def notify_defaulters(
     query as GET /defaulters rather than trusting a client-supplied number,
     and reuses the existing notify_user() FCM helper (see
     scheduler.job_send_chanda_reminders for the same pattern).
+
+    Ungenerated future months never count — see utils/chanda_months.
     """
     from app.utils.fcm import notify_user
 
@@ -544,7 +555,11 @@ def notify_defaulters(
 
         pending = (
             db.query(models.ChandaCollection)
-            .filter(models.ChandaCollection.head_id == fid, models.ChandaCollection.status != "paid")
+            .filter(
+                models.ChandaCollection.head_id == fid,
+                models.ChandaCollection.status != "paid",
+                pending_month_filter(),
+            )
             .count()
         )
         if pending == 0:
@@ -845,8 +860,19 @@ def monthly_report(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_admin),
 ):
-    """Full month finance report — data suitable for PDF/Excel export."""
-    cols = db.query(models.ChandaCollection).filter_by(month=month).all()
+    """Full month finance report — data suitable for PDF/Excel export.
+
+    Generated months only — an ungenerated future month reports no pending rows
+    (see utils/chanda_months).
+    """
+    cols = (
+        db.query(models.ChandaCollection)
+        .filter(
+            models.ChandaCollection.month == month,
+            visible_month_filter(),
+        )
+        .all()
+    )
 
     # Bulk-load heads instead of one query per collection row (N+1).
     head_ids = {c.head_id for c in cols if c.head_id}
@@ -916,14 +942,22 @@ def family_statement(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_collector),
 ):
-    """Full payment history for one family."""
+    """Full payment history for one family.
+
+    Shows generated months plus any future month actually paid in advance;
+    unpaid ungenerated months are excluded — see utils/chanda_months.
+    """
+    current_month = current_month_key()
     head = db.query(models.ApprovedHead).filter_by(id=family_id).first()
     if not head:
         raise HTTPException(404, "Family not found")
 
     cols = (
         db.query(models.ChandaCollection)
-        .filter_by(head_id=head.id)
+        .filter(
+            models.ChandaCollection.head_id == head.id,
+            visible_month_filter(current_month),
+        )
         .order_by(models.ChandaCollection.month)
         .all()
     )
@@ -935,8 +969,13 @@ def family_statement(
     )
     donations = db.query(models.Donation).filter_by(head_id=head.id).all()
 
-    total_due       = sum(c.amount_due   for c in cols)
-    total_paid      = sum(c.total_paid   for c in cols)
+    # Money owed is measured over generated months only — a month paid in
+    # advance is shown in `cols` but is not yet due, so it must not move
+    # total_due or outstanding. Advance cash is reported separately.
+    due_cols        = [c for c in cols if c.month <= current_month]
+    total_due       = sum(c.amount_due for c in due_cols)
+    total_paid      = sum(c.total_paid for c in due_cols)
+    advance_paid    = sum(c.total_paid for c in cols if c.month > current_month)
     total_outstanding = max(total_due - total_paid, 0)
 
     # last payment info
@@ -969,11 +1008,14 @@ def family_statement(
         },
         "summary": {
             "total_months":           len(cols),
+            # Paid counts every month settled, advance months included.
             "paid_months":            sum(1 for c in cols if c.status == "paid"),
-            "partial_months":         sum(1 for c in cols if c.status == "partial"),
-            "pending_months":         sum(1 for c in cols if c.status == "pending"),
+            # Partial/pending only ever describe generated months.
+            "partial_months":         sum(1 for c in due_cols if c.status == "partial"),
+            "pending_months":         sum(1 for c in due_cols if c.status == "pending"),
             "total_due":              round(total_due, 2),
             "total_paid":             round(total_paid, 2),
+            "advance_paid":           round(advance_paid, 2),
             "total_outstanding":      round(total_outstanding, 2),
             "last_payment":           last_payment_date,
             "last_payment_amount":    last_payment.amount if last_payment else None,
