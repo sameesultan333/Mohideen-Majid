@@ -24,7 +24,12 @@ def _coerce_created_at(created_at) -> datetime:
     return datetime.utcnow()
 
 
-def generate_receipt_id(db: Session, prefix: str = "CH", created_at=None) -> str:
+def generate_receipt_id(
+    db: Session,
+    prefix: str = "CH",
+    created_at=None,
+    seq_cache: dict[str, int] | None = None,
+) -> str:
     """
     Format: MM-{PREFIX}-{YYYYMM}-{000001}
     Example: MM-CH-202607-000001
@@ -38,6 +43,11 @@ def generate_receipt_id(db: Session, prefix: str = "CH", created_at=None) -> str
 
     model_map = {"CH": models.PaymentEntry, "DN": models.Donation, "EX": models.Expense}
     model_cls = model_map.get(prefix, models.PaymentEntry)
+
+    cache_key = f"{model_cls.__tablename__}:{prefix}:{ym}"
+    if seq_cache is not None and cache_key in seq_cache:
+        seq_cache[cache_key] += 1
+        return f"MM-{prefix}-{ym}-{seq_cache[cache_key]:06d}"
 
     rows = (
         db.query(model_cls.receipt_id)
@@ -54,8 +64,10 @@ def generate_receipt_id(db: Session, prefix: str = "CH", created_at=None) -> str
         if suffix.isdigit():
             max_seq = max(max_seq, int(suffix))
 
-    return f"MM-{prefix}-{ym}-{(max_seq or 0) + 1:06d}"
-
+    next_seq = (max_seq or 0) + 1
+    if seq_cache is not None:
+        seq_cache[cache_key] = next_seq
+    return f"MM-{prefix}-{ym}-{next_seq:06d}"
 
 def set_collection_status(collection: models.ChandaCollection) -> None:
     paid = round(float(collection.total_paid or 0), 2)
