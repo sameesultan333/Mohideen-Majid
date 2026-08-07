@@ -30,6 +30,10 @@ def month_key_to_label(month_key: str) -> str:
     return datetime.strptime(month_key, "%Y-%m").strftime("%b %Y")
 
 
+def month_key_to_full_label(month_key: str) -> str:
+    return datetime.strptime(month_key, "%Y-%m").strftime("%B %Y")
+
+
 def parse_frontend_datetime(value: datetime | None = None) -> datetime | None:
     if value is None:
         return None

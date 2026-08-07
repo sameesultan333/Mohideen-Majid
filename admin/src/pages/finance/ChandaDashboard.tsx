@@ -1317,7 +1317,10 @@ export default function ChandaDashboard() {
 
   const d = dashboard;
   const chanda = d?.chanda;
-  const monthGenerated = members.length > 0;
+  const generatedCount = members.filter(member =>
+    member.collections.some(collection => collection.month === month)
+  ).length;
+  const monthGenerated = members.length > 0 && generatedCount === members.length;
   const pct = Math.min(Math.max(chanda?.collection_pct ?? 0, 0), 100);
 
   // ── actions ──────────────────────────────────────────────
@@ -1559,7 +1562,7 @@ export default function ChandaDashboard() {
           {[
             {
               label: genLoading ? "Generating…"
-                : monthGenerated ? `✓ ${month} Ready`
+                : monthGenerated ? `✓ ${month} Generated`
                 : `Generate ${month}`,
               icon: CalendarPlus, color: COLORS.primary, bg: COLORS.primaryLight,
               onClick: monthGenerated ? undefined : handleGenerateMonth,
@@ -1596,7 +1599,7 @@ export default function ChandaDashboard() {
               textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>Status</div>
             <Badge status={monthGenerated ? "paid" : "pending"} />
             <div style={{ fontSize: 11, color: "#93998F", marginTop: 4 }}>
-              {monthGenerated ? `${members.length} records` : "Not generated"}
+              {monthGenerated ? `${generatedCount}/${members.length} generated` : "Not generated"}
             </div>
           </div>
         </div>

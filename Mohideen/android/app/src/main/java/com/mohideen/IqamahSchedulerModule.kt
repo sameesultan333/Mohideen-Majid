@@ -1,10 +1,16 @@
 package com.mohideen
 
+import android.app.AlarmManager
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import androidx.work.*
+import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
@@ -83,6 +89,39 @@ class IqamahSchedulerModule(reactContext: ReactApplicationContext)
     fun cancelIqamah(prayerName: String) {
         WorkManager.getInstance(reactApplicationContext)
             .cancelUniqueWork("iqamah_${prayerName.lowercase()}")
+    }
+
+    /**
+     * Whether the app can schedule EXACT alarms right now. On API < 31 this is
+     * always true (no such restriction existed). On API 31-32 it's granted by
+     * default. On API 33+ the user must flip it on manually in Settings — there
+     * is no runtime permission dialog for it. When this is false, the offline
+     * prayer-time AlarmManager schedule (PrayerNotificationService.js, wired
+     * through the react-native-push-notification patch in this repo) silently
+     * falls back to an INEXACT alarm, which Doze/App-standby can defer by an
+     * unpredictable amount — that's what makes Iqamah notifications appear late
+     * or only once the device reconnects to the network for other reasons.
+     */
+    @ReactMethod
+    fun canScheduleExactAlarms(promise: Promise) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            promise.resolve(true)
+            return
+        }
+        val am = reactApplicationContext.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        promise.resolve(am.canScheduleExactAlarms())
+    }
+
+    /** Deep-link the user straight to the "Alarms & reminders" toggle for this app. */
+    @ReactMethod
+    fun requestExactAlarmPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        val ctx = reactApplicationContext
+        val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+            data = Uri.parse("package:${ctx.packageName}")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        ctx.startActivity(intent)
     }
 
     companion object {

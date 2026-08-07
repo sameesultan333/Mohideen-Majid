@@ -8,59 +8,52 @@
  * previous version had them hardcoded in English, inconsistent with
  * every other screen in the app.
  *
- * PERF PASS NOTES (this revision):
- * - ProgressBar now animates `transform: scaleX` with useNativeDriver:true
- *   instead of `width` with useNativeDriver:false. Width animation runs on
- *   the JS thread and was the main source of scroll jank on this screen.
- * - Per-card fade/slide entrance animation removed. Combined with
- *   removeClippedSubviews on the FlatList, cards were re-mounting (and
- *   re-animating) as they crossed the render window while scrolling —
- *   that's what felt like "not scrolling properly."
- * - callFamily / navigateToFamily / goToHistory are now stable via
- *   useCallback so React.memo on MemberCard actually prevents re-renders.
- * - Payment sheet ScrollView now has style={{flex:1}} and the sheet
- *   container uses a resolved height instead of maxHeight — previously
- *   the scrollable area's hit box didn't match the visible sheet, which
- *   is why you had to grab a specific spot near the bottom (UPI section)
- *   to get it to scroll at all.
- * - List sort now buckets paid members to the bottom regardless of which
- *   sort mode is active; pending/partial always float to the top.
- * - Header trimmed (smaller paddings, subtitle line removed) to reduce
- *   dead vertical space above the list.
- * - Offline indicator swapped from hard red (H.error) to muted amber
- *   (H.warn) so a connectivity hiccup doesn't read as a broken screen.
+ * PERF PASS NOTES (carried over from earlier revisions):
+ * - ProgressBar animates `transform: scaleX` with useNativeDriver:true
+ *   instead of `width` with useNativeDriver:false (width animation runs
+ *   on the JS thread and was the main source of scroll jank).
+ * - No per-card fade/slide entrance animation, combined with
+ *   removeClippedSubviews on the FlatList — an entrance animation would
+ *   replay every time a card re-mounts crossing the render window.
+ * - callFamily / navigateToFamily / goToHistory are stable via useCallback
+ *   so React.memo on MemberCard actually prevents re-renders.
+ * - Modals (date picker, confirm) are top-level siblings of the sheet,
+ *   never nested inside the sheet's ScrollView — avoids the Android
+ *   "scroll stuck" bug where a nested Modal leaves the ScrollView's
+ *   responder latched to a stale contentSize.
+ * - Pull-to-refresh (RefreshControl) on both the main member list and the
+ *   payment sheet.
+ * - Single primary action in the payment sheet: sticky "Continue" bar for
+ *   chanda, in-sheet SubmitButton only for donation/fund/other.
  *
- * SCROLL-STUCK FIX (this revision):
- * - The date-picker Modal used to be declared as a JSX child *inside* the
- *   payment sheet's ScrollView. Because RN Modal mounts into its own
- *   native window, having it live inside scrollable content still forces
- *   the ScrollView to re-measure on every open/close, and on Android this
- *   occasionally left the ScrollView's responder latched to a stale
- *   contentSize — scroll would "stick" once you'd interacted with the
- *   date field. Both modals now live as top-level siblings of the sheet,
- *   outside the ScrollView entirely.
- * - The locked "Advance Payment" header still used a real TouchableOpacity
- *   even while disabled, which could steal the initial touch of a scroll
- *   gesture. It's now a plain View with pointerEvents="none" on its
- *   content when locked, so drags pass straight through to the ScrollView.
- * - contentContainerStyle now uses flexGrow:1 with explicit bottom
- *   padding so short lists don't collapse the scroll area and long lists
- *   never clip the submit button behind the sticky bar.
- * - Added pull-to-refresh (RefreshControl) on both the main member list
- *   and the payment sheet, so a pull-down re-fetches the latest data
- *   from the server instead of relying only on the WebSocket/manual sync.
- *
- * REDESIGN PASS (this revision):
- * - Removed the top "Pending / Total" summary cards — that data already
- *   lives in the filter pill counts, so the header no longer duplicates
- *   it and users reach the list faster.
- * - Removed the duplicate primary action in the payment sheet. For chanda
- *   payments the sticky bottom bar ("Continue") is now the single primary
- *   action; the in-sheet SubmitButton only renders for donation/fund/other
- *   payment types, which have no sticky bar of their own.
- * - Payment method selection is now a dedicated, larger touch-target
- *   component (PaymentMethodButton) instead of the small generic
- *   OptionPill, with a clearer selected state.
+ * PERF PASS 2 (this revision — fixes the "laggy / slow" sheet):
+ * - Root cause: every keystroke in Amount / Notes / Transaction-Ref
+ *   re-rendered the ENTIRE CollectorScreen. Since MonthPicker,
+ *   PaymentMethodButton and OptionPill were plain (non-memoized) function
+ *   components, they fully re-executed on every keystroke — re-deriving
+ *   pendingGenerated/futureMonths/byYear groupings and re-rendering every
+ *   month row — even though none of that data had changed. Fixed by:
+ *     • React.memo on MonthPicker, its Row (MonthRow), PaymentMethodButton,
+ *       OptionPill, and StickySelectionBar.
+ *     • useMemo for MonthPicker's derived groupings, keyed on `months`.
+ *     • useCallback on every handler passed into these memoized components
+ *       (toggleMonth, quickSelectMonths, resetForm, fetchAvailableMonths,
+ *       submit handlers, onManualSync, openDatePicker, getMonthlyAmt, etc.)
+ *       so the memoization actually holds instead of being busted by a
+ *       fresh function identity every render.
+ *     • FlatList's renderItem/keyExtractor are now stable via useCallback
+ *       instead of new closures on every render.
+ *     • Month-total calculation (driving the Amount field) moved out of
+ *       the toggle/quick-select handlers and into a small useEffect keyed
+ *       on selection + available months, so it's calculated once instead
+ *       of being duplicated in two call sites.
+ * - Removed dead code that was computed but never used anywhere:
+ *   getPendingMonths(), formatMonthName(), pendingFamiliesCount, and a
+ *   pile of leftover styles from earlier layout iterations that no
+ *   screen still references (old month-nav row, old zone-pill row,
+ *   unused "pending months / will cover / overpay" preview boxes, unused
+ *   filter/sort row styles, unused cacheTime/collectingForTxt/advanceTag
+ *   styles).
  */
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
@@ -130,22 +123,6 @@ const getMemberStatus = (item, month) => {
   const balance = Math.max(total - paid, 0);
   const status = balance === 0 && total > 0 ? "paid" : paid > 0 ? "partial" : "pending";
   return { col, total, paid, balance, status };
-};
-
-const getPendingMonths = (item) => {
-  if (!item?.collections) return [];
-  return item.collections
-    .filter(c => {
-      const due = Number(c.amount_due || 0);
-      const paid = Number(c.total_paid || 0);
-      return due > 0 && paid < due;
-    })
-    .sort((a, b) => a.month.localeCompare(b.month));
-};
-
-const formatMonthName = (ym) => {
-  const [y, m] = ym.split("-").map(Number);
-  return new Date(y, m - 1, 1).toLocaleString("en-IN", { month: "short", year: "2-digit" });
 };
 
 const getConsecutiveUnpaidMonths = (item) => {
@@ -309,7 +286,11 @@ function MiniStat({ label, value, color }) {
   );
 }
 
-function OptionPill({ label, active, onPress }) {
+// Memoized: without this, every keystroke anywhere in the sheet
+// (Amount / Notes / Transaction Ref) re-rendered the whole screen tree,
+// which re-ran every pill's render for no reason since active/label
+// almost never change between those keystrokes.
+const OptionPill = React.memo(function OptionPill({ label, active, onPress }) {
   const sc = useRef(new Animated.Value(1)).current;
   const tap = () => {
     Animated.sequence([
@@ -325,13 +306,13 @@ function OptionPill({ label, active, onPress }) {
       </AnimatedPressable>
     </Animated.View>
   );
-}
+});
 
 // ─── Payment method button ────────────────────────────────────────────
 // Larger, dedicated touch target for the 4 payment methods, distinct
 // from the generic OptionPill used for type/fund selection. Roomier
 // hit area, clearer selected state (filled + border), no crowding.
-function PaymentMethodButton({ label, active, onPress }) {
+const PaymentMethodButton = React.memo(function PaymentMethodButton({ label, active, onPress }) {
   const sc = useRef(new Animated.Value(1)).current;
   const tap = () => {
     Animated.sequence([
@@ -351,7 +332,7 @@ function PaymentMethodButton({ label, active, onPress }) {
       </AnimatedPressable>
     </Animated.View>
   );
-}
+});
 const pm = StyleSheet.create({
   row: { flexDirection: "row", gap: 8 },
   btn: {
@@ -375,7 +356,6 @@ const pm = StyleSheet.create({
 });
 
 // ─── Month allocation picker ─────────────────────────────────────────
-// Replaces fixed 1M/2M/3M/6M/12M buttons.
 // Shows pending + future months as individual toggleable rows.
 const fmtMShort = (key) => {
   const [y, mo] = key.split("-").map(Number);
@@ -387,59 +367,65 @@ const fmtMFull = (key) => {
   return new Date(y, mo - 1, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 };
 
-function MonthPicker({
+// Memoized row — MonthPicker can re-render (e.g. when advanceExpanded
+// toggles) without every unrelated row re-rendering too.
+const MonthRow = React.memo(function MonthRow({ item, selected, onToggle }) {
+  return (
+    <AnimatedPressable
+      onPress={() => onToggle(item.month)}
+      activeOpacity={0.7}
+      style={[mp.row, selected && mp.rowSelected]}
+    >
+      <View style={[mp.check, selected && mp.checkSelected]}>
+        {selected && <Text allowFontScaling={false} style={mp.checkMark}>✓</Text>}
+      </View>
+      <View style={{ flex: 1 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <Text allowFontScaling={false} style={[mp.monthTxt, selected && mp.monthTxtSelected]}>
+            {item.is_generated ? fmtMShort(item.month) : fmtMFull(item.month)}
+          </Text>
+          {!item.is_generated && (
+            <View style={mp.advancePill}>
+              <Text allowFontScaling={false} style={mp.advancePillTxt}>{t("collector.advance")}</Text>
+            </View>
+          )}
+        </View>
+      </View>
+      {item.status === "partial" && (
+        <Text allowFontScaling={false} style={mp.partialBadge}>Partial</Text>
+      )}
+      <Text allowFontScaling={false} style={[mp.amtTxt, selected && mp.amtTxtSelected]}>
+        ₹{item.remaining}
+      </Text>
+    </AnimatedPressable>
+  );
+});
+
+const MonthPicker = React.memo(function MonthPicker({
   months, selectedKeys, onToggle, onQuickSelect,
   advanceExpanded, setAdvanceExpanded,
   customExpanded, setCustomExpanded,
   monthlyRate, totalOutstanding, pendingCount,
 }) {
+  // Derived groupings only recompute when the months list itself changes,
+  // not on every keystroke elsewhere in the sheet.
+  const { pendingGenerated, futureMonths, paidMonths, byYear, years } = useMemo(() => {
+    const list = months || [];
+    const pendingGenerated = list.filter(m => m.is_generated && m.remaining > 0);
+    const futureMonths = list.filter(m => !m.is_generated && m.remaining > 0);
+    const paidMonths = list.filter(m => m.remaining <= 0);
+    const byYear = {};
+    futureMonths.forEach(m => {
+      const yr = m.month.slice(0, 4);
+      (byYear[yr] = byYear[yr] || []).push(m);
+    });
+    const years = Object.keys(byYear).sort();
+    return { pendingGenerated, futureMonths, paidMonths, byYear, years };
+  }, [months]);
+
   if (!months || months.length === 0) return null;
 
-  const pendingGenerated = months.filter(m => m.is_generated && m.remaining > 0);
-  const futureMonths     = months.filter(m => !m.is_generated && m.remaining > 0);
-  const paidMonths       = months.filter(m => m.remaining <= 0);
   const isLocked = pendingGenerated.length > 0;
-
-  // Group future by year for custom picker
-  const byYear = {};
-  futureMonths.forEach(m => {
-    const yr = m.month.slice(0, 4);
-    (byYear[yr] = byYear[yr] || []).push(m);
-  });
-  const years = Object.keys(byYear).sort();
-
-  const Row = ({ item }) => {
-    const sel = selectedKeys.has(item.month);
-    return (
-      <AnimatedPressable
-        onPress={() => onToggle(item.month, item.remaining)}
-        activeOpacity={0.7}
-        style={[mp.row, sel && mp.rowSelected]}
-      >
-        <View style={[mp.check, sel && mp.checkSelected]}>
-          {sel && <Text allowFontScaling={false} style={mp.checkMark}>✓</Text>}
-        </View>
-        <View style={{ flex: 1 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            <Text allowFontScaling={false} style={[mp.monthTxt, sel && mp.monthTxtSelected]}>
-              {item.is_generated ? fmtMShort(item.month) : fmtMFull(item.month)}
-            </Text>
-            {!item.is_generated && (
-              <View style={mp.advancePill}>
-                <Text allowFontScaling={false} style={mp.advancePillTxt}>{t("collector.advance")}</Text>
-              </View>
-            )}
-          </View>
-        </View>
-        {item.status === "partial" && (
-          <Text allowFontScaling={false} style={mp.partialBadge}>Partial</Text>
-        )}
-        <Text allowFontScaling={false} style={[mp.amtTxt, sel && mp.amtTxtSelected]}>
-          ₹{item.remaining}
-        </Text>
-      </AnimatedPressable>
-    );
-  };
 
   return (
     <View>
@@ -467,7 +453,9 @@ function MonthPicker({
       {pendingGenerated.length > 0 && (
         <>
           <Text allowFontScaling={false} style={mp.sectionLabel}>{t("collector.pendingMonths")}</Text>
-          {pendingGenerated.map(m => <Row key={m.month} item={m} />)}
+          {pendingGenerated.map(m => (
+            <MonthRow key={m.month} item={m} selected={selectedKeys.has(m.month)} onToggle={onToggle} />
+          ))}
         </>
       )}
 
@@ -477,7 +465,7 @@ function MonthPicker({
           {isLocked ? (
             // Plain, non-touchable header while locked — a disabled
             // TouchableOpacity still registers as a responder and can
-            // swallow the first move of a scroll gesture, which is what
+            // steal the initial move of a scroll gesture, which is what
             // made the list feel "stuck" right around this section.
             <View style={mp.advanceSectionHeader} pointerEvents="none">
               <View style={{ flex: 1 }}>
@@ -538,7 +526,9 @@ function MonthPicker({
               {customExpanded && years.map(yr => (
                 <View key={yr}>
                   <Text allowFontScaling={false} style={mp.yearLabel}>{yr}</Text>
-                  {byYear[yr].map(m => <Row key={m.month} item={m} />)}
+                  {byYear[yr].map(m => (
+                    <MonthRow key={m.month} item={m} selected={selectedKeys.has(m.month)} onToggle={onToggle} />
+                  ))}
                 </View>
               ))}
             </View>
@@ -562,9 +552,9 @@ function MonthPicker({
       )}
     </View>
   );
-}
+});
 
-function StickySelectionBar({ count, total, onContinue, loading }) {
+const StickySelectionBar = React.memo(function StickySelectionBar({ count, total, onContinue, loading }) {
   if (count === 0) return null;
   return (
     <View style={sb.bar}>
@@ -581,7 +571,7 @@ function StickySelectionBar({ count, total, onContinue, loading }) {
       </AnimatedPressable>
     </View>
   );
-}
+});
 
 const mp = StyleSheet.create({
   sectionLabel: { fontSize: 11, fontWeight: "700", color: H.textMuted, marginTop: 14, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.7 },
@@ -599,7 +589,6 @@ const mp = StyleSheet.create({
   checkMark: { color: "#fff", fontSize: 14, fontWeight: "800" },
   monthTxt: { fontSize: 14, fontWeight: "700", color: H.textDark },
   monthTxtSelected: { color: H.green },
-  advanceTag: { fontSize: 10, fontWeight: "700", color: H.green, marginTop: 1 },
   advancePill: { backgroundColor: "rgba(16,185,129,0.12)", borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 },
   advancePillTxt: { fontSize: 10, fontWeight: "800", color: "#059669" },
   advanceLockHint: { fontSize: 11, color: H.textMuted, marginTop: 2, lineHeight: 15 },
@@ -759,14 +748,14 @@ export default function CollectorScreen({ navigation, route }) {
     { key: "overdue12", label: t("collector.filters.overdue12") },
     { key: "active", label: t("collector.filters.active") },
     { key: "inactive", label: t("collector.filters.inactive") },
-  ]), [t]);
+  ]), []);
 
   const SORTS = useMemo(() => ([
     { key: "overdue", label: t("collector.sorts.overdue") },
     { key: "pending_high", label: t("collector.sorts.pendingHigh") },
     { key: "address", label: t("collector.sorts.address") },
     { key: "name", label: t("collector.sorts.name") },
-  ]), [t]);
+  ]), []);
 
   useEffect(() => {
     (async () => {
@@ -857,10 +846,10 @@ export default function CollectorScreen({ navigation, route }) {
     return () => clearInterval(iv);
   }, [flushQueue]);
 
-  const onManualSync = () => {
+  const onManualSync = useCallback(() => {
     fetchMembers();
     flushQueue();
-  };
+  }, [fetchMembers, flushQueue]);
 
   // Pull-to-refresh for the main member list — re-fetches members and
   // flushes any queued offline payments in one gesture.
@@ -979,7 +968,7 @@ export default function CollectorScreen({ navigation, route }) {
     if (activeTab === "history") loadCashHistory();
   }, [activeTab, loadCashHistory]);
 
-  const resetForm = (defaultDate = new Date()) => {
+  const resetForm = useCallback((defaultDate = new Date()) => {
     setPaymentType("chanda");
     setAmount("");
     setMethod("cash");
@@ -993,9 +982,9 @@ export default function CollectorScreen({ navigation, route }) {
     setCollectedDate(defaultDate);
     setShowDate(false);
     setSelectedFund(null);
-  };
+  }, []);
 
-  const fetchAvailableMonths = async (memberId, silent = false) => {
+  const fetchAvailableMonths = useCallback(async (memberId, silent = false) => {
     if (!silent) setAvailableMonthsLoading(true);
     try {
       const res = await authApiFetch(`/chanda/available-months/${memberId}?future=12`);
@@ -1005,7 +994,7 @@ export default function CollectorScreen({ navigation, route }) {
       }
     } catch {}
     finally { setAvailableMonthsLoading(false); }
-  };
+  }, []);
 
   // Pull-to-refresh inside the payment sheet — re-fetches this member's
   // month breakdown from the server without closing the sheet.
@@ -1017,65 +1006,65 @@ export default function CollectorScreen({ navigation, route }) {
     } finally {
       setSheetRefreshing(false);
     }
-  }, [selected]);
+  }, [selected, fetchAvailableMonths]);
 
   const openModal = useCallback((item) => {
     resetForm(new Date());
     setSelected(item);
     fetchAvailableMonths(item.member.id);
+  }, [resetForm, fetchAvailableMonths]);
+
+  const closeModal = useCallback(() => { setSelected(null); resetForm(); }, [resetForm]);
+
+  const toggleMonth = useCallback((monthKey) => {
+    setSelectedMonthKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(monthKey)) next.delete(monthKey);
+      else next.add(monthKey);
+      return next;
+    });
   }, []);
 
-  const closeModal = useCallback(() => { setSelected(null); resetForm(); }, []);
+  // Keep `amount` in sync with the selected months from a single effect,
+  // instead of recomputing the same total by hand inside both toggleMonth
+  // and quickSelectMonths.
+  useEffect(() => {
+    const total = availableMonths
+      .filter(m => selectedMonthKeys.has(m.month))
+      .reduce((sum, m) => sum + m.remaining, 0);
+    setAmount(total > 0 ? String(Math.round(total)) : "");
+  }, [selectedMonthKeys, availableMonths]);
 
-  const toggleMonth = (monthKey, remaining) => {
+  const quickSelectMonths = useCallback((n) => {
     setSelectedMonthKeys(prev => {
-      const next = new Set(prev);
-      if (next.has(monthKey)) {
-        next.delete(monthKey);
-      } else {
-        next.add(monthKey);
-      }
-      // Recalculate total from currently selected months
-      const total = availableMonths
-        .filter(m => next.has(m.month))
-        .reduce((sum, m) => sum + m.remaining, 0);
-      setAmount(total > 0 ? String(Math.round(total)) : "");
-      return next;
-    });
-  };
-
-  const quickSelectMonths = (n) => {
-    const futureMonths = availableMonths.filter(m => !m.is_generated && m.remaining > 0);
-    const toSelect = futureMonths.slice(0, n);
-    setSelectedMonthKeys(prev => {
+      const futureMonths = availableMonths.filter(m => !m.is_generated && m.remaining > 0);
+      const toSelect = futureMonths.slice(0, n);
       const next = new Set(prev);
       toSelect.forEach(m => next.add(m.month));
-      const total = availableMonths.filter(m => next.has(m.month)).reduce((sum, m) => sum + m.remaining, 0);
-      setAmount(total > 0 ? String(Math.round(total)) : "");
       return next;
     });
-  };
+  }, [availableMonths]);
 
-  const getMonthlyAmt = () => {
+  const getMonthlyAmt = useCallback(() => {
     const cur = selected?.collections?.find((c) => c?.month === selectedMonth);
     const fb = selected?.collections?.[0];
     return Number(cur?.amount_due || fb?.amount_due || selected?.member?.monthly_amount || 0);
-  };
+  }, [selected, selectedMonth]);
 
-  const pickImage = () => {
+  const pickImage = useCallback(() => {
     launchImageLibrary({ mediaType: "photo" }, (res) => {
       if (!res.didCancel) setProofImage(res.assets?.[0]?.uri);
     });
-  };
+  }, []);
 
-  const uploadScreenshot = async () => {
+  const uploadScreenshot = useCallback(async () => {
     const form = new FormData();
     form.append("file", { uri: proofImage, type: "image/jpeg", name: "proof.jpg" });
     const res = await authApiFetch("/upload/screenshot", { method: "POST", body: form });
     return (await res.json()).url;
-  };
+  }, [proofImage]);
 
-  const doSubmitChanda = async (finalAmount, paymentToken) => {
+  const doSubmitChanda = useCallback(async (finalAmount, paymentToken) => {
     const months_list = Array.from(selectedMonthKeys).sort();
 
     const payload = {
@@ -1138,9 +1127,9 @@ export default function CollectorScreen({ navigation, route }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedMonthKeys, selected, method, transactionRef, collectedDate, notes, uploadScreenshot, refreshTodayTotals, closeModal, fetchMembers]);
 
-  const submitChandaPayment = () => {
+  const submitChandaPayment = useCallback(() => {
     const finalAmount = Number(String(amount || "").replace(/[^0-9.]/g, ""));
     if (!finalAmount) return Alert.alert(t("collector.alertEnterAmount"));
     if (method === "upi" && !proofImage) return Alert.alert(t("collector.alertUploadUpi"));
@@ -1152,9 +1141,9 @@ export default function CollectorScreen({ navigation, route }) {
     const token = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     setConfirmPayload({ finalAmount, months_list, rate, memberName: selected?.member?.name, token });
     setConfirmVisible(true);
-  };
+  }, [amount, method, proofImage, selectedMonthKeys, selected]);
 
-  const submitDonationPayment = async () => {
+  const submitDonationPayment = useCallback(async () => {
     const finalAmount = Number(String(amount || "").replace(/[^0-9.]/g, ""));
     if (!finalAmount) return Alert.alert(t("collector.alertEnterAmount"));
     if (method === "upi" && !proofImage) return Alert.alert(t("collector.alertUploadUpi"));
@@ -1188,14 +1177,14 @@ export default function CollectorScreen({ navigation, route }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [amount, method, proofImage, uploadScreenshot, selected, notes, paymentType, selectedFund, funds, refreshTodayTotals, closeModal, fetchMembers]);
 
-  const submitPayment = () => {
+  const submitPayment = useCallback(() => {
     if (paymentType === "chanda") return submitChandaPayment();
     if (paymentType === "donation") return submitDonationPayment();
     if (paymentType === "fund") return submitDonationPayment();
     return submitChandaPayment();
-  };
+  }, [paymentType, submitChandaPayment, submitDonationPayment]);
 
   const callFamily = useCallback((phone) => Linking.openURL(`tel:${phone}`).catch(() => {}), []);
   const navigateToFamily = useCallback((address) => {
@@ -1207,14 +1196,14 @@ export default function CollectorScreen({ navigation, route }) {
     if (!item?.member?.id) return;
     navigation.navigate("FamilyHistory", { familyId: item.member.id, familyName: item.member.name });
   }, [navigation]);
-  const openDatePicker = () => {
+  const openDatePicker = useCallback(() => {
     setShowDate(true);
-  };
+  }, []);
 
-  const { filtered, counts, pendingFamiliesCount } = useMemo(() => {
+  const { filtered, counts } = useMemo(() => {
     // Normalize: lowercase, strip hyphens and extra spaces so
     // "MM1001", "MM-1001", "mm 1001" all match each other.
-    const normalize = (s) => (s || "").toLowerCase().replace(/[-\s]+/g, "");
+    const normalize = (str) => (str || "").toLowerCase().replace(/[-\s]+/g, "");
     const q = normalize(search);
     const all = members.filter((m) => {
       if (selectedZone && m.member?.zone !== selectedZone) return false;
@@ -1268,10 +1257,14 @@ export default function CollectorScreen({ navigation, route }) {
       return 0;
     });
 
-    const pendingCount = all.filter((m) => getMemberStatus(m, selectedMonth).status !== "paid").length;
-
-    return { filtered: sorted, counts: cnt, pendingFamiliesCount: pendingCount };
+    return { filtered: sorted, counts: cnt };
   }, [members, search, filterStatus, sortBy, selectedMonth, selectedZone, selectedStreet]);
+
+  const renderMemberItem = useCallback(({ item }) => (
+    <MemberCard item={item} selectedMonth={selectedMonth} onPress={openModal} onCall={callFamily} onNavigate={navigateToFamily} onHistory={goToHistory} />
+  ), [selectedMonth, openModal, callFamily, navigateToFamily, goToHistory]);
+
+  const keyExtractorMember = useCallback((item) => String(item.member.id), []);
 
   if (!roleChecked) {
     return <View style={s.root}><StatusBar barStyle="dark-content" backgroundColor={H.bg} /></View>;
@@ -1451,10 +1444,8 @@ export default function CollectorScreen({ navigation, route }) {
       {activeTab === "collections" && (
         <FlatList
           data={filtered}
-          keyExtractor={(item) => String(item.member.id)}
-          renderItem={({ item }) => (
-            <MemberCard item={item} selectedMonth={selectedMonth} onPress={openModal} onCall={callFamily} onNavigate={navigateToFamily} onHistory={goToHistory} />
-          )}
+          keyExtractor={keyExtractorMember}
+          renderItem={renderMemberItem}
           contentContainerStyle={s.listContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
@@ -1608,40 +1599,34 @@ export default function CollectorScreen({ navigation, route }) {
                       />
                     </View>
 
-                    {paymentType === "chanda" && (() => {
-                      const selectedTotal = availableMonths
-                        .filter(m => selectedMonthKeys.has(m.month))
-                        .reduce((sum, m) => sum + m.remaining, 0);
-
-                      return (
-                        <View style={s.section}>
-                          {/* Chanda rate */}
-                          <View style={s.chandaRateRow}>
-                            <Text allowFontScaling={false} style={s.chandaRateLabel}>Monthly Chanda</Text>
-                            <Text allowFontScaling={false} style={s.chandaRateAmt}>₹{getMonthlyAmt()}</Text>
-                          </View>
-
-                          {/* Month allocation picker */}
-                          {availableMonthsLoading ? (
-                            <Text allowFontScaling={false} style={[s.secLabel, { marginTop: 12 }]}>Loading months…</Text>
-                          ) : (
-                            <MonthPicker
-                              months={availableMonths}
-                              selectedKeys={selectedMonthKeys}
-                              onToggle={toggleMonth}
-                              onQuickSelect={quickSelectMonths}
-                              advanceExpanded={advanceExpanded}
-                              setAdvanceExpanded={setAdvanceExpanded}
-                              customExpanded={customExpanded}
-                              setCustomExpanded={setCustomExpanded}
-                              monthlyRate={getMonthlyAmt()}
-                              totalOutstanding={availableMonths.filter(m => m.is_generated && m.remaining > 0).reduce((s, m) => s + m.remaining, 0)}
-                              pendingCount={availableMonths.filter(m => m.is_generated && m.remaining > 0).length}
-                            />
-                          )}
+                    {paymentType === "chanda" && (
+                      <View style={s.section}>
+                        {/* Chanda rate */}
+                        <View style={s.chandaRateRow}>
+                          <Text allowFontScaling={false} style={s.chandaRateLabel}>Monthly Chanda</Text>
+                          <Text allowFontScaling={false} style={s.chandaRateAmt}>₹{getMonthlyAmt()}</Text>
                         </View>
-                      );
-                    })()}
+
+                        {/* Month allocation picker */}
+                        {availableMonthsLoading ? (
+                          <Text allowFontScaling={false} style={[s.secLabel, { marginTop: 12 }]}>Loading months…</Text>
+                        ) : (
+                          <MonthPicker
+                            months={availableMonths}
+                            selectedKeys={selectedMonthKeys}
+                            onToggle={toggleMonth}
+                            onQuickSelect={quickSelectMonths}
+                            advanceExpanded={advanceExpanded}
+                            setAdvanceExpanded={setAdvanceExpanded}
+                            customExpanded={customExpanded}
+                            setCustomExpanded={setCustomExpanded}
+                            monthlyRate={getMonthlyAmt()}
+                            totalOutstanding={availableMonths.filter(m => m.is_generated && m.remaining > 0).reduce((sum, m) => sum + m.remaining, 0)}
+                            pendingCount={availableMonths.filter(m => m.is_generated && m.remaining > 0).length}
+                          />
+                        )}
+                      </View>
+                    )}
 
                     {paymentType === "fund" && fundsAvailable && (
                       <View style={s.section}>
@@ -1729,7 +1714,7 @@ export default function CollectorScreen({ navigation, route }) {
                   {paymentType === "chanda" && (
                     <StickySelectionBar
                       count={selectedMonthKeys.size}
-                      total={availableMonths.filter(m => selectedMonthKeys.has(m.month)).reduce((s, m) => s + m.remaining, 0)}
+                      total={availableMonths.filter(m => selectedMonthKeys.has(m.month)).reduce((sum, m) => sum + m.remaining, 0)}
                       onContinue={submitChandaPayment}
                       loading={loading}
                     />
@@ -1917,7 +1902,6 @@ const s = StyleSheet.create({
   syncBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: H.card, borderWidth: 1, borderColor: H.cardBorder, borderRadius: 20, paddingHorizontal: 11, paddingVertical: 6 },
   syncDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: H.green },
   syncTxt: { fontSize: 10.5, color: H.textDark, fontWeight: "700" },
-  cacheTime: { fontSize: 9.5, color: H.textMuted, paddingHorizontal: 16, marginBottom: 6 },
 
   // ── Compact month pill + search, sharing one row ──────────────────────
   monthSearchRow: { flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 16, marginBottom: 6 },
@@ -1932,20 +1916,9 @@ const s = StyleSheet.create({
   sortChip: { backgroundColor: H.card, borderWidth: 1, borderColor: H.cardBorder, borderRadius: 99, paddingHorizontal: 12, paddingVertical: 7, marginRight: 16 },
   sortChipTxt: { color: H.gold, fontSize: 11, fontWeight: "700" },
 
-  monthRow: { flexDirection: "row", alignItems: "center", backgroundColor: H.card, borderRadius: 11, borderWidth: 1, borderColor: H.cardBorder, marginHorizontal: 16, marginBottom: 6, overflow: "hidden" },
-  mArrow: { width: 40, alignItems: "center", justifyContent: "center", paddingVertical: 7 },
-  mArrowTxt: { color: H.gold, fontSize: 20, fontWeight: "300" },
-  mCenter: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderLeftWidth: 1, borderRightWidth: 1, borderColor: H.cardBorder, paddingVertical: 7 },
-  fetchDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: H.gold, opacity: 0.8 },
-  mValue: { color: H.textDark, fontSize: 12.5, fontWeight: "700" },
-
-  searchBox: { flexDirection: "row", alignItems: "center", backgroundColor: H.card, borderRadius: 11, borderWidth: 1, borderColor: H.cardBorder, paddingHorizontal: 12, marginHorizontal: 16, marginBottom: 6 },
   sInput: { flex: 1, color: H.textDark, fontSize: 13, paddingVertical: Platform.OS === "android" ? 8 : 10 },
   clearTxt: { color: H.textMuted, fontSize: 12, paddingLeft: 8 },
 
-  filterScroll: { marginBottom: 6 },
-  sortRow: { paddingHorizontal: 16, marginBottom: 2 },
-  sortTxt: { color: H.gold, fontSize: 12, fontWeight: "700" },
   sortMenu: { marginHorizontal: 16, backgroundColor: H.card, borderRadius: 12, borderWidth: 1, borderColor: H.cardBorder, marginTop: 6, overflow: "hidden" },
   sortItem: { paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: H.cardBorder },
   sortItemTxt: { fontSize: 13, color: H.textDark },
@@ -1969,7 +1942,6 @@ const s = StyleSheet.create({
   overdueBadge: { alignSelf: "flex-start", backgroundColor: H.warnDim, borderRadius: 9, paddingHorizontal: 9, paddingVertical: 5, marginTop: 8, maxWidth: "100%" },
   overdueBadgeRed: { backgroundColor: "#FEE8E8" },
   overdueBadgeTxt: { color: H.warn, fontSize: 11, fontWeight: "800" },
-  collectingForTxt: { color: H.textMuted, fontSize: 10.5, marginTop: 5, fontStyle: "italic" },
   badgeRow: { flexDirection: "row", gap: 6, marginTop: 8 },
   donationBadge: { backgroundColor: H.greenDim, borderRadius: 9, paddingHorizontal: 9, paddingVertical: 4 },
   donationBadgeTxt: { color: H.green, fontSize: 10.5, fontWeight: "700" },
@@ -2020,25 +1992,10 @@ const s = StyleSheet.create({
   section: { marginTop: 12, marginBottom: 2 },
   secLabel: { color: H.textMuted, fontSize: 10, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8, fontWeight: "700" },
   pillRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  preview: { backgroundColor: "rgba(201,168,76,0.1)", borderRadius: 9, padding: 9, marginTop: 10, borderWidth: 1, borderColor: "rgba(201,168,76,0.2)" },
-  previewTxt: { color: H.goldDeep, fontSize: 11, lineHeight: 17 },
 
   chandaRateRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "rgba(201,168,76,0.08)", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, marginBottom: 10, borderWidth: 1, borderColor: "rgba(201,168,76,0.2)" },
   chandaRateLabel: { color: H.goldDeep, fontSize: 12, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 },
   chandaRateAmt: { color: H.goldDeep, fontSize: 22, fontWeight: "900" },
-
-  pendingMonthsBox: { backgroundColor: "rgba(161,58,58,0.06)", borderRadius: 10, padding: 10, marginBottom: 6, borderWidth: 1, borderColor: "rgba(161,58,58,0.14)" },
-  pendingMonthsLabel: { color: H.warn, fontSize: 10, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.8 },
-  pendingMonthsTotal: { color: H.warn, fontSize: 12, fontWeight: "800" },
-  pendingMonthsList: { color: H.textDark, fontSize: 12, fontWeight: "600", marginTop: 2, lineHeight: 18 },
-
-  willCoverBox: { backgroundColor: "rgba(15,92,76,0.07)", borderRadius: 10, padding: 10, marginTop: 10, borderWidth: 1, borderColor: "rgba(15,92,76,0.18)" },
-  willCoverLabel: { color: H.green, fontSize: 10, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.8 },
-  monthChip: { backgroundColor: "rgba(15,92,76,0.1)", borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
-  monthChipTxt: { color: H.green, fontSize: 11, fontWeight: "700" },
-
-  overpayWarn: { backgroundColor: "rgba(192,71,58,0.08)", borderRadius: 10, padding: 10, marginTop: 10, borderWidth: 1, borderColor: "rgba(192,71,58,0.2)" },
-  overpayWarnTxt: { color: H.error, fontSize: 12, fontWeight: "700", lineHeight: 18 },
 
   upiCard: { marginTop: 14, backgroundColor: H.card, borderRadius: 13, borderWidth: 1, borderColor: H.cardBorder, padding: 13 },
   upiInner: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 2 },
@@ -2062,13 +2019,6 @@ const s = StyleSheet.create({
   submitWrap: { marginTop: 20, marginBottom: 6 },
   submitBtn: { backgroundColor: H.gold, borderRadius: 13, paddingVertical: 16, alignItems: "center" },
   submitBtnTxt: { color: H.headerDeep, fontSize: 15, fontWeight: "800" },
-
-  zoneRow: { backgroundColor: H.bg, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: H.cardBorder },
-  zoneScroll: { paddingHorizontal: 12, gap: 6 },
-  zonePill: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, backgroundColor: H.card, borderWidth: 1, borderColor: H.cardBorder },
-  zonePillActive: { backgroundColor: H.gold, borderColor: H.gold },
-  zonePillTxt: { fontSize: 12, fontWeight: "600", color: H.textMuted },
-  zonePillTxtActive: { color: H.headerDeep },
 
   tabBar: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: H.cardBorder, marginHorizontal: 0, backgroundColor: H.bg },
   tabItem: { flex: 1, paddingVertical: 9, alignItems: "center", borderBottomWidth: 2, borderBottomColor: "transparent" },

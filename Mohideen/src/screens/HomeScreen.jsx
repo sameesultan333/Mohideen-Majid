@@ -28,7 +28,7 @@
 
 import React, { useEffect, useState, useRef, useCallback, useMemo, memo } from "react";
 import { useFocusEffect } from "@react-navigation/native";
-import { View, Text, StyleSheet, ActivityIndicator, StatusBar, Animated, Platform, Dimensions, Vibration, PermissionsAndroid } from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator, StatusBar, Animated, Platform, Dimensions, Vibration, PermissionsAndroid, Alert, NativeModules } from "react-native";
 import AnimatedPressable from "../components/AnimatedPressable";
 import messaging, {
   getToken as getFcmToken,
@@ -55,8 +55,43 @@ import { logger } from "../utils/logger";
 const { width: SW } = Dimensions.get("window");
 const PRAYER_CACHE_KEY = "cached_prayer_timings";
 const ANNOUNCEMENTS_CACHE_KEY = "cached_announcements";
+const EXACT_ALARM_PROMPT_KEY = "exact_alarm_prompt_shown";
 const IOS = Platform.OS === "ios";
 const STATUSBAR_HEIGHT = IOS ? 44 : (StatusBar.currentHeight || 0) + 4;
+
+// Android 13+ only grants SCHEDULE_EXACT_ALARM via a manual Settings toggle —
+// there's no runtime permission dialog for it. Without it, the offline
+// Iqamah/Adhan alarm schedule (PrayerNotificationService) silently degrades
+// to an inexact alarm that Doze can defer well past the actual prayer time,
+// so we ask once, on first Home mount, with a direct link to the toggle.
+async function ensureExactAlarmPermission() {
+  if (Platform.OS !== "android" || !NativeModules.IqamahScheduler?.canScheduleExactAlarms) return;
+  try {
+    const alreadyShown = await AsyncStorage.getItem(EXACT_ALARM_PROMPT_KEY);
+    if (alreadyShown) return;
+
+    const canSchedule = await NativeModules.IqamahScheduler.canScheduleExactAlarms();
+    if (canSchedule) {
+      await AsyncStorage.setItem(EXACT_ALARM_PROMPT_KEY, "1");
+      return;
+    }
+
+    Alert.alert(
+      "Enable Reliable Prayer Alerts",
+      "To make sure Adhan and Iqamah notifications fire exactly on time — even with no internet — please allow this app to schedule exact alarms.",
+      [
+        { text: "Not Now", style: "cancel", onPress: () => AsyncStorage.setItem(EXACT_ALARM_PROMPT_KEY, "1") },
+        {
+          text: "Enable",
+          onPress: () => {
+            AsyncStorage.setItem(EXACT_ALARM_PROMPT_KEY, "1");
+            NativeModules.IqamahScheduler.requestExactAlarmPermission();
+          },
+        },
+      ],
+    );
+  } catch (_) {}
+}
 
 const H = {
   bg: "#FBF9F4",
@@ -1084,6 +1119,7 @@ export default function HomeScreen({ navigation, route }) {
       try {
         await PrayerNotificationService.initialize();
         await PrayerNotificationService.rescheduleOnLaunch();
+        await ensureExactAlarmPermission();
       } catch (_) {}
     })();
   }, []);

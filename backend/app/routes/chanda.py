@@ -20,6 +20,7 @@ from app.websocket_manager import manager
 from app.routes.finance import write_audit, write_ledger
 from app.rate_limit import rate_limit
 from app.utils.fcm import notify_user
+from app.utils.payment_notify import notify_chanda_payment
 
 router = APIRouter(prefix="/chanda", tags=["Chanda"])
 
@@ -350,6 +351,7 @@ async def collect_payment(
                 "payload": schemas.PaymentOut.model_validate(payment).model_dump(exclude_none=True),
             },
         )
+    notify_chanda_payment(db, payment)
     return payment
 
 
@@ -414,14 +416,7 @@ def verify_payment(
             },
         )
     # Personal push to the user who submitted this payment
-    if payment.paid_by_user_id:
-        months = ", ".join(payment.covered_months or []) or "this month"
-        notify_user(
-            db, payment.paid_by_user_id,
-            title="✅ Payment Approved",
-            body=f"Your payment of ₹{payment.amount:.0f} has been approved. Months covered: {months}.",
-            data={"type": "payment_approved", "payment_id": str(payment.id), "receipt_id": payment.receipt_id or ""},
-        )
+    notify_chanda_payment(db, payment)
     return payment
 
 
@@ -593,6 +588,7 @@ def admin_record_payment(
             {"type": "receipt_update",
              "payload": schemas.PaymentOut.model_validate(payment).model_dump(exclude_none=True)},
         )
+    notify_chanda_payment(db, payment)
 
     return payment
 

@@ -5,6 +5,7 @@ from typing import Optional
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from app import models, schemas
@@ -16,6 +17,7 @@ from app.rate_limit import rate_limit
 from app.websocket_manager import manager
 from app.routes.finance import write_ledger
 from app.utils.fcm import notify_role
+from app.utils.payment_notify import notify_donation_payment
 
 router = APIRouter(prefix="/user", tags=["User Payment"])
 
@@ -251,6 +253,7 @@ async def user_pay(
              + (f" to {fund_obj.name}." if resolved_fund_id and fund_obj else "."),
         data={"type": "donation_created", "donation_id": str(donation.id)},
     )
+    notify_donation_payment(db, donation)
     return {
         "message": "Donation submitted",
         "donation_id": donation.id,
@@ -452,9 +455,15 @@ def get_user_payments(
             for payment in payments
         ]
 
+    # Include donations recorded directly by the user AND donations a collector/
+    # admin recorded against this user's family head — both are "their" history.
+    donation_filter = models.Donation.user_id == db_user.id
+    if head:
+        donation_filter = or_(donation_filter, models.Donation.head_id == head.id)
+
     donations = (
         db.query(models.Donation)
-        .filter(models.Donation.user_id == db_user.id)
+        .filter(donation_filter)
         .order_by(models.Donation.created_at.desc())
         .all()
     )

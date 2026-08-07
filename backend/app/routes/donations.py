@@ -12,6 +12,7 @@ from app.security import require_admin, require_collector, require_superadmin
 from app.websocket_manager import manager
 from app.routes.finance import write_audit, write_ledger, invalidate_dashboard_cache
 from app.utils.payment_ledger import generate_receipt_id
+from app.utils.payment_notify import notify_donation_payment
 from app.rate_limit import rate_limit
 
 router = APIRouter(prefix="/donations", tags=["Donations"])
@@ -263,6 +264,7 @@ async def add_donation(
         "fund_id": donation.fund_id,
     })
     manager.publish_sync("finance", "dashboard_updated", {})
+    notify_donation_payment(db, donation)
 
     return _build_donation_out(donation)
 
