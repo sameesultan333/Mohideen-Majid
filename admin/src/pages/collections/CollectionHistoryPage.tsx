@@ -6,10 +6,11 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import {
   Banknote, Image as ImageIcon, X, Search,
   ChevronLeft, ChevronRight, RefreshCw, Calendar, SlidersHorizontal,
-  TrendingDown, Gift, WifiOff, Copy, CheckCheck, Wallet,
+  TrendingDown, Gift, WifiOff, Copy, CheckCheck, Wallet, RotateCcw,
 } from "lucide-react";
 import { COLORS, TYPOGRAPHY } from "../../theme/colors";
 import api from "../../api/axios";
+import { requestPaymentRollback } from "../../api/chanda";
 
 const SURFACE_HOVER = "#F7F9F8";
 
@@ -67,6 +68,8 @@ interface TimelineEntry {
   notes: string | null;
   covered_months: string[];
   status: string;
+  rollback_status?: string;
+  payment_source?: string;
   description: string;
   purpose?: string;
   category?: string;
@@ -167,6 +170,8 @@ const TYPE_META = {
 function DetailPanel({ entry, onClose }: { entry: TimelineEntry | null; onClose: () => void }) {
   const BACKEND = (import.meta as any).env?.VITE_BACKEND_URL || "";
   const [lightbox, setLightbox] = useState<string | null>(null);
+  const [rollbackReason, setRollbackReason] = useState("");
+  const [submittingRollback, setSubmittingRollback] = useState(false);
   const isMobile = useMediaQuery("(max-width: 640px)");
 
   if (!entry) return null;
@@ -175,6 +180,21 @@ function DetailPanel({ entry, onClose }: { entry: TimelineEntry | null; onClose:
   const meta = TYPE_META[entry.entry_type];
   const pad = isMobile ? 16 : 24;
   const isExpense = entry.entry_type === "expense";
+
+  const handleRollback = async () => {
+    if (!entry || entry.entry_type !== "chanda") return;
+    if (!entry.id) return;
+    setSubmittingRollback(true);
+    try {
+      await requestPaymentRollback(entry.id, rollbackReason.trim() || undefined);
+      setRollbackReason("");
+      onClose();
+    } catch {
+      alert("Unable to submit rollback request.");
+    } finally {
+      setSubmittingRollback(false);
+    }
+  };
 
   const detailRows = [
     entry.entry_type === "chanda" && { label: "Source",            value: entry.created_by !== "user" ? "Collector" : "Self (mobile app)" },
@@ -272,6 +292,23 @@ function DetailPanel({ entry, onClose }: { entry: TimelineEntry | null; onClose:
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {/* Rollback action for verified chanda payments */}
+          {entry.entry_type === "chanda" && entry.status === "verified" && entry.rollback_status !== "pending" && (
+            <div style={{ paddingTop: 18, paddingBottom: 12 }}>
+              <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 8 }}>Rollback request</div>
+              <textarea
+                value={rollbackReason}
+                onChange={e => setRollbackReason(e.target.value)}
+                placeholder="Reason for rollback (optional)"
+                rows={3}
+                style={{ width: "100%", border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "10px 12px", fontSize: 12, resize: "vertical", boxSizing: "border-box" }}
+              />
+              <button disabled={submittingRollback} onClick={handleRollback} style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 12px", borderRadius: 8, background: "#F5F3FF", color: "#7C3AED", border: "1px solid #DDD6FE", cursor: submittingRollback ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 700 }}>
+                <RotateCcw size={13} /> {submittingRollback ? "Submitting…" : "Request rollback"}
+              </button>
             </div>
           )}
 

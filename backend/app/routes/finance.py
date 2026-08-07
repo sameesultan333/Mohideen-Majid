@@ -195,6 +195,10 @@ def finance_dashboard(
         models.PaymentEntry.created_by == "user",
     ).count()
 
+    pending_rollbacks = db.query(models.PaymentRollbackRequest).filter(
+        models.PaymentRollbackRequest.status == "pending",
+    ).count()
+
     # ── Time-period collection totals ─────────────────────────
     now_dt    = utc_now().replace(tzinfo=None)
     today     = now_dt.date()
@@ -310,6 +314,7 @@ def finance_dashboard(
         },
         "balance": balance,
         "pending_verification": pending_verification,
+        "pending_rollbacks": pending_rollbacks,
         "recent_payments": [
             {
                 "id": p.id,
@@ -1902,7 +1907,44 @@ def get_notifications(
             "can_act": can_act,
         })
 
-    # ── 5. Recent self-service account deletions (last 24 h) ─────
+    # ── 5. Pending rollback approvals ──────────────────────────
+    pending_rollbacks = (
+        db.query(models.PaymentRollbackRequest)
+        .options(joinedload(models.PaymentRollbackRequest.payment_entry), joinedload(models.PaymentRollbackRequest.requested_by))
+        .filter(models.PaymentRollbackRequest.status == "pending")
+        .order_by(models.PaymentRollbackRequest.requested_at.desc())
+        .all()
+    )
+    for req in pending_rollbacks:
+        payment = req.payment_entry
+        head = payment.head if payment else None
+        results.append({
+            "id": f"rollback_{req.id}",
+            "kind": "rollback_approval",
+            "ref_id": req.id,
+            "title": head.name if head else (payment.receipt_id or "Rollback request"),
+            "subtitle": f"{payment.receipt_id or 'Payment'} · ₹{float(payment.amount or 0):,.0f}" + (f" · {req.reason}" if req.reason else ""),
+            "amount": float(payment.amount or 0),
+            "method": payment.method or "cash",
+            "proof_image": payment.proof_image,
+            "payer_name": head.name if head else None,
+            "paid_by_name": req.requested_by.name if req.requested_by else None,
+            "head_id": payment.head_id if payment else None,
+            "covered_months": payment.covered_months or [],
+            "receipt_id": payment.receipt_id,
+            "created_at": req.requested_at.isoformat() + "Z" if req.requested_at else None,
+            "actionable": True,
+            "can_act": True,
+            "member_name": head.name if head else None,
+            "chanda_no": head.chanda_no if head else None,
+            "payment_source": payment.payment_source or "app",
+            "requested_by": req.requested_by.name if req.requested_by else None,
+            "reason": req.reason,
+            "request_id": req.id,
+            "payment_id": payment.id if payment else None,
+        })
+
+    # ── 6. Recent self-service account deletions (last 24 h) ─────
     # Informational only (nothing to action) — same shape as recent_collection/
     # recent_donation. Sourced from the audit trail rather than a new table,
     # since USER_ACCOUNT_DELETED is already logged there by /auth/delete-account.
@@ -1940,7 +1982,7 @@ def get_notifications(
         })
 
     # Sort: pending_verification first, then expense_approval, then recent
-    kind_order = {"pending_verification": 0, "expense_approval": 1, "recent_collection": 2, "recent_donation": 2, "account_deletion": 2}
+    kind_order = {"pending_verification": 0, "expense_approval": 1, "rollback_approval": 1, "recent_collection": 2, "recent_donation": 2, "account_deletion": 2}
     results.sort(key=lambda x: (kind_order.get(x["kind"], 9), x.get("created_at") or ""))
     return results
 
@@ -2128,6 +2170,8 @@ def get_finance_timeline(
                                       (p.covered_months[-1] > india_month_key(p.collected_at)
                                        if p.covered_months else False)),
                 "status":        p.status,
+                "rollback_status": p.rollback_status,
+                "payment_source": p.payment_source,
                 "description":   _build_chanda_description(p, name),
             })
 

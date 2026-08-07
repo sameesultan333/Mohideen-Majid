@@ -58,6 +58,7 @@ function useMediaQuery(query: string) {
 const KIND_META: Record<NotifItem["kind"], { label: string; dot: string; icon: typeof Receipt }> = {
   pending_verification: { label: "Payment",   dot: "#D94A3A", icon: Receipt },
   expense_approval:     { label: "Expense",   dot: "#B07A1E", icon: Wallet },
+  rollback_approval:    { label: "Rollback",  dot: "#7C3AED", icon: RefreshCw },
   recent_collection:    { label: "Collected", dot: COLORS.primary, icon: CheckCircle },
   recent_donation:      { label: "Donation",  dot: "#6B3FA0", icon: Wallet },
   account_deletion:     { label: "Account Deleted", dot: "#5B6660", icon: UserX },
@@ -72,6 +73,8 @@ function NotifRow({
   onVerify,
   onReject,
   onApprove,
+  onApproveRollback,
+  onRejectRollback,
   onLightbox,
 }: {
   item: NotifItem;
@@ -81,6 +84,8 @@ function NotifRow({
   onVerify: (id: number) => void;
   onReject: (id: number) => void;
   onApprove: (id: number) => void;
+  onApproveRollback: (id: number) => void;
+  onRejectRollback: (id: number) => void;
   onLightbox: (url: string) => void;
 }) {
   const meta  = KIND_META[item.kind];
@@ -192,6 +197,30 @@ function NotifRow({
                   Another admin must approve
                 </span>
               )}
+              {item.kind === "rollback_approval" && (
+                <>
+                  <button disabled={busy} onClick={() => onApproveRollback(item.request_id || 0)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 4,
+                      background: "#F5F3FF", color: "#7C3AED",
+                      border: "1px solid #DDD6FE", borderRadius: 7,
+                      padding: "5px 11px", fontSize: 11, fontWeight: 700, cursor: busy ? "not-allowed" : "pointer",
+                      opacity: busy ? 0.5 : 1,
+                    }}>
+                    <CheckCircle size={11} /> {busy ? "…" : "Approve"}
+                  </button>
+                  <button disabled={busy} onClick={() => onRejectRollback(item.request_id || 0)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 4,
+                      background: COLORS.dangerLight, color: COLORS.danger,
+                      border: `1px solid ${COLORS.danger}44`, borderRadius: 7,
+                      padding: "5px 11px", fontSize: 11, fontWeight: 700, cursor: busy ? "not-allowed" : "pointer",
+                      opacity: busy ? 0.5 : 1,
+                    }}>
+                    <XCircle size={11} /> Reject
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -206,7 +235,7 @@ function NotifRow({
 // viewport. Desktop keeps the original anchored dropdown under the bell.
 function NotificationPanel({ onClose }: { onClose(): void }) {
   const { items, unreadIds, loading, actioning, markAllRead, refresh,
-          verifyPay, rejectPay, approveExpense } = useNotifications();
+          verifyPay, rejectPay, approveExpense, approveRollback, rejectRollback } = useNotifications();
   const navigate = useNavigate();
   const isMobile = useMediaQuery("(max-width: 640px)");
   const [lightbox, setLightbox] = useState<string | null>(null);
@@ -225,6 +254,7 @@ function NotificationPanel({ onClose }: { onClose(): void }) {
   const filtered = filter === "all" ? items : items.filter(n => n.kind === filter);
   const pendingCount  = items.filter(n => n.kind === "pending_verification").length;
   const expenseCount  = items.filter(n => n.kind === "expense_approval").length;
+  const rollbackCount = items.filter(n => n.kind === "rollback_approval").length;
   const recentCount   = items.filter(n => n.kind === "recent_collection").length;
   const donationCount = items.filter(n => n.kind === "recent_donation").length;
 
@@ -305,6 +335,12 @@ function NotificationPanel({ onClose }: { onClose(): void }) {
                 Expenses ({expenseCount})
               </button>
             )}
+            {rollbackCount > 0 && (
+              <button style={TAB_STYLE(filter === "rollback_approval", "#7C3AED")}
+                onClick={() => setFilter("rollback_approval")}>
+                Rollbacks ({rollbackCount})
+              </button>
+            )}
             {recentCount > 0 && (
               <button style={TAB_STYLE(filter === "recent_collection", COLORS.primary)}
                 onClick={() => setFilter("recent_collection")}>
@@ -346,6 +382,8 @@ function NotificationPanel({ onClose }: { onClose(): void }) {
               onVerify={() => verifyPay(item.ref_id)}
               onReject={() => rejectPay(item.ref_id)}
               onApprove={() => approveExpense(item.ref_id)}
+              onApproveRollback={() => approveRollback(item.request_id || 0)}
+              onRejectRollback={() => rejectRollback(item.request_id || 0)}
               onLightbox={setLightbox}
             />
           ))}

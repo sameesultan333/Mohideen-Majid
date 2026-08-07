@@ -9,6 +9,7 @@ from app import models, schemas
 from app.database import SessionLocal
 from app.security import require_admin, require_collector
 from app.utils.payment_ledger import (
+    apply_coverage_to_collections,
     apply_coverage_to_existing_collections,
     build_coverage_map,
     generate_receipt_id,
@@ -454,6 +455,146 @@ def reject_payment(
             data={"type": "payment_rejected", "payment_id": str(payment.id)},
         )
     return payment
+
+
+@router.post("/rollback-request")
+def request_payment_rollback(
+    payload: dict,
+    db: Session = Depends(get_db),
+    user=Depends(require_admin),
+):
+    payment_id = payload.get("payment_id")
+    reason = payload.get("reason")
+    if not payment_id:
+        raise HTTPException(400, "payment_id is required")
+
+    payment = db.query(models.PaymentEntry).filter_by(id=payment_id).first()
+    if not payment:
+        raise HTTPException(404, "Payment not found")
+    if payment.status != "verified":
+        raise HTTPException(400, "Only verified payments can be rolled back")
+
+    existing = (
+        db.query(models.PaymentRollbackRequest)
+        .filter_by(payment_entry_id=payment_id, status="pending")
+        .first()
+    )
+    if existing:
+        raise HTTPException(409, "A pending rollback request already exists")
+
+    request = models.PaymentRollbackRequest(
+        payment_entry_id=payment_id,
+        requested_by_id=int(user.get("sub")),
+        reason=reason,
+        original_amount=payment.amount,
+        original_receipt_id=payment.receipt_id,
+        original_covered_months=payment.covered_months,
+        payment_source=payment.payment_source,
+    )
+    db.add(request)
+    payment.rollback_status = "pending"
+    db.commit()
+    db.refresh(request)
+
+    admin_users = db.query(models.User).filter(models.User.role.in_(["admin", "superadmin"]), models.User.is_active.is_(True)).all()
+    for admin_user in admin_users:
+        notify_user(
+            db,
+            admin_user.id,
+            title="🔄 Rollback Requested",
+            body=f"{payment.receipt_id or 'Payment'} needs approval for rollback",
+            data={
+                "type": "rollback_request",
+                "request_id": str(request.id),
+                "payment_id": str(payment.id),
+            },
+        )
+
+    manager.publish_sync("finance", "rollback_requested", {"request_id": request.id, "payment_id": payment.id})
+    manager.publish_sync("finance", "dashboard_updated", {})
+    return {"message": "Rollback request submitted", "request_id": request.id}
+
+
+@router.post("/rollback-approve/{request_id}")
+def approve_payment_rollback(
+    request_id: int,
+    payload: dict | None = None,
+    db: Session = Depends(get_db),
+    user=Depends(require_admin),
+):
+    request = db.query(models.PaymentRollbackRequest).filter_by(id=request_id).first()
+    if not request:
+        raise HTTPException(404, "Rollback request not found")
+    if request.status != "pending":
+        raise HTTPException(400, "Rollback request is not pending")
+
+    payment = db.query(models.PaymentEntry).filter_by(id=request.payment_entry_id).first()
+    if not payment:
+        raise HTTPException(404, "Payment not found")
+
+    head = db.query(models.ApprovedHead).filter_by(id=payment.head_id).first()
+    if not head:
+        raise HTTPException(404, "Head not found")
+
+    if payment.purpose == "Monthly Chanda" and payment.coverage_map:
+        collections = (
+            db.query(models.ChandaCollection)
+            .filter(models.ChandaCollection.head_id == head.id)
+            .filter(models.ChandaCollection.month.in_(list(payment.coverage_map.keys())))
+            .all()
+        )
+        apply_coverage_to_collections(collections, payment.coverage_map, reverse=True)
+
+    payment.status = "rejected"
+    payment.rollback_status = "approved"
+    request.status = "approved"
+    request.approved_by_id = int(user.get("sub"))
+    request.approved_at = utc_now_naive()
+    request.decision_note = (payload or {}).get("decision_note")
+
+    write_audit(
+        db, "payment_entries", payment.id, "rollback_approve",
+        new_values={"status": "rejected", "rollback_status": "approved"},
+        performed_by_id=int(user.get("sub")),
+    )
+    db.commit()
+    manager.publish_sync("finance", "rollback_approved", {"request_id": request.id, "payment_id": payment.id})
+    manager.publish_sync("finance", "dashboard_updated", {})
+    return {"message": "Rollback approved"}
+
+
+@router.post("/rollback-reject/{request_id}")
+def reject_payment_rollback(
+    request_id: int,
+    payload: dict | None = None,
+    db: Session = Depends(get_db),
+    user=Depends(require_admin),
+):
+    request = db.query(models.PaymentRollbackRequest).filter_by(id=request_id).first()
+    if not request:
+        raise HTTPException(404, "Rollback request not found")
+    if request.status != "pending":
+        raise HTTPException(400, "Rollback request is not pending")
+
+    payment = db.query(models.PaymentEntry).filter_by(id=request.payment_entry_id).first()
+    if not payment:
+        raise HTTPException(404, "Payment not found")
+
+    payment.rollback_status = "rejected"
+    request.status = "rejected"
+    request.approved_by_id = int(user.get("sub"))
+    request.approved_at = utc_now_naive()
+    request.decision_note = (payload or {}).get("decision_note")
+
+    write_audit(
+        db, "payment_entries", payment.id, "rollback_reject",
+        new_values={"rollback_status": "rejected"},
+        performed_by_id=int(user.get("sub")),
+    )
+    db.commit()
+    manager.publish_sync("finance", "rollback_rejected", {"request_id": request.id, "payment_id": payment.id})
+    manager.publish_sync("finance", "dashboard_updated", {})
+    return {"message": "Rollback rejected"}
 
 
 @router.post("/admin-record", response_model=schemas.PaymentOut)

@@ -105,6 +105,10 @@ def _create_historical_records(db: Session, head: models.ApprovedHead, payments:
                 receipt_id=generate_receipt_id(db, prefix="CH", created_at=now),
                 purpose="Monthly Chanda", months_covered=1,
                 covered_months=[month_key], coverage_map={month_key: amount_paid},
+                payment_source="import",
+                receipt_status="historical_import",
+                rollback_status=None,
+                notes="Historical import payment",
             )
             db.add(payment)
             db.flush()

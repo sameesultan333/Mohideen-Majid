@@ -315,6 +315,9 @@ class PaymentEntry(Base):
     discount_amount       = Column(Float, default=0, nullable=True)
     discount_reason       = Column(String, nullable=True)
     payment_token         = Column(String, unique=True, nullable=True)  # idempotency key
+    payment_source        = Column(String, nullable=True, default="app")  # app | import
+    receipt_status        = Column(String, nullable=True)  # active | historical_import
+    rollback_status       = Column(String, nullable=True, default=None)  # pending | approved | rejected
 
     # Cash-submission tracking — which collector physically collected this,
     # and which submission (if any) it has been bundled/locked into.
@@ -376,6 +379,28 @@ class Expense(Base):
 # ─────────────────────────────────────────────────────────────
 # UNIFIED RECEIPT
 # ─────────────────────────────────────────────────────────────
+
+class PaymentRollbackRequest(Base):
+    __tablename__ = "payment_rollback_requests"
+
+    id                  = Column(Integer, primary_key=True, index=True)
+    payment_entry_id    = Column(Integer, ForeignKey("payment_entries.id"), nullable=False, index=True)
+    requested_by_id     = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    requested_at        = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    reason              = Column(Text, nullable=True)
+    status              = Column(String, nullable=False, default="pending", index=True)  # pending | approved | rejected
+    approved_by_id      = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    approved_at         = Column(DateTime, nullable=True)
+    decision_note       = Column(Text, nullable=True)
+    original_amount     = Column(Float, nullable=True)
+    original_receipt_id = Column(String, nullable=True)
+    original_covered_months = Column(JSON, nullable=True)
+    payment_source      = Column(String, nullable=True)
+
+    payment_entry = relationship("PaymentEntry", foreign_keys=[payment_entry_id])
+    requested_by  = relationship("User", foreign_keys=[requested_by_id])
+    approved_by   = relationship("User", foreign_keys=[approved_by_id])
+
 
 class Receipt(Base):
     """

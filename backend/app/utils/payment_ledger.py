@@ -151,6 +151,27 @@ def build_coverage_map(
     return coverage_map, remaining
 
 
+def apply_coverage_to_collections(
+    collections: list[models.ChandaCollection],
+    coverage_map: dict[str, float],
+    *,
+    reverse: bool = False,
+) -> None:
+    if not coverage_map:
+        return
+
+    for collection in collections:
+        allocation = round(float(coverage_map.get(collection.month, 0.0)), 2)
+        if allocation <= 0:
+            continue
+        current_paid = round(float(collection.total_paid or 0), 2)
+        if reverse:
+            collection.total_paid = round(max(current_paid - allocation, 0.0), 2)
+        else:
+            collection.total_paid = round(min(float(collection.amount_due or 0), current_paid + allocation), 2)
+        set_collection_status(collection)
+
+
 def apply_coverage_to_existing_collections(
     db: Session,
     head_id: int,
@@ -165,12 +186,7 @@ def apply_coverage_to_existing_collections(
         .filter(models.ChandaCollection.month.in_(list(coverage_map.keys())))
         .all()
     )
-    for collection in collections:
-        allocation = round(float(coverage_map.get(collection.month, 0.0)), 2)
-        if allocation <= 0:
-            continue
-        collection.total_paid = round(min(float(collection.amount_due), float(collection.total_paid or 0) + allocation), 2)
-        set_collection_status(collection)
+    apply_coverage_to_collections(collections, coverage_map)
 
 
 def sync_generated_month(db: Session, collection: models.ChandaCollection) -> None:

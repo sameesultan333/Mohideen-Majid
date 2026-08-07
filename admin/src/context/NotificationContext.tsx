@@ -9,7 +9,7 @@ import {
 } from "react";
 import api from "../api/axios";
 import { getAccessToken } from "../api/auth";
-import { verifyPayment, rejectPayment } from "../api/chanda";
+import { verifyPayment, rejectPayment, approvePaymentRollback, rejectPaymentRollback } from "../api/chanda";
 
 const UNREAD_KEY = "notif_unread_ids";
 // Separate from UNREAD_KEY on purpose: "seen" tracks every item id this
@@ -24,7 +24,7 @@ const SEEN_KEY = "notif_seen_ids";
 
 export interface NotifItem {
   id: string;                 // "pay_123" | "exp_45" | "col_67"
-  kind: "pending_verification" | "expense_approval" | "recent_collection" | "recent_donation" | "account_deletion";
+  kind: "pending_verification" | "expense_approval" | "rollback_approval" | "recent_collection" | "recent_donation" | "account_deletion";
   ref_id: number;
   title: string;
   subtitle: string;
@@ -40,6 +40,13 @@ export interface NotifItem {
   actionable: boolean;
   can_act: boolean;
   transaction_ref?: string | null;
+  request_id?: number;
+  payment_id?: number;
+  member_name?: string | null;
+  chanda_no?: string | null;
+  payment_source?: string | null;
+  requested_by?: string | null;
+  reason?: string | null;
 }
 
 function getStoredUnread(): Set<string> {
@@ -72,6 +79,8 @@ interface NotifCtx {
   verifyPay: (paymentId: number) => Promise<void>;
   rejectPay: (paymentId: number) => Promise<void>;
   approveExpense: (expenseId: number) => Promise<void>;
+  approveRollback: (requestId: number) => Promise<void>;
+  rejectRollback: (requestId: number) => Promise<void>;
   // legacy compat — ChandaDashboard still calls these
   verify: (id: number) => Promise<void>;
   reject: (id: number) => Promise<void>;
@@ -194,6 +203,26 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     } finally { setActioning(null); }
   }, []);
 
+  const approveRollback = useCallback(async (requestId: number) => {
+    const key = `rollback_${requestId}`;
+    setActioning(key);
+    try {
+      await approvePaymentRollback(requestId);
+      setItems(prev => prev.filter(n => n.id !== key));
+      setUnreadIds(prev => { const n = new Set(prev); n.delete(key); saveUnread(n); return n; });
+    } finally { setActioning(null); }
+  }, []);
+
+  const rejectRollback = useCallback(async (requestId: number) => {
+    const key = `rollback_${requestId}`;
+    setActioning(key);
+    try {
+      await rejectPaymentRollback(requestId);
+      setItems(prev => prev.filter(n => n.id !== key));
+      setUnreadIds(prev => { const n = new Set(prev); n.delete(key); saveUnread(n); return n; });
+    } finally { setActioning(null); }
+  }, []);
+
   // Initial load
   useEffect(() => { refresh(); fetchBadgeCounts(); }, [refresh, fetchBadgeCounts]);
 
@@ -240,7 +269,8 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
               if (msg.data?.donation_id) markUnread([`don_${msg.data.donation_id}`]);
             } else if (
               ["payment_verified", "payment_rejected", "expense_approved",
-               "payment_collected", "dashboard_updated"].includes(msg.type)
+               "payment_collected", "dashboard_updated", "rollback_requested",
+               "rollback_approved", "rollback_rejected"].includes(msg.type)
             ) {
               refreshRef.current();
             } else if (
@@ -270,7 +300,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={{
       items, unreadIds, unreadCount, loading, actioning,
-      markAllRead, refresh, verifyPay, rejectPay, approveExpense,
+      markAllRead, refresh, verifyPay, rejectPay, approveExpense, approveRollback, rejectRollback,
       // legacy compat aliases used by ChandaDashboard PendingVerificationPanel
       verify: verifyPay, reject: rejectPay,
       pendingPayments,

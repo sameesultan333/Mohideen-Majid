@@ -117,6 +117,26 @@ def ensure_columns():
 
         # payment_entries — new audit columns
         "ALTER TABLE payment_entries ADD COLUMN IF NOT EXISTS verified_by_user_id INTEGER REFERENCES users(id)",
+        "ALTER TABLE payment_entries ADD COLUMN IF NOT EXISTS payment_source VARCHAR DEFAULT 'app'",
+        "ALTER TABLE payment_entries ADD COLUMN IF NOT EXISTS receipt_status VARCHAR",
+        "ALTER TABLE payment_entries ADD COLUMN IF NOT EXISTS rollback_status VARCHAR",
+
+        # payment rollback requests
+        """CREATE TABLE IF NOT EXISTS payment_rollback_requests (
+            id SERIAL PRIMARY KEY,
+            payment_entry_id INTEGER NOT NULL REFERENCES payment_entries(id),
+            requested_by_id INTEGER NOT NULL REFERENCES users(id),
+            requested_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW(),
+            reason TEXT,
+            status VARCHAR NOT NULL DEFAULT 'pending',
+            approved_by_id INTEGER REFERENCES users(id),
+            approved_at TIMESTAMP WITHOUT TIME ZONE,
+            decision_note TEXT,
+            original_amount FLOAT,
+            original_receipt_id VARCHAR,
+            original_covered_months JSON,
+            payment_source VARCHAR
+        )""",
 
         # expenses — new columns
         "ALTER TABLE expenses ADD COLUMN IF NOT EXISTS receipt_image TEXT",

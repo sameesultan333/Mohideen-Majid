@@ -4,7 +4,7 @@ import {
   Wallet, HandCoins, Receipt, TrendingUp, Users,
   AlertTriangle, CheckCircle2,
   Clock, RefreshCw, ArrowRight, X, Image as ImageIcon,
-  WifiOff,
+  WifiOff, RotateCcw,
 } from "lucide-react";
 import { COLORS, TYPOGRAPHY } from "../../theme/colors";
 import {
@@ -457,6 +457,7 @@ export default function DashboardPage() {
   const other = income - cash - upi;
   const balance = dash?.balance ?? 0;
   const pendingVerification = dash?.pending_verification ?? 0;
+  const pendingRollbacks = dash?.pending_rollbacks ?? 0;
 
   // Responsive breakpoints
   const cols2 = mob ? "1fr" : "1fr 1fr";
@@ -506,18 +507,18 @@ export default function DashboardPage() {
       )}
 
       {/* ── Pending verification alert ── */}
-      {pendingVerification > 0 && (
-        <div onClick={() => navigate("/chanda")}
+      {(pendingVerification > 0 || pendingRollbacks > 0) && (
+        <div onClick={() => navigate(pendingRollbacks > 0 ? "/collections" : "/chanda")}
           style={{
             display: "flex", alignItems: "center", gap: 10, padding: "10px 16px",
-            background: "#FEF8E6", border: "1px solid #E8C84A44", borderRadius: 10,
+            background: pendingRollbacks > 0 ? "#F5F3FF" : "#FEF8E6", border: pendingRollbacks > 0 ? "1px solid #DDD6FE" : "1px solid #E8C84A44", borderRadius: 10,
             marginBottom: MB, cursor: "pointer",
           }}>
-          <AlertTriangle size={15} color={COLORS.warning} />
-          <span style={{ flex: 1, fontSize: 13, color: COLORS.warning, fontWeight: 600 }}>
-            {pendingVerification} payment{pendingVerification > 1 ? "s" : ""} waiting for verification
+          {pendingRollbacks > 0 ? <RotateCcw size={15} color="#7C3AED" /> : <AlertTriangle size={15} color={COLORS.warning} />}
+          <span style={{ flex: 1, fontSize: 13, color: pendingRollbacks > 0 ? "#7C3AED" : COLORS.warning, fontWeight: 600 }}>
+            {pendingRollbacks > 0 ? `${pendingRollbacks} rollback request${pendingRollbacks > 1 ? "s" : ""} waiting for approval` : `${pendingVerification} payment${pendingVerification > 1 ? "s" : ""} waiting for verification`}
           </span>
-          <span style={{ fontSize: 12, color: COLORS.textMuted }}>Go to Chanda →</span>
+          <span style={{ fontSize: 12, color: COLORS.textMuted }}>{pendingRollbacks > 0 ? "Go to Timeline →" : "Go to Chanda →"}</span>
         </div>
       )}
 
@@ -537,6 +538,17 @@ export default function DashboardPage() {
               accent={COLORS.lapis} icon={Users}
               sub={`${paidCount} paid · ${pendingCount + partialCount} pending`}
               onClick={() => navigate("/chanda")} />
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: cols2, gap: GAP, marginBottom: MB }}>
+            <StatCard label="Pending Verifications" value={String(pendingVerification)}
+              accent={COLORS.warning} icon={AlertTriangle}
+              sub={pendingVerification > 0 ? "user payments" : "all clear"}
+              onClick={() => navigate("/chanda")} />
+            <StatCard label="Pending Rollbacks" value={String(pendingRollbacks)}
+              accent="#7C3AED" icon={RotateCcw}
+              sub={pendingRollbacks > 0 ? "approval required" : "none pending"}
+              onClick={() => navigate("/collections")} />
           </div>
 
           {/* ── Chanda collection (promoted — this already covers what a

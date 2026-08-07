@@ -126,6 +126,7 @@ export interface FinanceDashboard {
   expenses: { count: number; total: number; pending_count: number; pending_total: number };
   balance: number;
   pending_verification: number;
+  pending_rollbacks?: number;
   collection_periods: {
     today:      { total: number; cash: number; upi: number; bank: number; cheque: number; other: number; collector: number; online: number };
     yesterday:  { total: number; cash: number; upi: number; bank: number; cheque: number; other: number; collector: number; online: number };
@@ -344,5 +345,20 @@ export async function adminRecordPayment(payload: {
   collected_date?: string;
 }) {
   const { data } = await api.post("/chanda/admin-record", payload);
+  return data;
+}
+
+export async function requestPaymentRollback(paymentId: number, reason?: string) {
+  const { data } = await api.post("/chanda/rollback-request", { payment_id: paymentId, reason });
+  return data;
+}
+
+export async function approvePaymentRollback(requestId: number, decisionNote?: string) {
+  const { data } = await api.post(`/chanda/rollback-approve/${requestId}`, { decision_note: decisionNote });
+  return data;
+}
+
+export async function rejectPaymentRollback(requestId: number, decisionNote?: string) {
+  const { data } = await api.post(`/chanda/rollback-reject/${requestId}`, { decision_note: decisionNote });
   return data;
 }
