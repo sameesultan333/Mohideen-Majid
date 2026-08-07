@@ -11,6 +11,7 @@ from app.security import require_admin, require_collector
 from app.utils.payment_ledger import (
     apply_coverage_to_collections,
     apply_coverage_to_existing_collections,
+    apply_coverage_to_generated_collections,
     build_coverage_map,
     generate_receipt_id,
     set_collection_status,
@@ -47,6 +48,11 @@ def normalize_purpose(raw_purpose: str | None) -> str:
     if value:
         return raw_purpose.strip()
     return "Monthly Chanda"
+
+
+def validate_rollback_decision(request: models.PaymentRollbackRequest, acting_user_id: int) -> None:
+    if request.requested_by_id == acting_user_id:
+        raise HTTPException(status_code=403, detail="You cannot approve or reject your own rollback request")
 
 
 @router.get("/members", response_model=List[schemas.MemberWithCollection])
@@ -532,18 +538,14 @@ def approve_payment_rollback(
     if not payment:
         raise HTTPException(404, "Payment not found")
 
+    validate_rollback_decision(request, int(user.get("sub")))
+
     head = db.query(models.ApprovedHead).filter_by(id=payment.head_id).first()
     if not head:
         raise HTTPException(404, "Head not found")
 
     if payment.purpose == "Monthly Chanda" and payment.coverage_map:
-        collections = (
-            db.query(models.ChandaCollection)
-            .filter(models.ChandaCollection.head_id == head.id)
-            .filter(models.ChandaCollection.month.in_(list(payment.coverage_map.keys())))
-            .all()
-        )
-        apply_coverage_to_collections(collections, payment.coverage_map, reverse=True)
+        apply_coverage_to_generated_collections(db, head.id, payment.coverage_map, reverse=True)
 
     payment.status = "rejected"
     payment.rollback_status = "approved"
@@ -579,6 +581,8 @@ def reject_payment_rollback(
     payment = db.query(models.PaymentEntry).filter_by(id=request.payment_entry_id).first()
     if not payment:
         raise HTTPException(404, "Payment not found")
+
+    validate_rollback_decision(request, int(user.get("sub")))
 
     payment.rollback_status = "rejected"
     request.status = "rejected"

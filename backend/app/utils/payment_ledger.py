@@ -1,9 +1,27 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy.orm import Session
 
 from app import models
 from app.utils.timezones import add_months, india_month_key, to_india
+
+
+def _coerce_created_at(created_at) -> datetime:
+    if created_at is None:
+        return datetime.utcnow()
+    if isinstance(created_at, datetime):
+        return created_at
+    if isinstance(created_at, str):
+        text = created_at.strip()
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        try:
+            return datetime.fromisoformat(text)
+        except ValueError:
+            pass
+    return datetime.utcnow()
 
 
 def generate_receipt_id(db: Session, prefix: str = "CH", created_at=None) -> str:
@@ -11,28 +29,30 @@ def generate_receipt_id(db: Session, prefix: str = "CH", created_at=None) -> str
     Format: MM-{PREFIX}-{YYYYMM}-{000001}
     Example: MM-CH-202607-000001
     Sequence resets every calendar month. Uses transaction date (India TZ).
-    Thread-safe: UNIQUE constraint on receipt_id is the final guard against races.
-    Legacy IDs (MM-CH-2026-…, PAY-…, DON-…, EXP-…) are never touched.
+    Receipt IDs are monotonic and immutable once issued; rollbacks and rejections
+    preserve the original receipt so it is never reused.
     """
-    from datetime import datetime
-    from sqlalchemy import text as sql
-
-    dt = to_india(created_at if created_at is not None else datetime.utcnow())
+    dt = to_india(_coerce_created_at(created_at))
     ym = f"{dt.year}{dt.month:02d}"
     pattern = f"MM-{prefix}-{ym}-%"
 
-    _table_map = {"CH": "payment_entries", "DN": "donations", "EX": "expenses"}
-    table = _table_map.get(prefix, "payment_entries")
+    model_map = {"CH": models.PaymentEntry, "DN": models.Donation, "EX": models.Expense}
+    model_cls = model_map.get(prefix, models.PaymentEntry)
 
-    # MAX over the trailing 6-digit sequence so gaps (from rollbacks) don't cause
-    # duplicates and COUNT-based races are impossible.
-    max_seq = db.execute(
-        sql(
-            f"SELECT MAX(CAST(SUBSTRING(receipt_id FROM '([0-9]{{6}})$') AS INTEGER))"
-            f" FROM {table} WHERE receipt_id LIKE :pat"
-        ),
-        {"pat": pattern},
-    ).scalar()
+    rows = (
+        db.query(model_cls.receipt_id)
+        .filter(model_cls.receipt_id.like(pattern))
+        .all()
+    )
+
+    max_seq = 0
+    for (receipt_id,) in rows:
+        if not receipt_id:
+            continue
+        parts = receipt_id.split("-")
+        suffix = parts[-1] if parts else ""
+        if suffix.isdigit():
+            max_seq = max(max_seq, int(suffix))
 
     return f"MM-{prefix}-{ym}-{(max_seq or 0) + 1:06d}"
 
@@ -170,6 +190,29 @@ def apply_coverage_to_collections(
         else:
             collection.total_paid = round(min(float(collection.amount_due or 0), current_paid + allocation), 2)
         set_collection_status(collection)
+
+
+def apply_coverage_to_generated_collections(
+    db: Session,
+    head_id: int,
+    coverage_map: dict[str, float],
+    *,
+    reverse: bool = False,
+) -> None:
+    if not coverage_map:
+        return
+
+    months = [month for month in coverage_map.keys() if month]
+    if not months:
+        return
+
+    collections = (
+        db.query(models.ChandaCollection)
+        .filter(models.ChandaCollection.head_id == head_id)
+        .filter(models.ChandaCollection.month.in_(months))
+        .all()
+    )
+    apply_coverage_to_collections(collections, coverage_map, reverse=reverse)
 
 
 def apply_coverage_to_existing_collections(
