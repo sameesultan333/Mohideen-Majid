@@ -58,6 +58,11 @@ def _actor_id(current_user: dict) -> int:
     return int(current_user["sub"])
 
 
+def _import_start_date(year: int) -> datetime:
+    """Imported family rows default to the start of the selected import year."""
+    return datetime(year, 1, 1)
+
+
 def _create_historical_records(db: Session, head: models.ApprovedHead, payments: dict, year: int):
     now = datetime.utcnow()
     for month_label, amount_raw in payments.items():
@@ -289,6 +294,7 @@ async def upload_heads(
         head = models.ApprovedHead(
             chanda_no=chanda_no, name=name, phone=phone,
             address=address, zone=zone, monthly_amount=monthly_amount,
+            registration_date=_import_start_date(year),
         )
         db.add(head)
         db.flush()
@@ -300,6 +306,11 @@ async def upload_heads(
         }
         if historical:
             _create_historical_records(db, head, historical, year)
+
+        # Imported families should behave like the other family-creation flows:
+        # generate missing months from January of the selected import year up to
+        # the current month, while preserving any imported paid history.
+        _auto_generate_months_for_head(db, head)
 
         if phone:
             seen_in_batch[phone] = {"chanda_no": chanda_no, "name": name}

@@ -855,6 +855,7 @@ const UserManagementPage: React.FC = () => {
       // instead of being converted to a message string (fixed below too).
       const { data } = await api.post("/admin/upload-heads", form, {
         headers: { "Content-Type": "multipart/form-data" },
+        timeout: 300000,
       });
       setImportResult(data);
       fetchData();
