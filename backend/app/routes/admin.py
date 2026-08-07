@@ -63,7 +63,14 @@ def _import_start_date(year: int) -> datetime:
     return datetime(year, 1, 1)
 
 
-def _create_historical_records(db: Session, head: models.ApprovedHead, payments: dict, year: int):
+def _create_historical_records(
+    db: Session,
+    head: models.ApprovedHead,
+    payments: dict,
+    year: int,
+    *,
+    receipt_seq_cache: dict[str, int],
+):
     now = datetime.utcnow()
     for month_label, amount_raw in payments.items():
         month_num = HISTORICAL_MONTHS.get(month_label.strip().lower())
@@ -107,7 +114,9 @@ def _create_historical_records(db: Session, head: models.ApprovedHead, payments:
                 collected_at=collection_date, status="verified",
                 created_by="migration", verified_by="migration",
                 verified_at=collection_date,
-                receipt_id=generate_receipt_id(db, prefix="CH", created_at=now),
+                receipt_id=generate_receipt_id(
+                    db, prefix="CH", created_at=now, seq_cache=receipt_seq_cache
+                ),
                 purpose="Monthly Chanda", months_covered=1,
                 covered_months=[month_key], coverage_map={month_key: amount_paid},
                 payment_source="import",
@@ -133,7 +142,7 @@ def _create_missing_import_months(
 ) -> None:
     """Create only the missing generated months for a newly imported family."""
     from app.utils.timezones import add_months
-    from app.utils.payment_ledger import set_collection_status, sync_generated_month
+    from app.utils.payment_ledger import set_collection_status, sync_generated_month, verified_chanda_payments
 
     existing_months = {
         month
@@ -142,6 +151,8 @@ def _create_missing_import_months(
         .all()
     }
     monthly_amount = round(float(head.monthly_amount or 0), 2)
+    verified_payments = verified_chanda_payments(db, head.id)
+    payments_by_id = {payment.id: payment for payment in verified_payments if payment.id is not None}
     cursor = start_month
 
     while cursor <= end_month:
@@ -156,7 +167,12 @@ def _create_missing_import_months(
             )
             db.add(col)
             db.flush()
-            sync_generated_month(db, col)
+            sync_generated_month(
+                db,
+                col,
+                verified_payments=verified_payments,
+                source_payments_by_id=payments_by_id,
+            )
             set_collection_status(col)
             existing_months.add(cursor)
         cursor = add_months(cursor, 1)
@@ -226,6 +242,8 @@ async def upload_heads(
 
     current_month = india_month_key(utc_now())
     import_start_month = f"{year:04d}-01"
+
+    receipt_seq_cache: dict[str, int] = {}
 
     inserted = updated = skipped = 0
     errors: list[str] = []
@@ -352,7 +370,9 @@ async def upload_heads(
             if label in df.columns
         }
         if historical:
-            _create_historical_records(db, head, historical, year)
+            _create_historical_records(
+                db, head, historical, year, receipt_seq_cache=receipt_seq_cache
+            )
 
         # Imported families should behave like the other family-creation flows,
         # but without the per-month existence query cost of the generic helper.
