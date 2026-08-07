@@ -124,6 +124,44 @@ def _create_historical_records(db: Session, head: models.ApprovedHead, payments:
             )
 
 
+def _create_missing_import_months(
+    db: Session,
+    head: models.ApprovedHead,
+    *,
+    start_month: str,
+    end_month: str,
+) -> None:
+    """Create only the missing generated months for a newly imported family."""
+    from app.utils.timezones import add_months
+    from app.utils.payment_ledger import set_collection_status, sync_generated_month
+
+    existing_months = {
+        month
+        for (month,) in db.query(models.ChandaCollection.month)
+        .filter(models.ChandaCollection.head_id == head.id)
+        .all()
+    }
+    monthly_amount = round(float(head.monthly_amount or 0), 2)
+    cursor = start_month
+
+    while cursor <= end_month:
+        if cursor not in existing_months:
+            col = models.ChandaCollection(
+                head_id=head.id,
+                month=cursor,
+                amount_due=monthly_amount,
+                total_paid=0,
+                status="pending",
+                rate_snapshot=monthly_amount,
+            )
+            db.add(col)
+            db.flush()
+            sync_generated_month(db, col)
+            set_collection_status(col)
+            existing_months.add(cursor)
+        cursor = add_months(cursor, 1)
+
+
 # ─────────────────────────────────────────────────────────────
 # EXCEL IMPORT  (Swagger/backend only — never exposed in UI)
 # ─────────────────────────────────────────────────────────────
@@ -168,7 +206,11 @@ async def upload_heads(
             }
 
     # Records that existed in the DB BEFORE this import started.
-    preexisting_chanda = {h.chanda_no for h in db.query(models.ApprovedHead.chanda_no).all()}
+    existing_heads_by_chanda = {
+        h.chanda_no: h
+        for h in db.query(models.ApprovedHead).all()
+    }
+    preexisting_chanda = set(existing_heads_by_chanda)
     # Records inserted during THIS import run — kept separate so a duplicate chanda_no
     # in the Excel file is caught as a validation error, not silently treated as an update.
     imported_chanda: set[str] = set()
@@ -179,6 +221,11 @@ async def upload_heads(
     }
     # Tracks phones seen so far IN THIS import batch (new phones being claimed)
     seen_in_batch: dict[str, dict] = {}
+
+    from app.utils.timezones import india_month_key, utc_now
+
+    current_month = india_month_key(utc_now())
+    import_start_month = f"{year:04d}-01"
 
     inserted = updated = skipped = 0
     errors: list[str] = []
@@ -277,7 +324,7 @@ async def upload_heads(
 
         # ── Update pre-existing family (existed before this import) ──────────
         if chanda_no in preexisting_chanda:
-            existing_head = db.query(models.ApprovedHead).filter_by(chanda_no=chanda_no).first()
+            existing_head = existing_heads_by_chanda.get(chanda_no)
             if existing_head:
                 # Only fill in phone if the family has none and the number is free
                 if phone and not existing_head.phone:
@@ -307,10 +354,14 @@ async def upload_heads(
         if historical:
             _create_historical_records(db, head, historical, year)
 
-        # Imported families should behave like the other family-creation flows:
-        # generate missing months from January of the selected import year up to
-        # the current month, while preserving any imported paid history.
-        _auto_generate_months_for_head(db, head)
+        # Imported families should behave like the other family-creation flows,
+        # but without the per-month existence query cost of the generic helper.
+        _create_missing_import_months(
+            db,
+            head,
+            start_month=import_start_month,
+            end_month=current_month,
+        )
 
         if phone:
             seen_in_batch[phone] = {"chanda_no": chanda_no, "name": name}
