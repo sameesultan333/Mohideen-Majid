@@ -111,11 +111,14 @@ function buildTabs(rawRole, rawRoles, t) {
     ];
   }
 
-  // Modhin / Watchman: prayer management with editable options
+  // Modhin / Watchman: prayer management with editable options, plus the
+  // member-facing Deen screen — they are congregation members too, and every
+  // other role (including plain users) could reach Deen while they could not.
   if (hasRole("modhin", "watchman")) {
     return [
       { screen: "Home",     type: "home",      label: t("nav.home") },
       { screen: "Prayer",   type: "prayerTime",label: t("nav.prayerTime") },
+      { screen: "Deen",     type: "deen",      label: t("nav.deen") },
       { screen: "Editable", type: "editable",  label: t("nav.edit") },
       { screen: "Profile",  type: "profile",   label: t("nav.profile") },
     ];

@@ -258,7 +258,8 @@
     "emptyTitle": "No Announcements",
     "emptySub": "Updates will appear here once published",
     "pinned": "Pinned",
-    "postedBy": "Posted by"
+    "postedBy": "Posted by",
+    "voiceMessage": "Voice message"
   },
   "prayer": {
     "title": "Prayer Times",

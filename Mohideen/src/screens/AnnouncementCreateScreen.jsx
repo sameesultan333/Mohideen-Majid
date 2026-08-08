@@ -642,7 +642,17 @@ export default function AnnouncementScreen() {
         </Animated.View>
       )}
 
-      <SafeModal visible={modalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={closeModal}>
+      {/* topColor paints the status-bar strip with the form's own surface and
+          derives readable icons from it — without it the white header sat
+          under a transparent bar still carrying the emerald screen's white
+          icons, so the title looked jammed against the top of the display. */}
+      <SafeModal
+        visible={modalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        topColor={H.card}
+        onRequestClose={closeModal}
+      >
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>{t("announcements.modalTitle")}</Text>
@@ -827,6 +837,7 @@ export default function AnnouncementScreen() {
         visible={imagePreviewVisible}
         transparent
         animationType="fade"
+        topColor="rgba(5,20,14,0.92)"
         onRequestClose={() => setImagePreviewVisible(false)}
       >
         <AnimatedPressable

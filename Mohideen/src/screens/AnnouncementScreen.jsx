@@ -9,6 +9,7 @@ import OfflineBanner from "../components/OfflineBanner";
 import { apiAxios, getWsUrl, buildAbsoluteUrl } from "../config/server";
 import { COLORS as C } from "../config/theme";
 import SafeModal from "../components/SafeModal";
+import VoiceNotePlayer from "../components/VoiceNotePlayer";
 
 const { width: SW } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
@@ -477,7 +478,19 @@ export default function AnnouncementScreen({ navigation, route }) {
                   <Text style={styles.cardBody}>
                     {item.body || item.message}
                   </Text>
-                  
+
+                  {/* A voice note is the whole message on some announcements —
+                      until now it was uploaded and then unreachable. */}
+                  {!!item.audio_url && (
+                    <VoiceNotePlayer
+                      url={item.audio_url}
+                      label={t("announcement.voiceMessage")}
+                      accent={H.headerLight}
+                      border={H.cardBorder}
+                      textMuted={H.textMuted}
+                    />
+                  )}
+
                   <View style={styles.metaRow}>
                     <Text style={styles.time}>{formatTime(item.created_at)}</Text>
                     {item.posted_by && (
