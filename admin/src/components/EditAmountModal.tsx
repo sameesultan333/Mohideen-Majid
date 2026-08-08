@@ -23,15 +23,28 @@ export default function EditAmountModal({
   onClose,
   onSave,
 }: Props) {
-  const [name, setName]     = useState(familyName);
-  const [phone, setPhone]   = useState(currentPhone);
-  const [amount, setAmount] = useState(currentAmount);
+  const [name, setName]   = useState(familyName);
+  const [phone, setPhone] = useState(currentPhone);
+  // Held as a string, not a number. A number-typed state renders 0 as "0" for a
+  // family with no amount set, so typing "200" appended to it and the field read
+  // "0200". Keeping the raw text lets the field be genuinely empty and lets us
+  // strip leading zeros as they are typed.
+  const [amount, setAmount] = useState(currentAmount ? String(currentAmount) : "");
 
   useEffect(() => {
     setName(familyName);
     setPhone(currentPhone);
-    setAmount(currentAmount);
+    setAmount(currentAmount ? String(currentAmount) : "");
   }, [familyName, currentPhone, currentAmount, open]);
+
+  // Digits only, and never a leading zero (so "0200" can't be produced at all).
+  const onAmountChange = (raw: string) => {
+    const digits = raw.replace(/[^0-9]/g, "").replace(/^0+(?=\d)/, "");
+    setAmount(digits);
+  };
+
+  const amountValue = Number(amount || 0);
+  const amountValid = amountValue > 0;
 
   if (!open) return null;
 
@@ -119,9 +132,11 @@ export default function EditAmountModal({
             <div style={row()}>
               <IndianRupee size={16} color={COLORS.primary} />
               <input
-                type="number"
+                type="text"
+                inputMode="numeric"
                 value={amount}
-                onChange={e => setAmount(Number(e.target.value))}
+                placeholder="0"
+                onChange={e => onAmountChange(e.target.value)}
                 style={inp({ fontFamily: "monospace", fontWeight: 700 })}
               />
             </div>
@@ -139,13 +154,13 @@ export default function EditAmountModal({
             cursor: "pointer", fontSize: 14, fontWeight: 600,
           }}>Cancel</button>
           <button
-            disabled={loading || !name.trim()}
-            onClick={() => onSave({ name: name.trim(), phone: phone.trim(), amount })}
+            disabled={loading || !name.trim() || !amountValid}
+            onClick={() => onSave({ name: name.trim(), phone: phone.trim(), amount: amountValue })}
             style={{
               height: 42, padding: "0 26px", border: "none", borderRadius: 10,
-              background: !name.trim() ? "#ccc" : COLORS.primary,
+              background: !name.trim() || !amountValid ? "#ccc" : COLORS.primary,
               color: "#fff", fontWeight: 700, fontSize: 14,
-              cursor: !name.trim() ? "not-allowed" : "pointer",
+              cursor: !name.trim() || !amountValid ? "not-allowed" : "pointer",
             }}
           >
             {loading ? "Saving…" : "Save Changes"}

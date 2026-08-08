@@ -124,7 +124,7 @@ const PaymentRow = ({ payment }) => {
 const CollectionRow = ({ col }) => {
   const { t } = useTranslation();
   const balance = Math.max((col.amount_due || 0) - (col.total_paid || 0), 0);
-  const color = col.status === "paid" ? H.green : col.status === "partial" ? H.gold : H.warn;
+  const color = col.status === "paid" ? H.green : H.warn;
   const [y, m] = col.month.split("-").map(Number);
   const monthLabel = new Date(y, m - 1, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
   return (

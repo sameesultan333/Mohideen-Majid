@@ -9,6 +9,7 @@ import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { View, Text, TextInput, FlatList, Modal, Pressable, StyleSheet } from "react-native";
 import AnimatedPressable from "./AnimatedPressable";
 import { COLORS as C } from "../config/theme";
+import SafeModal from "./SafeModal";
 
 const H = {
   card: C.white,
@@ -58,7 +59,7 @@ const SearchPickerModal = React.memo(function SearchPickerModal({
   const showEmpty = options.length === 0 && trimmed === "" && !allTopOption;
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <SafeModal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
         <Pressable style={styles.card} onPress={() => {}}>
           <View style={styles.header}>
@@ -121,7 +122,7 @@ const SearchPickerModal = React.memo(function SearchPickerModal({
           />
         </Pressable>
       </Pressable>
-    </Modal>
+    </SafeModal>
   );
 });
 

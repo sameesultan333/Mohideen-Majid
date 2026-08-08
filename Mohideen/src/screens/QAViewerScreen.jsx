@@ -17,6 +17,7 @@ import { apiAxios, buildAbsoluteUrl, getWsUrl } from "../config/server";
 import BottomNav from "../components/BottomNav";
 import { COLORS as C } from "../config/theme";
 import { logger } from "../utils/logger";
+import SafeModal from "../components/SafeModal";
 
 const { width: SW, height: SH } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
@@ -388,7 +389,7 @@ const ImageViewerModal = memo(({ visible, imageUrl, onClose }) => {
   if (!visible) return null;
 
   return (
-    <Modal
+    <SafeModal
       visible={visible}
       transparent
       animationType="fade"
@@ -416,7 +417,7 @@ const ImageViewerModal = memo(({ visible, imageUrl, onClose }) => {
           </Animated.View>
         </AnimatedPressable>
       </View>
-    </Modal>
+    </SafeModal>
   );
 });
 
@@ -990,11 +991,12 @@ const styles = StyleSheet.create({
 // ─── Header Styles ────────────────────────────────────────────────────
 const hs = StyleSheet.create({
   wrap: {
-    height: 148,
+    height: 136,
     paddingHorizontal: 20,
     overflow: "hidden",
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
+    paddingTop: 18,
   },
   row: {
     flexDirection: "row",

@@ -15,7 +15,7 @@ from sqlalchemy.orm import sessionmaker
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app import models
-from app.utils.payment_ledger import apply_rate_to_open_months
+from app.utils.payment_ledger import apply_rate_to_open_months, set_collection_status
 
 
 def _db():
@@ -34,7 +34,7 @@ def test_lowering_rate_clears_partial_balances():
         for m in range(1, 9):
             db.add(models.ChandaCollection(
                 head_id=1, month=f"2026-{m:02d}",
-                amount_due=150.0, total_paid=100.0, status="partial",
+                amount_due=150.0, total_paid=100.0, status="pending",
             ))
         db.commit()
 
@@ -59,7 +59,7 @@ def test_settled_past_months_are_never_repriced():
             head_id=1, month="2026-01", amount_due=150.0, total_paid=150.0, status="paid",
         ))
         db.add(models.ChandaCollection(
-            head_id=1, month="2026-08", amount_due=150.0, total_paid=100.0, status="partial",
+            head_id=1, month="2026-08", amount_due=150.0, total_paid=100.0, status="pending",
         ))
         db.commit()
 
@@ -75,22 +75,58 @@ def test_settled_past_months_are_never_repriced():
         db.close()
 
 
-def test_raising_rate_reopens_a_future_advance_month():
+def test_raising_rate_never_reopens_a_month_paid_in_advance():
+    """Paid months are history, including ones paid ahead of time.
+
+    A family paying Jan-Apr at 100 in advance, whose rate then rises to 150,
+    must keep those four months at 100/paid. Re-pricing them would invent a
+    debt the family never agreed to and contradict the receipt already issued.
+    Only unpaid months move to the new rate.
+    """
     db = _db()
     try:
-        db.add(models.ChandaCollection(
-            head_id=1, month="2026-11", amount_due=100.0,
-            total_paid=100.0, status="paid", is_advance=True,
-        ))
+        for m in range(1, 5):                       # Jan-Apr paid in advance
+            db.add(models.ChandaCollection(
+                head_id=1, month=f"2026-{m:02d}", amount_due=100.0,
+                total_paid=100.0, status="paid", is_advance=True,
+            ))
+        for m in range(5, 8):                       # May-Jul still unpaid
+            db.add(models.ChandaCollection(
+                head_id=1, month=f"2026-{m:02d}", amount_due=100.0,
+                total_paid=0.0, status="pending",
+            ))
         db.commit()
 
-        apply_rate_to_open_months(db, 1, 150.0, current_month="2026-08")
+        apply_rate_to_open_months(db, 1, 150.0, current_month="2026-04")
         db.commit()
 
-        col = db.query(models.ChandaCollection).filter_by(month="2026-11").one()
-        # Cash received is untouched; the shortfall against the new rate shows.
-        assert col.total_paid == 100.0
-        assert col.amount_due == 150.0
-        assert col.status == "partial"
+        cols = {c.month: c for c in db.query(models.ChandaCollection).all()}
+        for m in range(1, 5):
+            c = cols[f"2026-{m:02d}"]
+            assert (c.amount_due, c.total_paid, c.status) == (100.0, 100.0, "paid"), c.month
+        for m in range(5, 8):
+            c = cols[f"2026-{m:02d}"]
+            assert (c.amount_due, c.status) == (150.0, "pending"), c.month
+    finally:
+        db.close()
+
+
+def test_no_status_is_ever_partial():
+    """The partial state is removed from the business logic entirely."""
+    db = _db()
+    try:
+        db.add(models.ChandaCollection(head_id=1, month="2026-01", amount_due=200.0,
+                                       total_paid=100.0, status="pending"))
+        db.add(models.ChandaCollection(head_id=1, month="2026-02", amount_due=200.0,
+                                       total_paid=200.0, status="paid"))
+        db.commit()
+        for c in db.query(models.ChandaCollection).all():
+            set_collection_status(c)
+        db.commit()
+
+        statuses = {c.month: c.status for c in db.query(models.ChandaCollection).all()}
+        assert statuses == {"2026-01": "pending", "2026-02": "paid"}
+        # The part-payment itself is never lost, only the label.
+        assert db.query(models.ChandaCollection).filter_by(month="2026-01").one().total_paid == 100.0
     finally:
         db.close()

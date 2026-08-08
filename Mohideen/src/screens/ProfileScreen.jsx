@@ -11,6 +11,7 @@ import BottomNav from "../components/BottomNav";
 import { apiAxios } from "../config/server";
 import { COLORS as C } from "../config/theme";
 import { logger } from "../utils/logger";
+import SafeModal from "../components/SafeModal";
 
 const { width: SW } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
@@ -218,7 +219,7 @@ const LanguageModal = ({ visible, onClose, currentLang, onSelect }) => {
   );
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <SafeModal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <TouchableWithoutFeedback onPress={onClose}>
         <View style={styles.modalOverlay}>
           <TouchableWithoutFeedback>
@@ -236,7 +237,7 @@ const LanguageModal = ({ visible, onClose, currentLang, onSelect }) => {
           </TouchableWithoutFeedback>
         </View>
       </TouchableWithoutFeedback>
-    </Modal>
+    </SafeModal>
   );
 };
 
@@ -264,14 +265,6 @@ const CompactHeader = ({ userName, greetingKey, hijriDate, gregorianDate, unread
           <Text allowFontScaling={false} style={hs.greeting}>{greetingKey}</Text>
           <Text allowFontScaling={false} style={hs.name} numberOfLines={1}>{userName || "User"}</Text>
         </View>
-        <AnimatedPressable accessibilityLabel="Notifications" onPress={onBellPress} style={hs.bell}>
-          <BellIcon />
-          {unreadCount > 0 && (
-            <View style={hs.badge}>
-              <Text allowFontScaling={false} style={hs.badgeTxt}>{unreadCount > 9 ? "9+" : unreadCount}</Text>
-            </View>
-          )}
-        </AnimatedPressable>
       </View>
 
       <View style={hs.dateRow}>
@@ -788,7 +781,7 @@ const styles = StyleSheet.create({
 
 // ─── Header Styles ────────────────────────────────────────────────────
 const hs = StyleSheet.create({
-  wrap: { height: 148, paddingHorizontal: 20, overflow: "hidden", borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
+  wrap: { height: 136, paddingHorizontal: 20, overflow: "hidden", borderBottomLeftRadius: 24, borderBottomRightRadius: 24, paddingTop: 18, },
   row: { flexDirection: "row", alignItems: "center", marginTop: 4 },
   avatar: {
     width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.14)",

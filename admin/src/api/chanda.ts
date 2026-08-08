@@ -47,9 +47,10 @@ export interface MemberWithCollection {
     month: string;
     amount_due: number;
     total_paid: number;
-    status: "paid" | "partial" | "pending";
+    status: "paid" | "pending";
     created_at: string;
   }>;
+  pending_months_count?: number;
 }
 
 export interface DefaulterItem {
@@ -113,7 +114,6 @@ export interface FinanceDashboard {
   };
   chanda: {
     paid: number;
-    partial: number;
     pending: number;
     due: number;
     collected: number;

@@ -14,6 +14,7 @@ import Slider from "@react-native-community/slider";
 import Svg, { Path, Rect, Defs, LinearGradient, Stop } from "react-native-svg";
 import { apiAxios, buildAbsoluteUrl } from "../config/server";
 import { COLORS as C } from "../config/theme";
+import SafeModal from "../components/SafeModal";
 
 const { width: SW, height: SH } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
@@ -425,7 +426,7 @@ const CommentsOverlay = ({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
+    <SafeModal visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <AnimatedPressable style={styles.modalBackdrop} activeOpacity={1} onPress={onClose} />
       <Animated.View style={[styles.overlayContainer, { transform: [{ translateY: slideAnim }] }]}>
         <View style={styles.overlayHeader}>
@@ -509,7 +510,7 @@ const CommentsOverlay = ({
           </View>
         </KeyboardAvoidingView>
       </Animated.View>
-    </Modal>
+    </SafeModal>
   );
 };
 
@@ -1120,11 +1121,12 @@ const styles = StyleSheet.create({
 // ─── Header Styles ────────────────────────────────────────────────────
 const hs = StyleSheet.create({
   wrap: {
-    height: 148,
+    height: 136,
     paddingHorizontal: 20,
     overflow: "hidden",
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
+    paddingTop: 18,
   },
   row: {
     flexDirection: "row",

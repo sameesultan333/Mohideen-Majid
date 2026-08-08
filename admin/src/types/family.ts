@@ -131,7 +131,7 @@ export interface ChandaCollection {
   total_paid: number;
 
   /** Payment status */
-  status: "paid" | "partial" | "pending";
+  status: "paid" | "pending";
 
   /** Record creation timestamp */
   created_at: string;

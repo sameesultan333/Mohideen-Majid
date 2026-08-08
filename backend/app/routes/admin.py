@@ -103,11 +103,9 @@ def _create_historical_records(
         if existing:
             continue
 
-        status = (
-            "paid"    if amount_paid >= head.monthly_amount else
-            "partial" if amount_paid > 0 else
-            "pending"
-        )
+        # Two-valued: anything short of the full amount is pending. The part
+        # actually received is preserved in total_paid.
+        status = "paid" if amount_paid >= head.monthly_amount else "pending"
         collection = models.ChandaCollection(
             head_id=head.id, month=month_key,
             amount_due=head.monthly_amount, total_paid=amount_paid,
@@ -566,10 +564,9 @@ def edit_family(
         if data.monthly_amount <= 0:
             raise HTTPException(400, "Monthly amount must be > 0")
         head.monthly_amount = data.monthly_amount
-        # Re-price every month that is not fully settled — not just the ones at
-        # status "pending". A family paying ₹100 against a mistyped ₹150 rate
-        # sits at "partial", so a pending-only update left the ₹50 balance in
-        # place after the rate was corrected. See apply_rate_to_open_months.
+        # Re-price unpaid months only. Paid months — including months paid in
+        # advance — keep the rate they were charged at, so raising the rate can
+        # never re-open a settled month. See apply_rate_to_open_months.
         apply_rate_to_open_months(db, head.id, data.monthly_amount)
         manager.publish_sync("finance", "monthly_amount_updated", {"family_id": head.id, "amount": head.monthly_amount})
     if data.chanda_no is not None:
@@ -581,15 +578,25 @@ def edit_family(
             raise HTTPException(400, "Chanda number already in use")
         head.chanda_no = new_no
     if data.phone is not None:
-        new_phone = normalize(data.phone)
-        if not new_phone:
-            raise HTTPException(400, "Invalid phone number")
-        if db.query(models.ApprovedHead).filter(
-            models.ApprovedHead.phone == new_phone,
-            models.ApprovedHead.id   != family_id,
-        ).first():
-            raise HTTPException(400, "Phone number already in use")
-        head.phone = new_phone
+        # A blank phone means "this family has no number", not "invalid input".
+        # Phone is optional throughout the system (the Excel import stores NULL
+        # for families without one), and the edit dialog always submits the
+        # field. Rejecting blank made it impossible to change the monthly amount
+        # of any family that has no phone: the request 400'd on this check and
+        # the whole edit — including the amount — was rolled back.
+        raw_phone = (data.phone or "").strip()
+        if not raw_phone:
+            head.phone = None
+        else:
+            new_phone = normalize(raw_phone)
+            if not new_phone:
+                raise HTTPException(400, "Invalid phone number")
+            if db.query(models.ApprovedHead).filter(
+                models.ApprovedHead.phone == new_phone,
+                models.ApprovedHead.id   != family_id,
+            ).first():
+                raise HTTPException(400, "Phone number already in use")
+            head.phone = new_phone
 
     write_audit(db, "approved_heads", head.id, "update",
                 old_values=old,

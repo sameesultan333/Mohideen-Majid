@@ -7,6 +7,7 @@ import { saveToken, saveRefreshToken } from "../utils/secureStorage";
 import { apiAxios } from "../config/server";
 import { PasswordInput } from "../components/AuthComponents";
 import { COLORS as C, RADII, SPACING, FONTS } from "../config/theme";
+import SafeModal from "../components/SafeModal";
 
 const { width } = Dimensions.get("window");
 
@@ -280,7 +281,7 @@ export default function LoginScreen({ navigation, route }) {
       </KeyboardAvoidingView>
 
       {/* Forgot Password modal */}
-      <Modal
+      <SafeModal
         visible={forgotVisible}
         transparent
         animationType="fade"
@@ -303,7 +304,7 @@ export default function LoginScreen({ navigation, route }) {
             </AnimatedPressable>
           </View>
         </View>
-      </Modal>
+      </SafeModal>
     </View>
   );
 }

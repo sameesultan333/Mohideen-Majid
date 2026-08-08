@@ -104,7 +104,7 @@ def get_members(
         for c in all_cols:
             cols_by_head[c.head_id].append(c)
 
-    # Bulk load pending months count (single query).
+    # Bulk load pending month counts (single query).
     # Generated months only — see utils/chanda_months.
     pending_rows = (
         db.query(
@@ -862,7 +862,7 @@ def get_available_months(
 ):
     """
     Returns all selectable months for a member's advance payment:
-    - Generated pending/partial months (oldest first)
+    - Generated unpaid months (oldest first)
     - N future months not yet generated
     Each entry shows: month, amount_due, total_paid, remaining, status, is_advance, advance_payment_id
     Advance months that are already fully covered are excluded from the selectable list
@@ -899,7 +899,7 @@ def get_available_months(
 
     result = []
 
-    # Pending / partial generated months (selectable)
+    # Unpaid generated months (selectable)
     for month_key in sorted(generated.keys()):
         col = generated[month_key]
         remaining = round(max(float(col.amount_due) - float(col.total_paid or 0), 0), 2)
@@ -925,7 +925,7 @@ def get_available_months(
             "amount_due": monthly_amount,
             "total_paid": already_reserved,
             "remaining": remaining,
-            "status": "paid" if already_reserved >= monthly_amount else ("partial" if already_reserved > 0 else "pending"),
+            "status": "paid" if already_reserved >= monthly_amount else "pending",
             "is_advance": already_reserved > 0,
             "advance_payment_id": None,
             "is_generated": False,
@@ -945,7 +945,7 @@ def update_chanda_rate(
     """
     Update a member's monthly chanda amount.
     Cascades to every month that is not fully settled, plus future months:
-    - If new rate > amount already allocated → status becomes partial (remaining balance shown)
+    - Paid months are never re-priced, including months paid in advance
     - If the old rate was a typo, correcting it clears the phantom balance
     - Fully-paid past months and historical receipts / coverage_map are never touched
     """

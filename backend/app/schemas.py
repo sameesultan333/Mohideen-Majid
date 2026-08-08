@@ -501,7 +501,7 @@ class CollectionBase(BaseModel):
 class CollectionOut(CollectionBase):
     id: int
     total_paid: float
-    status: Literal["pending", "partial", "paid"]
+    status: Literal["pending", "paid"]
     is_advance: bool = False
     advance_payment_id: Optional[int] = None
     rate_snapshot: Optional[float] = None
@@ -529,7 +529,7 @@ class CurrentChandaOut(BaseModel):
     amount_due: float
     total_paid: float
     balance: float
-    status: Literal["pending", "partial", "paid", "not_generated"]
+    status: Literal["pending", "paid", "not_generated"]
     paid_months: Optional[int] = None
     pending_months: Optional[int] = None
     chanda_no: Optional[str] = None

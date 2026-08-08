@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { authApiFetch } from "../config/server";
 import { COLORS as C, RADII, FONTS, SPACING } from "../config/theme";
 import Svg, { Path, Rect, Defs, LinearGradient, Stop } from "react-native-svg";
+import SafeModal from "../components/SafeModal";
 
 const { width: SW } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
@@ -76,11 +77,12 @@ const PremiumHeader = memo(({ title, onBack }) => (
 
 const headerStyles = StyleSheet.create({
   wrap: {
-    height: 148,
+    height: 136,
     paddingHorizontal: 20,
     overflow: "hidden",
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
+    paddingTop: 18,
   },
   content: {
     flex: 1,
@@ -130,7 +132,7 @@ function DatePickerModal({ visible, value, onConfirm, onCancel }) {
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+    <SafeModal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <AnimatedPressable style={dpStyles.overlay} activeOpacity={1} onPress={onCancel}>
         <AnimatedPressable activeOpacity={1} style={dpStyles.card}>
           <Text style={dpStyles.title}>Select Date</Text>
@@ -163,7 +165,7 @@ function DatePickerModal({ visible, value, onConfirm, onCancel }) {
           </View>
         </AnimatedPressable>
       </AnimatedPressable>
-    </Modal>
+    </SafeModal>
   );
 }
 
@@ -555,7 +557,7 @@ export default function CashSubmissionScreen({ navigation }) {
       </Animated.ScrollView>
 
       {/* ── Admin picker modal ────────────────────────────────────────── */}
-      <Modal visible={showAdminPicker} transparent animationType="fade" onRequestClose={() => setShowAdminPicker(false)}>
+      <SafeModal visible={showAdminPicker} transparent animationType="fade" onRequestClose={() => setShowAdminPicker(false)}>
         <AnimatedPressable style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowAdminPicker(false)}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
@@ -591,10 +593,10 @@ export default function CashSubmissionScreen({ navigation }) {
             )}
           </View>
         </AnimatedPressable>
-      </Modal>
+      </SafeModal>
 
       {/* ── Transactions detail modal ─────────────────────────────────── */}
-      <Modal visible={showTransactions} transparent animationType="fade" onRequestClose={() => setShowTransactions(false)}>
+      <SafeModal visible={showTransactions} transparent animationType="fade" onRequestClose={() => setShowTransactions(false)}>
         <AnimatedPressable style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowTransactions(false)}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
@@ -627,7 +629,7 @@ export default function CashSubmissionScreen({ navigation }) {
             />
           </View>
         </AnimatedPressable>
-      </Modal>
+      </SafeModal>
     </SafeAreaView>
   );
 }

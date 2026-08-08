@@ -401,11 +401,6 @@ const CollectorDashboardScreen = ({ navigation }) => {
             color={C.bgVivid}
           />
           <BreakdownItem
-            label={t("collectorDashboard.partial")}
-            value={chanda?.partial ?? 0}
-            color={C.gold}
-          />
-          <BreakdownItem
             label={t("collectorDashboard.pending")}
             value={chanda?.pending ?? 0}
             color={C.error}
@@ -586,11 +581,12 @@ const styles = StyleSheet.create({
 // ─── Header Styles ────────────────────────────────────────────────────
 const hs = StyleSheet.create({
   wrap: {
-    height: 140,
+    height: 128,
     paddingHorizontal: 20,
     overflow: "hidden",
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
+    paddingTop: 18,
   },
   content: {
     flex: 1,

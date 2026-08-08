@@ -68,6 +68,33 @@ def _target_user_id(db: Session, head_id: int | None, fallback_user_id: int | No
     return fallback_user_id
 
 
+def _chanda_recipient_id(db: Session, payment: models.PaymentEntry) -> int | None:
+    """Who should receive the "your payment was received" push.
+
+    Always the member the payment was collected FROM — never the staff member
+    who keyed it in.
+
+    `paid_by_user_id` means different things per source: for a self-payment it
+    is the member (correct recipient), but /chanda/collect stores the
+    *collector's* own user id there. Falling back to it unconditionally meant a
+    collector got the member's confirmation on their own phone whenever the
+    family had no linked app account — which is most families during a trial.
+
+    So the fallback only applies to self-payments, where payer and recipient are
+    the same person. For a collector- or admin-recorded payment against a family
+    with no app account there is simply nobody to notify, and we send nothing.
+    """
+    if payment.head_id:
+        head = db.query(models.ApprovedHead).filter_by(id=payment.head_id).first()
+        if head and head.user_id:
+            return head.user_id
+
+    if (payment.created_by or "").strip().lower() == "user":
+        return payment.paid_by_user_id
+
+    return None
+
+
 def _build_chanda_message(payment: models.PaymentEntry) -> tuple[str, str]:
     """Title + body for a settled Chanda payment.
 
@@ -107,7 +134,7 @@ def _build_chanda_message(payment: models.PaymentEntry) -> tuple[str, str]:
 
 
 def notify_chanda_payment(db: Session, payment: models.PaymentEntry) -> None:
-    user_id = _target_user_id(db, payment.head_id, payment.paid_by_user_id)
+    user_id = _chanda_recipient_id(db, payment)
     if not user_id:
         return
 

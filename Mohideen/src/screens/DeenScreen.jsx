@@ -606,11 +606,12 @@ const styles = StyleSheet.create({
 // ─── Header Styles ────────────────────────────────────────────────────
 const hs = StyleSheet.create({
   wrap: {
-    height: 148,
+    height: 136,
     paddingHorizontal: 20,
     overflow: "hidden",
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
+    paddingTop: 18,
   },
   row: {
     flexDirection: "row",

@@ -27,6 +27,7 @@ import { apiAxios, authApiAxios } from "../config/server";
 
 import { COLORS as C, RADII, SPACING, FONTS } from "../config/theme";
 import { logger } from "../utils/logger";
+import SafeModal from "../components/SafeModal";
 
 
 
@@ -1153,7 +1154,7 @@ function TimePickerModal({ visible, value, label, onConfirm, onCancel, cancelLab
 
   return (
 
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+    <SafeModal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
 
       <AnimatedPressable style={ps.backdrop} activeOpacity={1} onPress={onCancel}>
 
@@ -1235,7 +1236,7 @@ function TimePickerModal({ visible, value, label, onConfirm, onCancel, cancelLab
 
       </AnimatedPressable>
 
-    </Modal>
+    </SafeModal>
 
   );
 
@@ -1365,7 +1366,7 @@ const ss = StyleSheet.create({
 
 const fs = StyleSheet.create({
 
-  wrap: { width: "100%", paddingHorizontal: 6, marginBottom: 14 },
+  wrap: { width: "100%", paddingHorizontal: 6, marginBottom: 14, paddingTop: 18, },
 
   half: { width: "50%" },
 

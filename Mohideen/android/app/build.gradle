@@ -28,11 +28,30 @@ android {
     }
 
     signingConfigs {
+        // Debug is signed with the RELEASE key when key.properties is present.
+        //
+        // Android refuses to replace an installed app with one signed by a
+        // different key, so a debug build could not be installed over the
+        // release build already on a test device — every `installDebug` failed
+        // with INSTALL_FAILED_UPDATE_INCOMPATIBLE, and the only way round it
+        // was uninstalling first, which wipes login and all app data.
+        //
+        // Matching the signature lets debug install straight over release: fast
+        // refresh and readable stack traces, without losing device state.
+        // Falls back to the standard debug keystore when key.properties is
+        // absent (CI, a fresh clone), so nothing breaks without the secrets.
         debug {
-            storeFile file("debug.keystore")
-            storePassword "android"
-            keyAlias "androiddebugkey"
-            keyPassword "android"
+            if (keystorePropertiesFile.exists()) {
+                storeFile file(keystoreProperties["storeFile"])
+                storePassword keystoreProperties["storePassword"]
+                keyAlias keystoreProperties["keyAlias"]
+                keyPassword keystoreProperties["keyPassword"]
+            } else {
+                storeFile file("debug.keystore")
+                storePassword "android"
+                keyAlias "androiddebugkey"
+                keyPassword "android"
+            }
         }
 
         release {

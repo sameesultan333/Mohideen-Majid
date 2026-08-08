@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app import models
@@ -71,14 +70,17 @@ def generate_receipt_id(
     return f"MM-{prefix}-{ym}-{next_seq:06d}"
 
 def set_collection_status(collection: models.ChandaCollection) -> None:
+    """A month is either settled or it is not — there is no partial state.
+
+    The business rule is deliberately two-valued: a month counts as `paid` only
+    once the full amount due has been received; anything short of that is
+    `pending`, however much has already been collected. The amount actually
+    received is never lost — it stays in total_paid and still shows on the
+    receipt, in the ledger and in every report.
+    """
     paid = round(float(collection.total_paid or 0), 2)
     due = round(float(collection.amount_due or 0), 2)
-    if paid <= 0:
-        collection.status = "pending"
-    elif paid >= due:
-        collection.status = "paid"
-    else:
-        collection.status = "partial"
+    collection.status = "paid" if due > 0 and paid >= due else "pending"
 
 
 def apply_rate_to_open_months(
@@ -88,37 +90,28 @@ def apply_rate_to_open_months(
     *,
     current_month: str | None = None,
 ) -> int:
-    """Re-price a family's months after their monthly amount changes.
+    """Re-price a family's UNPAID months after their monthly amount changes.
 
-    A month is re-priced when it is not fully settled, or when it lies in the
-    future. That covers the two cases that matter:
+    A paid month is history and is never touched — not even one paid in advance.
+    If a family paid January–April at ₹100 and the rate later rises to ₹150,
+    those four months stay ₹100/paid forever; only May onwards is charged ₹150.
+    Re-opening a settled month would invent a debt the family never agreed to
+    and would contradict the receipt already issued for it. `rate_snapshot`
+    exists precisely so each month keeps the rate it was charged at.
 
-      * A mistyped rate. Someone entered ₹150 for a family that pays ₹100, so
-        every month sat at `partial` with a phantom ₹50 balance. Correcting the
-        rate to ₹100 re-prices those months and `set_collection_status` flips
-        them to `paid` — the balance disappears instead of lingering.
-      * A future month already covered in advance. Re-pricing keeps `total_paid`
-        (real cash received) and only moves `amount_due`, so a rate increase
-        surfaces the new shortfall as `partial`.
-
-    Fully-paid past months are never touched — that money was really collected
-    at the old rate and rewriting it would falsify history.
+    Unpaid months are re-priced in both directions, which is also what fixes a
+    mistyped rate: a family paying ₹100 against a wrongly-entered ₹150 has those
+    months sitting `pending`, and correcting the rate to ₹100 settles them.
 
     Returns the number of rows re-priced.
     """
-    from app.utils.chanda_months import current_month_key
-
-    cutoff = current_month or current_month_key()
     new_amount = round(float(new_amount), 2)
 
     collections = (
         db.query(models.ChandaCollection)
         .filter(
             models.ChandaCollection.head_id == head_id,
-            or_(
-                models.ChandaCollection.status != "paid",
-                models.ChandaCollection.month > cutoff,
-            ),
+            models.ChandaCollection.status != "paid",
         )
         .all()
     )

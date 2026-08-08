@@ -18,6 +18,7 @@ import {
 } from "../../api/chanda";
 import { getAccessToken } from "../../api/auth";
 import { makeSearchMatcher } from "../../utils/search";
+import MonthRunSelector, { buildMonthRun } from "../../components/MonthRunSelector";
 import { getZones } from "../../api/families";
 import { useNotifications } from "../../context/NotificationContext";
 
@@ -27,7 +28,7 @@ const fmt = (n: number | null | undefined) =>
   `₹${(n ?? 0).toLocaleString("en-IN")}`;
 
 const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-type StatusFilter = "all" | "paid" | "partial" | "pending";
+type StatusFilter = "all" | "paid" | "pending";
 
 function useIsMobile() {
   const [mob, setMob] = useState(() => window.innerWidth < 768);
@@ -43,7 +44,6 @@ function useIsMobile() {
 
 const ST: Record<string, { bg: string; color: string; dot: string; label: string }> = {
   paid:    { bg: "#E9F5F0", color: "#0F5C4C", dot: "#0F5C4C", label: "Paid" },
-  partial: { bg: "#FAF0DD", color: "#B07A1E", dot: "#B07A1E", label: "Partial" },
   pending: { bg: "#F8E9E9", color: "#A13A3A", dot: "#A13A3A", label: "Pending" },
 };
 
@@ -193,7 +193,6 @@ function FamilyDetail({ memberId, memberName, memberNo, memberPhone, monthlyAmou
 
                   let bg = "#F7F5EF", borderC = "#E7E2D3", textC = "#93998F";
                   if (c?.status === "paid")    { bg = "#E9F5F0"; borderC = "#BFE0D4"; textC = "#0F5C4C"; }
-                  if (c?.status === "partial") { bg = "#FAF0DD"; borderC = "#E8D6A5"; textC = "#B07A1E"; }
                   if (c?.status === "pending") { bg = "#F8E9E9"; borderC = "#E8BBBB"; textC = "#A13A3A"; }
 
                   const balance = c ? Math.max((c.amount_due ?? 0) - (c.total_paid ?? 0), 0) : 0;
@@ -207,7 +206,7 @@ function FamilyDetail({ memberId, memberName, memberNo, memberPhone, monthlyAmou
                         textTransform: "uppercase", letterSpacing: "0.05em" }}>{name}</div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: textC, marginTop: 3 }}>
                         {c
-                          ? (c.status === "paid" ? "Paid" : c.status === "partial" ? "Partial" : "Pending")
+                          ? (c.status === "paid" ? "Paid" : "Pending")
                           : isFuture ? "Upcoming" : "—"}
                       </div>
                       {c && (
@@ -230,7 +229,7 @@ function FamilyDetail({ memberId, memberName, memberNo, memberPhone, monthlyAmou
                 <div style={{ marginTop: 18 }}>
                   <div style={{ fontSize: 12, fontWeight: 800, color: "#A13A3A",
                     textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>
-                    Pending / Partial Months
+                    Pending Months
                   </div>
                   {history?.collections
                     ?.filter((c: any) => c.status !== "paid" && c.month <= currentMonthKey())
@@ -820,30 +819,6 @@ function CashFlowPanel({ dashboard, selectedMonth }: { dashboard: FinanceDashboa
 
 // ─── Helpers for month selection ─────────────────────────────
 
-function generatePendingMonths(collections: Array<{ month: string; status: string; amount_due: number; total_paid: number }>): Array<{ month: string; balance: number; label: string }> {
-  return collections
-    .filter(c => c.status !== "paid")
-    .sort((a, b) => a.month.localeCompare(b.month))
-    .map(c => ({
-      month: c.month,
-      balance: Math.max((c.amount_due ?? 0) - (c.total_paid ?? 0), 0),
-      label: fmtYM(c.month),
-    }));
-}
-
-function generateFutureMonths(count: number, after?: string): Array<{ month: string; label: string }> {
-  const base = after ?? currentMonthKey();
-  const [y, m] = base.split("-").map(Number);
-  const result = [];
-  for (let i = 1; i <= count; i++) {
-    let nm = m + i, ny = y;
-    while (nm > 12) { nm -= 12; ny++; }
-    const mk = `${ny}-${String(nm).padStart(2, "0")}`;
-    result.push({ month: mk, label: fmtYM(mk) });
-  }
-  return result;
-}
-
 // ─── Manual Payment / Collection Sheet ───────────────────────
 
 function ManualPaymentModal({ entry, onClose, onSaved }: {
@@ -864,8 +839,9 @@ function ManualPaymentModal({ entry, onClose, onSaved }: {
     .toISOString().slice(0, 16);
   const [visitDate, setVisitDate] = useState(localISO);
 
-  // Selected months (pending + advance)
-  const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
+  // How many months from the start of the run are selected. A run is always
+  // contiguous, so one number describes the whole selection.
+  const [monthCount, setMonthCount] = useState(0);
   const [memberHistory, setMemberHistory] = useState<any>(null);
   const [histLoading, setHistLoading] = useState(false);
 
@@ -881,41 +857,17 @@ function ManualPaymentModal({ entry, onClose, onSaved }: {
   if (!entry) return null;
   const m = entry.member;
 
-  const pendingMonths = memberHistory
-    ? generatePendingMonths(memberHistory.collections ?? [])
-    : [];
-
-  // Future months: show up to 6 advance months beyond last generated month
-  const lastMonth = memberHistory?.collections?.length
-    ? [...(memberHistory.collections as any[])].sort((a,b) => b.month.localeCompare(a.month))[0].month
-    : currentMonthKey();
-  const futureMonths = generateFutureMonths(6, lastMonth);
-
   const monthlyAmt = m.monthly_amount ?? 0;
 
-  // Compute total from selected months
-  const total = selectedMonths.reduce((sum, mk) => {
-    const pending = pendingMonths.find(p => p.month === mk);
-    if (pending) return sum + pending.balance;
-    if (futureMonths.find(f => f.month === mk)) return sum + monthlyAmt;
-    return sum;
-  }, 0);
+  // Unpaid generated months followed by advance months, as one continuous run.
+  const monthRun = memberHistory
+    ? buildMonthRun(memberHistory.collections ?? [], monthlyAmt, 12)
+    : [];
 
-  function toggleMonth(mk: string) {
-    setSelectedMonths(prev =>
-      prev.includes(mk) ? prev.filter(x => x !== mk) : [...prev, mk]
-    );
-  }
+  const selectedMonths = monthRun.slice(0, monthCount).map(r => r.month);
+  const total = monthRun.slice(0, monthCount).reduce((sum, r) => sum + r.amount, 0);
 
-  function selectAll(months: string[]) {
-    setSelectedMonths(prev => {
-      const existing = new Set(prev);
-      months.forEach(m => existing.add(m));
-      return Array.from(existing);
-    });
-  }
 
-  function selectNone() { setSelectedMonths([]); }
 
   async function handleSave() {
     if (purpose === "Monthly Chanda" && selectedMonths.length === 0) {
@@ -1008,85 +960,22 @@ function ManualPaymentModal({ entry, onClose, onSaved }: {
                 </div>
               </div>
 
-              {/* Month selection — only for chanda */}
+              {/* Month selection — only for chanda.
+                  One contiguous run instead of two checkbox lists: tap a month
+                  to pay everything up to it. See MonthRunSelector. */}
               {isChanda && (
                 <div style={{ marginBottom: 16 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                    <label style={LB}>Pending Months</label>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <button onClick={() => selectAll(pendingMonths.map(p => p.month))}
-                        style={{ fontSize: 11, color: COLORS.primary, background: "none", border: "none", cursor: "pointer", fontWeight: 700 }}>
-                        All Pending
-                      </button>
-                      <button onClick={selectNone}
-                        style={{ fontSize: 11, color: "#93998F", background: "none", border: "none", cursor: "pointer" }}>
-                        Clear
-                      </button>
-                    </div>
-                  </div>
-                  {histLoading ? (
-                    <div style={{ fontSize: 12, color: "#93998F", padding: "8px 0" }}>Loading months…</div>
-                  ) : pendingMonths.length === 0 ? (
-                    <div style={{ fontSize: 12, color: "#93998F", padding: "8px 0" }}>No pending months.</div>
-                  ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      {pendingMonths.map(({ month: mk, balance, label: lbl }) => {
-                        const sel = selectedMonths.includes(mk);
-                        return (
-                          <div key={mk} onClick={() => toggleMonth(mk)} style={{
-                            display: "flex", justifyContent: "space-between", alignItems: "center",
-                            padding: "10px 14px", borderRadius: 10, cursor: "pointer",
-                            border: `1.5px solid ${sel ? "#0F5C4C" : "#E7E2D3"}`,
-                            background: sel ? "#E9F5F0" : "#FAFAF7",
-                          }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                              <div style={{
-                                width: 18, height: 18, borderRadius: 4, border: `2px solid ${sel ? "#0F5C4C" : "#C0B9A8"}`,
-                                background: sel ? "#0F5C4C" : "#fff", display: "flex", alignItems: "center", justifyContent: "center",
-                              }}>
-                                {sel && <span style={{ color: "#fff", fontSize: 11, lineHeight: 1 }}>✓</span>}
-                              </div>
-                              <span style={{ fontSize: 14, fontWeight: 700, color: sel ? "#0F5C4C" : "#1C231F" }}>{lbl}</span>
-                            </div>
-                            <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 700, color: sel ? "#0F5C4C" : "#A13A3A" }}>
-                              ₹{balance.toLocaleString("en-IN")}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Advance months */}
-                  <div style={{ marginTop: 12, marginBottom: 6 }}>
-                    <label style={LB}>Advance Months (Optional)</label>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {futureMonths.map(({ month: mk, label: lbl }) => {
-                      const sel = selectedMonths.includes(mk);
-                      return (
-                        <div key={mk} onClick={() => toggleMonth(mk)} style={{
-                          display: "flex", justifyContent: "space-between", alignItems: "center",
-                          padding: "10px 14px", borderRadius: 10, cursor: "pointer",
-                          border: `1.5px solid ${sel ? "#B07A1E" : "#E7E2D3"}`,
-                          background: sel ? "#FAF0DD" : "#FAFAF7",
-                        }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                            <div style={{
-                              width: 18, height: 18, borderRadius: 4, border: `2px solid ${sel ? "#B07A1E" : "#C0B9A8"}`,
-                              background: sel ? "#B07A1E" : "#fff", display: "flex", alignItems: "center", justifyContent: "center",
-                            }}>
-                              {sel && <span style={{ color: "#fff", fontSize: 11, lineHeight: 1 }}>✓</span>}
-                            </div>
-                            <span style={{ fontSize: 14, fontWeight: 700, color: sel ? "#B07A1E" : "#1C231F" }}>{lbl}</span>
-                            <span style={{ fontSize: 10, color: "#B07A1E", fontWeight: 700, background: "#FAF0DD", borderRadius: 4, padding: "1px 6px" }}>ADVANCE</span>
-                          </div>
-                          <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 700, color: sel ? "#B07A1E" : "#5B6660" }}>
-                            ₹{monthlyAmt.toLocaleString("en-IN")}
-                          </span>
-                        </div>
-                      );
-                    })}
+                  <label style={LB}>Months</label>
+                  <div style={{ marginTop: 8 }}>
+                    {histLoading ? (
+                      <div style={{ fontSize: 12, color: "#93998F", padding: "8px 0" }}>Loading months…</div>
+                    ) : (
+                      <MonthRunSelector
+                        months={monthRun}
+                        count={monthCount}
+                        onCountChange={setMonthCount}
+                      />
+                    )}
                   </div>
                 </div>
               )}
@@ -1313,6 +1202,12 @@ export default function ChandaDashboard() {
 
   // ── filter ───────────────────────────────────────────────
 
+  // Any filter active? Drives the "Clear filters" pill — previously the only way
+  // back to an unfiltered list was re-clicking the exact active chip or hunting
+  // for the All option in the dropdown, so people reloaded the page instead.
+  const hasFilters = statusFilter !== "all" || zoneFilter !== "all" || search.trim() !== "";
+  const clearFilters = () => { setStatusFilter("all"); setZoneFilter("all"); setSearch(""); };
+
   const filteredRows = useMemo(() => {
     // Case/space/punctuation-insensitive — "sa mohideen" finds "S.A. Mohideen".
     const matches = makeSearchMatcher(search);
@@ -1486,8 +1381,6 @@ export default function ChandaDashboard() {
               accent={(chanda?.outstanding ?? 0) > 0 ? COLORS.danger : COLORS.primary} />
             <StatTile label="Pending"    value={String(chanda?.pending ?? 0)}
               sub="families" accent={COLORS.warning} />
-            <StatTile label="Partial"    value={String(chanda?.partial ?? 0)}
-              sub="families" accent={COLORS.accent} />
             <StatTile
               label="Awaiting Verify"
               value={String(d.pending_verification ?? 0)}
@@ -1683,7 +1576,6 @@ export default function ChandaDashboard() {
                 }}>
                 <option value="all">All</option>
                 <option value="paid">Paid</option>
-                <option value="partial">Partial</option>
                 <option value="pending">Pending</option>
               </select>
               <ChevronDown size={12} color="#93998F" style={{
@@ -1698,7 +1590,6 @@ export default function ChandaDashboard() {
           <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
             {[
               { k: "paid",    label: "Paid",    count: chanda?.paid },
-              { k: "partial", label: "Partial", count: chanda?.partial },
               { k: "pending", label: "Pending", count: chanda?.pending },
             ].map(({ k, label, count }) => {
               const s = ST[k];
@@ -1717,6 +1608,19 @@ export default function ChandaDashboard() {
                 </button>
               );
             })}
+            {hasFilters && (
+              <button
+                onClick={clearFilters}
+                title="Clear all filters"
+                style={{
+                  display: "flex", alignItems: "center", gap: 5,
+                  padding: "5px 12px", borderRadius: 999,
+                  border: "1.5px dashed #C8C0A8", background: "transparent",
+                  color: "#5B6660", fontWeight: 700, fontSize: 13, cursor: "pointer",
+                }}>
+                <X size={12} /> Clear filters
+              </button>
+            )}
           </div>
         )}
 

@@ -28,14 +28,14 @@
  *
  * PERF PASS 2 (this revision — fixes the "laggy / slow" sheet):
  * - Root cause: every keystroke in Amount / Notes / Transaction-Ref
- *   re-rendered the ENTIRE CollectorScreen. Since MonthPicker,
+ *   re-rendered the ENTIRE CollectorScreen. Since the month selector,
  *   PaymentMethodButton and OptionPill were plain (non-memoized) function
  *   components, they fully re-executed on every keystroke — re-deriving
  *   pendingGenerated/futureMonths/byYear groupings and re-rendering every
  *   month row — even though none of that data had changed. Fixed by:
- *     • React.memo on MonthPicker, its Row (MonthRow), PaymentMethodButton,
+ *     • React.memo on MonthRunSelector, PaymentMethodButton,
  *       OptionPill, and StickySelectionBar.
- *     • useMemo for MonthPicker's derived groupings, keyed on `months`.
+ *     • useMemo for the month run, keyed on `availableMonths`.
  *     • useCallback on every handler passed into these memoized components
  *       (toggleMonth, quickSelectMonths, resetForm, fetchAvailableMonths,
  *       submit handlers, onManualSync, openDatePicker, getMonthlyAmt, etc.)
@@ -65,8 +65,10 @@ import { launchImageLibrary } from "react-native-image-picker";
 import { authApiFetch, apiFetch, getWsUrl } from "../config/server";
 import { getToken } from "../utils/secureStorage";
 import { COLORS as C } from "../config/theme";
+import MonthRunSelector, { buildMonthRun } from "../components/MonthRunSelector";
 import { t } from "../i18n";
 import SearchPickerModal from "../components/SearchPickerModal";
+import SafeModal from "../components/SafeModal";
 
 const { width: SW } = Dimensions.get("window");
 const MEMBERS_CACHE_KEY = "collector_members_cache";
@@ -121,7 +123,7 @@ const getMemberStatus = (item, month) => {
   const total = Number(col?.amount_due || 0);
   const paid = Number(col?.total_paid || 0);
   const balance = Math.max(total - paid, 0);
-  const status = balance === 0 && total > 0 ? "paid" : paid > 0 ? "partial" : "pending";
+  const status = balance === 0 && total > 0 ? "paid" : "pending";
   return { col, total, paid, balance, status };
 };
 
@@ -167,8 +169,8 @@ const pb = StyleSheet.create({
 const MemberCard = React.memo(({ item, selectedMonth, onPress, onCall, onNavigate, onHistory }) => {
   const { total, paid, balance, status } = getMemberStatus(item, selectedMonth);
   const ratio = total > 0 ? paid / total : 0;
-  const sColor = status === "paid" ? H.green : status === "partial" ? H.amber : H.warn;
-  const sDim = status === "paid" ? H.greenDim : status === "partial" ? H.amberDim : H.warnDim;
+  const sColor = status === "paid" ? H.green : H.warn;
+  const sDim = status === "paid" ? H.greenDim : H.warnDim;
   const sLabel = t(`collector.status.${status}`);
   const overdue = getConsecutiveUnpaidMonths(item);
 
@@ -185,7 +187,7 @@ const MemberCard = React.memo(({ item, selectedMonth, onPress, onCall, onNavigat
     .filter(c => Number(c.amount_due || 0) > 0 && Number(c.total_paid || 0) < Number(c.amount_due || 0))
     .sort((a, b) => a.month.localeCompare(b.month));
   const pendingCount = pendingCollections.length;
-  // Full outstanding balance across every unpaid/partial month — not just the
+  // Full outstanding balance across every unpaid month — not just the
   // currently-selected month — so "Pending" never reads the same as "Monthly"
   // when only the selected month happens to be unpaid.
   const totalPendingAmount = pendingCollections.reduce(
@@ -367,193 +369,6 @@ const fmtMFull = (key) => {
   return new Date(y, mo - 1, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 };
 
-// Memoized row — MonthPicker can re-render (e.g. when advanceExpanded
-// toggles) without every unrelated row re-rendering too.
-const MonthRow = React.memo(function MonthRow({ item, selected, onToggle }) {
-  return (
-    <AnimatedPressable
-      onPress={() => onToggle(item.month)}
-      activeOpacity={0.7}
-      style={[mp.row, selected && mp.rowSelected]}
-    >
-      <View style={[mp.check, selected && mp.checkSelected]}>
-        {selected && <Text allowFontScaling={false} style={mp.checkMark}>✓</Text>}
-      </View>
-      <View style={{ flex: 1 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-          <Text allowFontScaling={false} style={[mp.monthTxt, selected && mp.monthTxtSelected]}>
-            {item.is_generated ? fmtMShort(item.month) : fmtMFull(item.month)}
-          </Text>
-          {!item.is_generated && (
-            <View style={mp.advancePill}>
-              <Text allowFontScaling={false} style={mp.advancePillTxt}>{t("collector.advance")}</Text>
-            </View>
-          )}
-        </View>
-      </View>
-      {item.status === "partial" && (
-        <Text allowFontScaling={false} style={mp.partialBadge}>Partial</Text>
-      )}
-      <Text allowFontScaling={false} style={[mp.amtTxt, selected && mp.amtTxtSelected]}>
-        ₹{item.remaining}
-      </Text>
-    </AnimatedPressable>
-  );
-});
-
-const MonthPicker = React.memo(function MonthPicker({
-  months, selectedKeys, onToggle, onQuickSelect,
-  advanceExpanded, setAdvanceExpanded,
-  customExpanded, setCustomExpanded,
-  monthlyRate, totalOutstanding, pendingCount,
-}) {
-  // Derived groupings only recompute when the months list itself changes,
-  // not on every keystroke elsewhere in the sheet.
-  const { pendingGenerated, futureMonths, paidMonths, byYear, years } = useMemo(() => {
-    const list = months || [];
-    const pendingGenerated = list.filter(m => m.is_generated && m.remaining > 0);
-    const futureMonths = list.filter(m => !m.is_generated && m.remaining > 0);
-    const paidMonths = list.filter(m => m.remaining <= 0);
-    const byYear = {};
-    futureMonths.forEach(m => {
-      const yr = m.month.slice(0, 4);
-      (byYear[yr] = byYear[yr] || []).push(m);
-    });
-    const years = Object.keys(byYear).sort();
-    return { pendingGenerated, futureMonths, paidMonths, byYear, years };
-  }, [months]);
-
-  if (!months || months.length === 0) return null;
-
-  const isLocked = pendingGenerated.length > 0;
-
-  return (
-    <View>
-      {/* Outstanding summary card */}
-      {(totalOutstanding > 0 || pendingCount > 0) && (
-        <View style={mp.outstandingCard}>
-          <View style={mp.outstandingItem}>
-            <Text allowFontScaling={false} style={mp.outstandingVal}>₹{totalOutstanding}</Text>
-            <Text allowFontScaling={false} style={mp.outstandingLbl}>{t("collector.outstanding")}</Text>
-          </View>
-          <View style={mp.outstandingDivider} />
-          <View style={mp.outstandingItem}>
-            <Text allowFontScaling={false} style={mp.outstandingVal}>{pendingCount}</Text>
-            <Text allowFontScaling={false} style={mp.outstandingLbl}>{t("collector.pendingMonthsLabel")}</Text>
-          </View>
-          <View style={mp.outstandingDivider} />
-          <View style={mp.outstandingItem}>
-            <Text allowFontScaling={false} style={mp.outstandingVal}>₹{monthlyRate}</Text>
-            <Text allowFontScaling={false} style={mp.outstandingLbl}>{t("collector.monthlyRate")}</Text>
-          </View>
-        </View>
-      )}
-
-      {/* Pending months — primary task */}
-      {pendingGenerated.length > 0 && (
-        <>
-          <Text allowFontScaling={false} style={mp.sectionLabel}>{t("collector.pendingMonths")}</Text>
-          {pendingGenerated.map(m => (
-            <MonthRow key={m.month} item={m} selected={selectedKeys.has(m.month)} onToggle={onToggle} />
-          ))}
-        </>
-      )}
-
-      {/* Advance payment section */}
-      {futureMonths.length > 0 && (
-        <View style={mp.advanceSection}>
-          {isLocked ? (
-            // Plain, non-touchable header while locked — a disabled
-            // TouchableOpacity still registers as a responder and can
-            // steal the initial move of a scroll gesture, which is what
-            // made the list feel "stuck" right around this section.
-            <View style={mp.advanceSectionHeader} pointerEvents="none">
-              <View style={{ flex: 1 }}>
-                <Text allowFontScaling={false} style={[mp.advanceSectionTitle, { color: H.textMuted }]}>
-                  {t("collector.advancePayment")}
-                </Text>
-                <Text allowFontScaling={false} style={mp.advanceLockHint}>
-                  {t("collector.advanceLockHint")}
-                </Text>
-              </View>
-              <Text allowFontScaling={false} style={mp.lockIcon}>🔒</Text>
-            </View>
-          ) : (
-            <AnimatedPressable
-              style={mp.advanceSectionHeader}
-              onPress={() => setAdvanceExpanded(!advanceExpanded)}
-              activeOpacity={0.7}
-            >
-              <View style={{ flex: 1 }}>
-                <Text allowFontScaling={false} style={mp.advanceSectionTitle}>
-                  {t("collector.advancePayment")}
-                </Text>
-              </View>
-              <Text allowFontScaling={false} style={mp.chevron}>{advanceExpanded ? "▲" : "▼"}</Text>
-            </AnimatedPressable>
-          )}
-
-          {/* Only show contents when pending is cleared */}
-          {advanceExpanded && !isLocked && (
-            <View style={mp.advanceSectionBody}>
-              {/* Quick action buttons */}
-              <View style={mp.quickRow}>
-                {[3, 6, 12].filter(n => futureMonths.length >= n).map(n => (
-                  <AnimatedPressable
-                    key={n}
-                    style={mp.quickBtn}
-                    onPress={() => onQuickSelect(n)}
-                    activeOpacity={0.75}
-                  >
-                    <Text allowFontScaling={false} style={mp.quickBtnTxt}>
-                      {n} {t("collector.months")}
-                    </Text>
-                  </AnimatedPressable>
-                ))}
-              </View>
-
-              {/* Custom months toggle */}
-              <AnimatedPressable
-                style={mp.customToggle}
-                onPress={() => setCustomExpanded(!customExpanded)}
-                activeOpacity={0.7}
-              >
-                <Text allowFontScaling={false} style={mp.customToggleTxt}>{t("collector.chooseCustomMonths")}</Text>
-                <Text allowFontScaling={false} style={mp.chevron}>{customExpanded ? "▲" : "▼"}</Text>
-              </AnimatedPressable>
-
-              {/* Year-grouped custom months — advance badge + full month+year */}
-              {customExpanded && years.map(yr => (
-                <View key={yr}>
-                  <Text allowFontScaling={false} style={mp.yearLabel}>{yr}</Text>
-                  {byYear[yr].map(m => (
-                    <MonthRow key={m.month} item={m} selected={selectedKeys.has(m.month)} onToggle={onToggle} />
-                  ))}
-                </View>
-              ))}
-            </View>
-          )}
-        </View>
-      )}
-
-      {/* Already paid — informational only */}
-      {paidMonths.length > 0 && (
-        <View style={{ marginTop: 10 }}>
-          <Text allowFontScaling={false} style={mp.sectionLabel}>{t("collector.alreadyPaid")}</Text>
-          {paidMonths.map(m => (
-            <View key={m.month} style={mp.paidRow}>
-              <Text allowFontScaling={false} style={mp.paidTxt}>{fmtMShort(m.month)}</Text>
-              <Text allowFontScaling={false} style={mp.paidBadge}>
-                {m.is_advance ? t("collector.paidAdvance") : t("collector.paid")}
-              </Text>
-            </View>
-          ))}
-        </View>
-      )}
-    </View>
-  );
-});
-
 const StickySelectionBar = React.memo(function StickySelectionBar({ count, total, onContinue, loading }) {
   if (count === 0) return null;
   return (
@@ -571,50 +386,6 @@ const StickySelectionBar = React.memo(function StickySelectionBar({ count, total
       </AnimatedPressable>
     </View>
   );
-});
-
-const mp = StyleSheet.create({
-  sectionLabel: { fontSize: 11, fontWeight: "700", color: H.textMuted, marginTop: 14, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.7 },
-
-  outstandingCard: { flexDirection: "row", backgroundColor: H.card, borderRadius: 12, borderWidth: 1, borderColor: H.cardBorder, marginBottom: 14, overflow: "hidden" },
-  outstandingItem: { flex: 1, alignItems: "center", paddingVertical: 12, paddingHorizontal: 4 },
-  outstandingVal: { fontSize: 16, fontWeight: "800", color: H.textDark },
-  outstandingLbl: { fontSize: 10, fontWeight: "600", color: H.textMuted, marginTop: 2, textAlign: "center" },
-  outstandingDivider: { width: 1, backgroundColor: H.cardBorder, marginVertical: 10 },
-
-  row: { flexDirection: "row", alignItems: "center", paddingVertical: 13, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, borderColor: H.cardBorder, marginBottom: 6, backgroundColor: H.card },
-  rowSelected: { borderColor: H.green, backgroundColor: "rgba(14,107,69,0.07)" },
-  check: { width: 26, height: 26, borderRadius: 7, borderWidth: 1.5, borderColor: H.cardBorder, marginRight: 12, alignItems: "center", justifyContent: "center" },
-  checkSelected: { backgroundColor: H.green, borderColor: H.green },
-  checkMark: { color: "#fff", fontSize: 14, fontWeight: "800" },
-  monthTxt: { fontSize: 14, fontWeight: "700", color: H.textDark },
-  monthTxtSelected: { color: H.green },
-  advancePill: { backgroundColor: "rgba(16,185,129,0.12)", borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 },
-  advancePillTxt: { fontSize: 10, fontWeight: "800", color: "#059669" },
-  advanceLockHint: { fontSize: 11, color: H.textMuted, marginTop: 2, lineHeight: 15 },
-  lockIcon: { fontSize: 15, marginLeft: 6 },
-  amtTxt: { fontSize: 14, fontWeight: "700", color: H.goldDeep },
-  amtTxtSelected: { color: H.green },
-  partialBadge: { fontSize: 10, fontWeight: "700", color: H.amber, backgroundColor: H.amberDim, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, marginRight: 8 },
-
-  advanceSection: { marginTop: 14, borderRadius: 12, borderWidth: 1, borderColor: H.cardBorder, overflow: "hidden" },
-  advanceSectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 13, paddingHorizontal: 14, backgroundColor: H.card },
-  advanceSectionTitle: { fontSize: 14, fontWeight: "700", color: H.textDark },
-  chevron: { fontSize: 11, color: H.textMuted, fontWeight: "700" },
-  advanceSectionBody: { backgroundColor: H.bg, borderTopWidth: 1, borderTopColor: H.cardBorder, padding: 12 },
-
-  quickRow: { flexDirection: "row", gap: 8, marginBottom: 10 },
-  quickBtn: { flex: 1, backgroundColor: H.card, borderRadius: 9, borderWidth: 1.5, borderColor: H.green, paddingVertical: 11, alignItems: "center" },
-  quickBtnTxt: { fontSize: 13, fontWeight: "700", color: H.green },
-
-  customToggle: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 10, borderTopWidth: 1, borderTopColor: H.cardBorder, marginTop: 2 },
-  customToggleTxt: { fontSize: 13, fontWeight: "600", color: H.textDark },
-
-  yearLabel: { fontSize: 12, fontWeight: "800", color: H.textMuted, textTransform: "uppercase", letterSpacing: 0.8, marginTop: 10, marginBottom: 6 },
-
-  paidRow: { flexDirection: "row", alignItems: "center", paddingVertical: 8, paddingHorizontal: 10, borderRadius: 10, borderWidth: 1, borderColor: H.cardBorder, marginBottom: 5, backgroundColor: H.card, opacity: 0.55 },
-  paidTxt: { flex: 1, fontSize: 13, fontWeight: "600", color: H.textMuted },
-  paidBadge: { fontSize: 10, fontWeight: "700", color: H.green, backgroundColor: "rgba(14,107,69,0.1)", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 },
 });
 
 const sb = StyleSheet.create({
@@ -665,7 +436,7 @@ function QRViewerModal({ visible, onClose, imageSource }) {
   }, [visible]);
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
+    <SafeModal visible={visible} transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
       <Pressable style={s.qrOverlay} onPress={onClose}>
         <Animated.View style={{ opacity: fadeAnim, transform: [{ scale: scaleAnim }] }}>
           <Pressable onPress={() => {}}>
@@ -676,7 +447,7 @@ function QRViewerModal({ visible, onClose, imageSource }) {
           </Pressable>
         </Animated.View>
       </Pressable>
-    </Modal>
+    </SafeModal>
   );
 }
 
@@ -705,11 +476,13 @@ export default function CollectorScreen({ navigation, route }) {
   const [method, setMethod] = useState("cash");
   // Month allocation picker state
   const [selectedMonthKeys, setSelectedMonthKeys] = useState(new Set());
+  // A run is always contiguous, so one count describes the whole selection.
+  // selectedMonthKeys stays the source of truth for submission and is derived
+  // from this, so the payload, amount sync and receipt logic are untouched.
+  const [monthCount, setMonthCount] = useState(0);
   const [availableMonths, setAvailableMonths] = useState([]);
   const [availableMonthsLoading, setAvailableMonthsLoading] = useState(false);
   const [sheetRefreshing, setSheetRefreshing] = useState(false);
-  const [advanceExpanded, setAdvanceExpanded] = useState(false);
-  const [customExpanded, setCustomExpanded] = useState(false);
   const [proofImage, setProofImage] = useState(null);
   const [transactionRef, setTransactionRef] = useState("");
   const [notes, setNotes] = useState("");
@@ -741,7 +514,6 @@ export default function CollectorScreen({ navigation, route }) {
   const FILTERS = useMemo(() => ([
     { key: "all", label: t("collector.filters.all") },
     { key: "pending", label: t("collector.filters.pending") },
-    { key: "partial", label: t("collector.filters.partial") },
     { key: "paid", label: t("collector.filters.paid") },
     { key: "overdue3", label: t("collector.filters.overdue3") },
     { key: "overdue6", label: t("collector.filters.overdue6") },
@@ -973,9 +745,8 @@ export default function CollectorScreen({ navigation, route }) {
     setAmount("");
     setMethod("cash");
     setSelectedMonthKeys(new Set());
+    setMonthCount(0);
     setAvailableMonths([]);
-    setAdvanceExpanded(false);
-    setCustomExpanded(false);
     setProofImage(null);
     setTransactionRef("");
     setNotes("");
@@ -1016,14 +787,12 @@ export default function CollectorScreen({ navigation, route }) {
 
   const closeModal = useCallback(() => { setSelected(null); resetForm(); }, [resetForm]);
 
-  const toggleMonth = useCallback((monthKey) => {
-    setSelectedMonthKeys(prev => {
-      const next = new Set(prev);
-      if (next.has(monthKey)) next.delete(monthKey);
-      else next.add(monthKey);
-      return next;
-    });
-  }, []);
+  // Payable months, oldest first: dues then advance, as one continuous run.
+  const monthRun = useMemo(() => buildMonthRun(availableMonths), [availableMonths]);
+
+  useEffect(() => {
+    setSelectedMonthKeys(new Set(monthRun.slice(0, monthCount).map(r => r.month)));
+  }, [monthCount, monthRun]);
 
   // Keep `amount` in sync with the selected months from a single effect,
   // instead of recomputing the same total by hand inside both toggleMonth
@@ -1035,15 +804,6 @@ export default function CollectorScreen({ navigation, route }) {
     setAmount(total > 0 ? String(Math.round(total)) : "");
   }, [selectedMonthKeys, availableMonths]);
 
-  const quickSelectMonths = useCallback((n) => {
-    setSelectedMonthKeys(prev => {
-      const futureMonths = availableMonths.filter(m => !m.is_generated && m.remaining > 0);
-      const toSelect = futureMonths.slice(0, n);
-      const next = new Set(prev);
-      toSelect.forEach(m => next.add(m.month));
-      return next;
-    });
-  }, [availableMonths]);
 
   const getMonthlyAmt = useCallback(() => {
     const cur = selected?.collections?.find((c) => c?.month === selectedMonth);
@@ -1215,7 +975,7 @@ export default function CollectorScreen({ navigation, route }) {
       return haystack.includes(q);
     });
 
-    const cnt = { all: all.length, paid: 0, partial: 0, pending: 0, overdue3: 0, overdue6: 0, overdue12: 0, active: 0, inactive: 0 };
+    const cnt = { all: all.length, paid: 0, pending: 0, overdue3: 0, overdue6: 0, overdue12: 0, active: 0, inactive: 0 };
     all.forEach((m) => {
       const { status } = getMemberStatus(m, selectedMonth);
       cnt[status] = (cnt[status] || 0) + 1;
@@ -1228,7 +988,7 @@ export default function CollectorScreen({ navigation, route }) {
     });
 
     let shown = all;
-    if (filterStatus === "pending" || filterStatus === "partial" || filterStatus === "paid") {
+    if (filterStatus === "pending" || filterStatus === "paid") {
       shown = all.filter((m) => getMemberStatus(m, selectedMonth).status === filterStatus);
     } else if (filterStatus === "overdue3") {
       shown = all.filter((m) => getConsecutiveUnpaidMonths(m) >= 3);
@@ -1244,7 +1004,7 @@ export default function CollectorScreen({ navigation, route }) {
 
     // Bucket paid members to the bottom first, then apply the active sort
     // within each bucket. This holds regardless of which sort/filter is
-    // selected — pending/partial always float up, paid always sinks.
+    // selected — pending always floats up, paid always sinks.
     const sorted = shown.slice().sort((a, b) => {
       const aPaid = getMemberStatus(a, selectedMonth).status === "paid" ? 1 : 0;
       const bPaid = getMemberStatus(b, selectedMonth).status === "paid" ? 1 : 0;
@@ -1519,7 +1279,7 @@ export default function CollectorScreen({ navigation, route }) {
         onClose={() => setShowStreetDropdown(false)}
       />
 
-      <Modal visible={!!selected} transparent animationType="slide" onRequestClose={closeModal}>
+      <SafeModal visible={!!selected} transparent animationType="slide" onRequestClose={closeModal}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <Pressable style={s.overlay} onPress={closeModal}>
             <View style={s.sheet} onStartShouldSetResponder={() => true} onResponderTerminationRequest={() => true}>
@@ -1609,18 +1369,11 @@ export default function CollectorScreen({ navigation, route }) {
                         {availableMonthsLoading ? (
                           <Text allowFontScaling={false} style={[s.secLabel, { marginTop: 12 }]}>Loading months…</Text>
                         ) : (
-                          <MonthPicker
-                            months={availableMonths}
-                            selectedKeys={selectedMonthKeys}
-                            onToggle={toggleMonth}
-                            onQuickSelect={quickSelectMonths}
-                            advanceExpanded={advanceExpanded}
-                            setAdvanceExpanded={setAdvanceExpanded}
-                            customExpanded={customExpanded}
-                            setCustomExpanded={setCustomExpanded}
-                            monthlyRate={getMonthlyAmt()}
-                            totalOutstanding={availableMonths.filter(m => m.is_generated && m.remaining > 0).reduce((sum, m) => sum + m.remaining, 0)}
-                            pendingCount={availableMonths.filter(m => m.is_generated && m.remaining > 0).length}
+                          <MonthRunSelector
+                            months={monthRun}
+                            count={monthCount}
+                            onCountChange={setMonthCount}
+                            t={t}
                           />
                         )}
                       </View>
@@ -1722,11 +1475,11 @@ export default function CollectorScreen({ navigation, route }) {
             </View>
           </Pressable>
         </KeyboardAvoidingView>
-      </Modal>
+      </SafeModal>
 
       {/* Date picker — a top-level sibling of the sheet Modal, never nested
           inside the sheet's ScrollView (see SCROLL-STUCK FIX note above). */}
-      <Modal visible={showDate} transparent animationType="fade" onRequestClose={() => setShowDate(false)}>
+      <SafeModal visible={showDate} transparent animationType="fade" onRequestClose={() => setShowDate(false)}>
         <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", alignItems: "center" }}
           onPress={() => setShowDate(false)}>
           <Pressable style={{
@@ -1781,10 +1534,10 @@ export default function CollectorScreen({ navigation, route }) {
             </AnimatedPressable>
           </Pressable>
         </Pressable>
-      </Modal>
+      </SafeModal>
 
       {/* Payment confirmation modal */}
-      <Modal visible={confirmVisible} transparent animationType="fade" onRequestClose={() => setConfirmVisible(false)}>
+      <SafeModal visible={confirmVisible} transparent animationType="fade" onRequestClose={() => setConfirmVisible(false)}>
         <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center", paddingHorizontal: 20 }}
           onPress={() => setConfirmVisible(false)}>
           <Pressable style={{ backgroundColor: "#fff", borderRadius: 18, padding: 22, width: "100%", maxWidth: 360 }} onPress={() => {}}>
@@ -1875,7 +1628,7 @@ export default function CollectorScreen({ navigation, route }) {
             )}
           </Pressable>
         </Pressable>
-      </Modal>
+      </SafeModal>
     </View>
   );
 }

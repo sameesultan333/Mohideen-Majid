@@ -822,7 +822,7 @@ const styles = StyleSheet.create({
 
 const hs = StyleSheet.create({
 
-  wrap: { height: HEADER_H, paddingHorizontal: 20, overflow: "hidden", borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
+  wrap: { height: HEADER_H - 12, paddingHorizontal: 20, overflow: "hidden", borderBottomLeftRadius: 24, borderBottomRightRadius: 24, paddingTop: 18, },
 
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 4 },
 

@@ -275,7 +275,7 @@ class ChandaCollection(Base):
     month              = Column(String, index=True)          # "YYYY-MM"
     amount_due         = Column(Float, nullable=False)
     total_paid         = Column(Float, default=0)
-    status             = Column(String, default="pending", index=True)   # pending | partial | paid
+    status             = Column(String, default="pending", index=True)   # pending | paid
     is_advance         = Column(Boolean, default=False)       # True when paid via advance from a prior month
     advance_payment_id = Column(Integer, ForeignKey("payment_entries.id"), nullable=True)
     rate_snapshot      = Column(Float, nullable=True)          # head.monthly_amount at time of generation

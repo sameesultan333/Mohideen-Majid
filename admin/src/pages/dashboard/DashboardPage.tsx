@@ -449,7 +449,6 @@ export default function DashboardPage() {
   const totalFamilies = dash?.families?.total ?? 0;
   const paidCount = chanda?.paid ?? 0;
   const pendingCount = chanda?.pending ?? 0;
-  const partialCount = chanda?.partial ?? 0;
   const collectionPct = chanda?.collection_pct ?? 0;
   const income = month?.total ?? 0;
   const cash  = month?.cash ?? 0;
@@ -536,7 +535,7 @@ export default function DashboardPage() {
               sub={`${fmt(dash?.donations?.total)} received · ${fmt(dash?.expenses?.total)} spent`} />
             <StatCard label="Active Families" value={String(totalFamilies)}
               accent={COLORS.lapis} icon={Users}
-              sub={`${paidCount} paid · ${pendingCount + partialCount} pending`}
+              sub={`${paidCount} paid · ${pendingCount} pending`}
               onClick={() => navigate("/chanda")} />
           </div>
 
@@ -574,7 +573,6 @@ export default function DashboardPage() {
                   <div>
                     {[
                       { label: "Paid",     count: paidCount,    color: COLORS.primary },
-                      { label: "Partial",  count: partialCount, color: COLORS.warning },
                       { label: "Not paid", count: pendingCount, color: COLORS.danger },
                     ].map(({ label, count, color }) => (
                       <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 7 }}>
@@ -614,7 +612,7 @@ export default function DashboardPage() {
           </div>
 
           {/* ── Who hasn't paid ── */}
-          {pendingCount + partialCount > 0 && (
+          {pendingCount > 0 && (
             <div style={{ background: COLORS.surface, borderRadius: 14, padding: "14px 18px", border: `1px solid ${COLORS.cardBorder}`, marginBottom: MB }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: COLORS.textMuted, textTransform: "uppercase" }}>
@@ -633,15 +631,7 @@ export default function DashboardPage() {
                   <AlertTriangle size={18} color={COLORS.danger} />
                   <div>
                     <div style={{ fontSize: 20, fontWeight: 700, color: COLORS.danger, fontFamily: TYPOGRAPHY.fontMono }}>{pendingCount}</div>
-                    <div style={{ fontSize: 10, color: COLORS.danger, opacity: 0.8 }}>Not paid at all</div>
-                  </div>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px",
-                  background: COLORS.warningLight, borderRadius: 10 }}>
-                  <Clock size={18} color={COLORS.warning} />
-                  <div>
-                    <div style={{ fontSize: 20, fontWeight: 700, color: COLORS.warning, fontFamily: TYPOGRAPHY.fontMono }}>{partialCount}</div>
-                    <div style={{ fontSize: 10, color: COLORS.warning, opacity: 0.8 }}>Partial payment</div>
+                    <div style={{ fontSize: 10, color: COLORS.danger, opacity: 0.8 }}>Pending</div>
                   </div>
                 </div>
                 {totalFamilies > 0 && (

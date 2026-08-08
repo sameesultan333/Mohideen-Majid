@@ -105,7 +105,7 @@ def finance_dashboard(
     # "Expected" (amount_due) excludes families deactivated before paying —
     # already-paid amounts always count regardless of current active status
     # ("received amount unchanged"), so the exclusion only applies when the
-    # row is still pending/partial.
+    # row is still unpaid.
     # Same is_active-or-paid condition used for both the row count and the
     # due-amount sum below — a deactivated family's still-existing pending
     # row must not inflate the Pending count either, or "Pending" ends up
@@ -128,11 +128,10 @@ def finance_dashboard(
         .group_by(models.ChandaCollection.status)
         .all()
     )
-    paid_count = partial_count = pending_count = 0
+    paid_count = pending_count = 0
     due_month = collected_month = 0.0
     for _st, _cnt, _due, _paid in _chanda_agg:
         if _st == "paid":      paid_count    = _cnt
-        elif _st == "partial": partial_count = _cnt
         else:                  pending_count += _cnt
         due_month       += float(_due  or 0)
         collected_month += float(_paid or 0)
@@ -310,7 +309,6 @@ def finance_dashboard(
         },
         "chanda": {
             "paid": paid_count,
-            "partial": partial_count,
             "pending": pending_count,
             "due": round(due_month, 2),
             "collected": round(collected_month, 2),
@@ -920,6 +918,7 @@ def monthly_report(
             "chanda_no":    head.chanda_no if head else None,
             "name":         head.name      if head else None,
             "phone":        head.phone     if head else None,
+            "zone":         head.zone      if head else None,
             "amount_due":   c.amount_due,
             "total_paid":   c.total_paid,
             "balance":      round(max(c.amount_due - c.total_paid, 0), 2),
@@ -927,7 +926,6 @@ def monthly_report(
         })
 
     paid_rows    = [r for r in rows if r["status"] == "paid"]
-    partial_rows = [r for r in rows if r["status"] == "partial"]
     pending_rows = [r for r in rows if r["status"] == "pending"]
 
     total_due       = sum(r["amount_due"] for r in rows)
@@ -948,7 +946,6 @@ def monthly_report(
         "summary": {
             "total_families":  len(rows),
             "paid":            len(paid_rows),
-            "partial":         len(partial_rows),
             "pending":         len(pending_rows),
             "total_due":       round(total_due, 2),
             "total_collected": round(total_collected, 2),
@@ -1044,7 +1041,6 @@ def family_statement(
             # Paid counts every month settled, advance months included.
             "paid_months":            sum(1 for c in cols if c.status == "paid"),
             # Partial/pending only ever describe generated months.
-            "partial_months":         sum(1 for c in due_cols if c.status == "partial"),
             "pending_months":         sum(1 for c in due_cols if c.status == "pending"),
             "total_due":              round(total_due, 2),
             "total_paid":             round(total_paid, 2),
@@ -1211,7 +1207,14 @@ def monthly_report_pdf(
     footer_text = _get_setting(db, "receipt_footer")
 
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=1.5*cm, bottomMargin=1.5*cm)
+    # Symmetric A4 margins so the page reads as a printed document and nothing
+    # sits near the trim edge when it comes out of a printer.
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        topMargin=1.6*cm, bottomMargin=1.6*cm,
+        leftMargin=1.5*cm, rightMargin=1.5*cm,
+        title="Chanda Collection Report", author="Mohideen Masjid",
+    )
     styles = getSampleStyleSheet()
     elements = []
 
@@ -1223,7 +1226,6 @@ def monthly_report_pdf(
     summary_data = [
         ["Families", str(s["total_families"])],
         ["Paid",     str(s["paid"])],
-        ["Partial",  str(s["partial"])],
         ["Pending",  str(s["pending"])],
         ["Total Due",       f"₹{s['total_due']:,.2f}"],
         ["Total Collected", f"₹{s['total_collected']:,.2f}"],
@@ -1242,28 +1244,56 @@ def monthly_report_pdf(
     elements.append(Spacer(1, 0.6*cm))
 
     elements.append(Paragraph("Collection Details", styles["Heading3"]))
-    col_header = ["#", "Chanda No", "Name", "Due (₹)", "Paid (₹)", "Balance (₹)", "Status"]
+    col_header = ["#", "Chanda No", "Family Name", "Zone", "Monthly (₹)", "Paid (₹)", "Due (₹)", "Status"]
     col_rows   = [col_header] + [
         [
             str(i + 1),
             r["chanda_no"] or "",
             r["name"] or "",
-            f"{r['amount_due']:,.2f}",
-            f"{r['total_paid']:,.2f}",
-            f"{r['balance']:,.2f}",
-            r["status"].upper(),
+            r.get("zone") or "—",
+            f"{r['amount_due']:,.0f}",
+            f"{r['total_paid']:,.0f}",
+            f"{max(r['amount_due'] - r['total_paid'], 0):,.0f}",
+            r["status"].title(),
         ]
         for i, r in enumerate(data["collections"])
     ]
-    col_table = Table(col_rows, colWidths=[1*cm, 2.5*cm, 5*cm, 2.5*cm, 2.5*cm, 2.5*cm, 2*cm])
+    col_table = Table(
+        col_rows,
+        colWidths=[0.9*cm, 2.4*cm, 5.4*cm, 2.4*cm, 2.3*cm, 2.3*cm, 2.3*cm, 1.8*cm],
+        repeatRows=1,   # header repeats on every page break
+    )
+    # Business-report styling: no heavy grid, numerals right-aligned on a mono
+    # face so columns line up, hairline rules between rows only, and generous
+    # cell padding. A full grid plus centred numbers is what made the old table
+    # read as a spreadsheet dump rather than a printed report.
     col_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0F5C4C")),
-        ("TEXTCOLOR",  (0, 0), (-1, 0), colors.white),
-        ("FONTNAME",   (0, 0), (-1, -1), "Helvetica"),
-        ("FONTSIZE",   (0, 0), (-1, -1), 8),
-        ("GRID",       (0, 0), (-1, -1), 0.4, colors.grey),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F7F5EF")]),
-        ("PADDING",    (0, 0), (-1, -1), 5),
+        # Header
+        ("BACKGROUND",    (0, 0), (-1, 0), colors.HexColor("#0F5C4C")),
+        ("TEXTCOLOR",     (0, 0), (-1, 0), colors.white),
+        ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE",      (0, 0), (-1, 0), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 7),
+        ("TOPPADDING",    (0, 0), (-1, 0), 7),
+        # Body
+        ("FONTNAME",      (0, 1), (-1, -1), "Helvetica"),
+        ("FONTSIZE",      (0, 1), (-1, -1), 8.5),
+        ("TEXTCOLOR",     (0, 1), (-1, -1), colors.HexColor("#1C231F")),
+        ("TOPPADDING",    (0, 1), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 1), (-1, -1), 6),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 7),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 7),
+        # Money columns: monospaced and right-aligned so digits align.
+        ("FONTNAME",      (4, 1), (6, -1), "Courier"),
+        ("ALIGN",         (4, 0), (6, -1), "RIGHT"),
+        ("ALIGN",         (0, 0), (0, -1), "RIGHT"),
+        ("ALIGN",         (7, 0), (7, -1), "CENTER"),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        # Rules: hairlines between rows, a rule under the header, no vertical grid.
+        ("LINEBELOW",     (0, 0), (-1, 0), 0.9, colors.HexColor("#0F5C4C")),
+        ("LINEBELOW",     (0, 1), (-1, -2), 0.25, colors.HexColor("#DFDACB")),
+        ("LINEBELOW",     (0, -1), (-1, -1), 0.7, colors.HexColor("#B8B09A")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#FAF9F4")]),
     ]))
     elements.append(col_table)
 
@@ -1301,7 +1331,14 @@ def family_statement_pdf(
     s           = data["summary"]
 
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=1.5*cm, bottomMargin=1.5*cm)
+    # Symmetric A4 margins so the page reads as a printed document and nothing
+    # sits near the trim edge when it comes out of a printer.
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        topMargin=1.6*cm, bottomMargin=1.6*cm,
+        leftMargin=1.5*cm, rightMargin=1.5*cm,
+        title="Chanda Collection Report", author="Mohideen Masjid",
+    )
     styles   = getSampleStyleSheet()
     elements = []
 
@@ -1316,7 +1353,6 @@ def family_statement_pdf(
     summary_data = [
         ["Total Months",    str(s["total_months"])],
         ["Paid",            str(s["paid_months"])],
-        ["Partial",         str(s["partial_months"])],
         ["Pending",         str(s["pending_months"])],
         ["Total Due",       f"₹{s['total_due']:,.2f}"],
         ["Total Paid",      f"₹{s['total_paid']:,.2f}"],
@@ -1420,7 +1456,6 @@ def monthly_report_excel(
     for k, v in [
         ("Total Families", s["total_families"]),
         ("Paid",           s["paid"]),
-        ("Partial",        s["partial"]),
         ("Pending",        s["pending"]),
         ("Total Due",      s["total_due"]),
         ("Total Collected",s["total_collected"]),
@@ -1430,10 +1465,18 @@ def monthly_report_excel(
         ws.append([k, v])
     ws.append([])
 
-    _xl_header_style(ws, ["#", "Chanda No", "Name", "Due (₹)", "Paid (₹)", "Balance (₹)", "Status"],
-                     [5, 12, 25, 12, 12, 14, 10])
+    _xl_header_style(
+        ws,
+        ["#", "Chanda No", "Family Name", "Zone", "Monthly (₹)", "Paid (₹)", "Due (₹)", "Status"],
+        [5, 12, 26, 14, 13, 13, 13, 10],
+    )
     for i, r in enumerate(data["collections"], 1):
-        ws.append([i, r["chanda_no"], r["name"], r["amount_due"], r["total_paid"], r["balance"], r["status"].upper()])
+        ws.append([
+            i, r["chanda_no"], r["name"], r.get("zone") or "",
+            r["amount_due"], r["total_paid"],
+            max(r["amount_due"] - r["total_paid"], 0),
+            r["status"].title(),
+        ])
 
     # ── Donations sheet ────────────────────────────────────────
     ws2 = wb.create_sheet("Donations")
@@ -1478,7 +1521,6 @@ def family_statement_excel(
     for k, v in [
         ("Total Months",    s["total_months"]),
         ("Paid",            s["paid_months"]),
-        ("Partial",         s["partial_months"]),
         ("Pending",         s["pending_months"]),
         ("Total Due",       s["total_due"]),
         ("Total Paid",      s["total_paid"]),
@@ -2509,7 +2551,6 @@ def get_collector_history(
     today_total   = round(sum(p["amount"] for p in today_items), 2)
     today_cash    = round(sum(p["amount"] for p in today_items if p["method"] == "cash"), 2)
     today_upi     = round(sum(p["amount"] for p in today_items if p["method"] != "cash"), 2)
-    today_partial = sum(1 for p in today_items if p["status"] == "partial")
     today_advance = sum(1 for p in today_items if p["is_advance"])
 
     # Per-day breakdown (IST calendar day), most recent first — powers the
@@ -2539,7 +2580,6 @@ def get_collector_history(
             "cash":     today_cash,
             "upi":      today_upi,
             "count":    len(today_items),
-            "partial":  today_partial,
             "advance":  today_advance,
         },
         "stats": {

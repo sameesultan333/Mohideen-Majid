@@ -15,7 +15,7 @@ import { COLORS, RADII, FONTS } from "../config/theme";
 
 const { width: SW } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
-import { STATUSBAR_HEIGHT } from "../utils/statusBar";
+import SafeModal from "../components/SafeModal";
 
 // ─── Palette directly from theme ─────────────────────────────────────
 const C = {
@@ -619,7 +619,7 @@ export default function ImamQAScreen({ navigation }) {
       )}
 
       {/* Answer modal */}
-      <Modal
+      <SafeModal
         visible={modalVisible}
         animationType="slide"
         presentationStyle="pageSheet"
@@ -784,10 +784,10 @@ export default function ImamQAScreen({ navigation }) {
             <View style={{ height: 40 }} />
           </Animated.ScrollView>
         </View>
-      </Modal>
+      </SafeModal>
 
       {/* Full-screen image preview */}
-      <Modal
+      <SafeModal
         visible={imagePreviewVisible}
         transparent
         animationType="fade"
@@ -803,7 +803,7 @@ export default function ImamQAScreen({ navigation }) {
             <CloseIcon color={C.white} />
           </AnimatedPressable>
         </AnimatedPressable>
-      </Modal>
+      </SafeModal>
     </View>
   );
 }
@@ -1012,7 +1012,7 @@ const styles = StyleSheet.create({
   imageViewerFull: { width: SW - 32, height: "70%" },
   imageViewerClose: {
     position: "absolute",
-    top: STATUSBAR_HEIGHT + 12,
+    top: 12,
     right: 20,
     width: 40,
     height: 40,
@@ -1026,11 +1026,12 @@ const styles = StyleSheet.create({
 // ─── Header styles ───────────────────────────────────────────────────
 const hs = StyleSheet.create({
   wrap: {
-    height: 148,
+    height: 136,
     paddingHorizontal: 20,
     overflow: "hidden",
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
+    paddingTop: 18,
   },
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 4 },
   backBtn: { width: 40, alignItems: "flex-start", padding: 4 },

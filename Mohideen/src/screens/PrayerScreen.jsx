@@ -751,7 +751,7 @@ const styles = StyleSheet.create({
 });
 
 const hs = StyleSheet.create({
-  wrap: { height: HEADER_H, paddingHorizontal: 20, overflow: "hidden", borderBottomLeftRadius: 24, borderBottomRightRadius: 24, ...shadow(8, 0.16) },
+  wrap: { height: HEADER_H - 12, paddingHorizontal: 20, overflow: "hidden", borderBottomLeftRadius: 24, borderBottomRightRadius: 24, ...shadow(8, 0.16), paddingTop: 18, },
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 4 },
   title: { color: H.white, fontSize: 22, fontWeight: "700", letterSpacing: 0.4 },
   iconContainer: {

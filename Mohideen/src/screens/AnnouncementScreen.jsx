@@ -8,6 +8,7 @@ import BottomNav from "../components/BottomNav";
 import OfflineBanner from "../components/OfflineBanner";
 import { apiAxios, getWsUrl, buildAbsoluteUrl } from "../config/server";
 import { COLORS as C } from "../config/theme";
+import SafeModal from "../components/SafeModal";
 
 const { width: SW } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
@@ -157,7 +158,7 @@ function ImagePreviewModal({ uri, onClose }) {
   };
 
   return (
-    <Modal visible transparent animationType="none" onRequestClose={close} statusBarTranslucent>
+    <SafeModal visible transparent animationType="none" onRequestClose={close} statusBarTranslucent>
       <Animated.View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.92)", opacity: fadeAnim, justifyContent: "center", alignItems: "center" }}>
         <Pressable style={{ position: "absolute", inset: 0 }} onPress={close} />
         <Animated.View style={{ transform: [{ scale: scaleAnim }], width: SW - 32, borderRadius: 18, overflow: "hidden", backgroundColor: "#111" }}>
@@ -174,7 +175,7 @@ function ImagePreviewModal({ uri, onClose }) {
           <Text allowFontScaling={false} style={{ color: "#fff", fontSize: 14, fontWeight: "700" }}>Close</Text>
         </AnimatedPressable>
       </Animated.View>
-    </Modal>
+    </SafeModal>
   );
 }
 
@@ -621,11 +622,12 @@ const styles = StyleSheet.create({
 // ─── Header Styles ────────────────────────────────────────────────────
 const hs = StyleSheet.create({
   wrap: {
-    height: 148,
+    height: 136,
     paddingHorizontal: 20,
     overflow: "hidden",
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
+    paddingTop: 18,
   },
   row: {
     flexDirection: "row",

@@ -82,11 +82,12 @@ const PremiumHeader = memo(({ title }) => {
 
 const headerStyles = StyleSheet.create({
   wrap: {
-    height: HEADER_H,
+    height: HEADER_H - 12,
     paddingHorizontal: 20,
     overflow: "hidden",
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
+    paddingTop: 18,
   },
   content: {
     flex: 1,

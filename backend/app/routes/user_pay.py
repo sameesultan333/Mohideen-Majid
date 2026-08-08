@@ -631,7 +631,7 @@ def get_unpaid_months(
 
             models.ChandaCollection.head_id == head.id,
 
-            models.ChandaCollection.status.in_(["pending", "partial"]),
+            models.ChandaCollection.status == "pending",
 
             models.ChandaCollection.month <= current_month,
 

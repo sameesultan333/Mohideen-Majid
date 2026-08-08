@@ -420,8 +420,8 @@ async def update_family(
         family.monthly_amount = data.monthly_amount
         changed["monthly_amount"] = data.monthly_amount
 
-        # Every unsettled month, not just "pending" — a family part-paying
-        # against a mistyped rate sits at "partial" (see apply_rate_to_open_months).
+        # Unpaid months only — a paid month keeps its original rate forever
+        # (see apply_rate_to_open_months).
         from app.utils.payment_ledger import apply_rate_to_open_months
         apply_rate_to_open_months(db, family_id, data.monthly_amount)
 

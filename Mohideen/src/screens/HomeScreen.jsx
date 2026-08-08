@@ -1527,7 +1527,7 @@ const s = StyleSheet.create({
 });
 
 const hs = StyleSheet.create({
-  wrap: { paddingHorizontal: 20, overflow: "hidden", borderBottomLeftRadius: 26, borderBottomRightRadius: 26, ...shadow(8, 0.18) },
+  wrap: { paddingHorizontal: 20, overflow: "hidden", borderBottomLeftRadius: 26, borderBottomRightRadius: 26, ...shadow(8, 0.18), paddingTop: 18, },
   row: { flexDirection: "row", alignItems: "center", marginTop: 2 },
   avatar: {
     width: 38, height: 38, borderRadius: 19, backgroundColor: "rgba(255,255,255,0.14)",

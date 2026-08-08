@@ -18,6 +18,7 @@ import { authApiFetch } from "../config/server";
 import { COLORS as C } from "../config/theme";
 import { t } from "../i18n";
 import SearchPickerModal from "../components/SearchPickerModal";
+import SafeModal from "../components/SafeModal";
 
 const normalizeRole = (role) => (role || "").toString().trim().toLowerCase();
 const SUPERADMIN_ROLES = ["superadmin", "super_admin", "super admin"];
@@ -44,7 +45,7 @@ const getMemberStatus = (item, month) => {
   const total = Number(col?.amount_due || 0);
   const paid = Number(col?.total_paid || 0);
   const balance = Math.max(total - paid, 0);
-  const status = balance === 0 && total > 0 ? "paid" : paid > 0 ? "partial" : "pending";
+  const status = balance === 0 && total > 0 ? "paid" : "pending";
   return { status };
 };
 
@@ -365,7 +366,7 @@ export default function FamilySearchScreen({ navigation }) {
         renderItem={({ item }) => {
           const fam = item.member;
           const { status } = getMemberStatus(item, selectedMonth);
-          const sColor = status === "paid" ? H.green : status === "partial" ? H.amber : H.warn;
+          const sColor = status === "paid" ? H.green : H.warn;
           return (
             <View style={[s.famCard, { borderLeftWidth: 3, borderLeftColor: sColor }]}>
               <View style={{ flex: 1 }}>
@@ -435,7 +436,7 @@ export default function FamilySearchScreen({ navigation }) {
       />
 
       {/* ── Add Family modal ─────────────────────────────────────────────── */}
-      <Modal visible={showAddFamily} transparent animationType="slide" onRequestClose={() => setShowAddFamily(false)}>
+      <SafeModal visible={showAddFamily} transparent animationType="slide" onRequestClose={() => setShowAddFamily(false)}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <Pressable style={s.overlay} onPress={() => setShowAddFamily(false)}>
             <View style={[s.sheet, { height: "90%" }]} onStartShouldSetResponder={() => true}>
@@ -519,10 +520,10 @@ export default function FamilySearchScreen({ navigation }) {
             </View>
           </Pressable>
         </KeyboardAvoidingView>
-      </Modal>
+      </SafeModal>
 
       {/* ── Edit Family modal ────────────────────────────────────────────── */}
-      <Modal visible={showEditFamily} transparent animationType="slide" onRequestClose={() => setShowEditFamily(false)}>
+      <SafeModal visible={showEditFamily} transparent animationType="slide" onRequestClose={() => setShowEditFamily(false)}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <Pressable style={s.overlay} onPress={() => setShowEditFamily(false)}>
             <View style={[s.sheet, { height: "90%" }]} onStartShouldSetResponder={() => true}>
@@ -606,10 +607,10 @@ export default function FamilySearchScreen({ navigation }) {
             </View>
           </Pressable>
         </KeyboardAvoidingView>
-      </Modal>
+      </SafeModal>
 
       {/* ── Deactivate Member confirmation ──────────────────────────────── */}
-      <Modal visible={showDeactivateConfirm} transparent animationType="fade" onRequestClose={() => setShowDeactivateConfirm(false)}>
+      <SafeModal visible={showDeactivateConfirm} transparent animationType="fade" onRequestClose={() => setShowDeactivateConfirm(false)}>
         <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", paddingHorizontal: 24 }} onPress={() => setShowDeactivateConfirm(false)}>
           <Pressable style={{ backgroundColor: H.card, borderRadius: 18, padding: 20 }} onPress={() => {}}>
             <Text allowFontScaling={false} style={{ fontSize: 16, fontWeight: "800", color: H.textDark, marginBottom: 4 }}>Deactivate Member</Text>
@@ -657,7 +658,7 @@ export default function FamilySearchScreen({ navigation }) {
             </View>
           </Pressable>
         </Pressable>
-      </Modal>
+      </SafeModal>
 
       {/* ── Zone dropdown for Add/Edit Family ───────────────────────────── */}
       <SearchPickerModal
@@ -699,7 +700,7 @@ export default function FamilySearchScreen({ navigation }) {
       {/* ── Chanda Due Since month/year picker for Add/Edit Family ─────────
           Custom JS-only spinner modal, matching CollectorScreen's collected-
           date picker rather than the native DateTimePicker. */}
-      <Modal visible={!!dueSinceModal} transparent animationType="fade" onRequestClose={() => setDueSinceModal(null)}>
+      <SafeModal visible={!!dueSinceModal} transparent animationType="fade" onRequestClose={() => setDueSinceModal(null)}>
         <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", alignItems: "center" }}
           onPress={() => setDueSinceModal(null)}>
           <Pressable style={{
@@ -766,7 +767,7 @@ export default function FamilySearchScreen({ navigation }) {
             </View>
           </Pressable>
         </Pressable>
-      </Modal>
+      </SafeModal>
     </View>
   );
 }

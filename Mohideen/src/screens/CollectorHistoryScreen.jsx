@@ -99,14 +99,12 @@ const groupLabel = (dateStr, t) => {
 const STATUS_CFG = {
   verified: { label: (t) => t("collectorHistory.status.verified"),   color: H.green,  bg: "rgba(14,107,69,0.06)" },
   pending:  { label: (t) => t("collectorHistory.status.pending"),    color: H.amber,  bg: H.amberBg },
-  partial:  { label: (t) => t("collectorHistory.status.partial"),    color: "#6B3FA0", bg: "rgba(107,63,160,0.06)" },
   rejected: { label: (t) => t("collectorHistory.status.rejected"),   color: H.error,  bg: H.errorBg },
 };
 
 const cfgFor = (item) => {
   if (item.status === "verified") return STATUS_CFG.verified;
   if (item.status === "rejected") return STATUS_CFG.rejected;
-  if (item.status === "partial")  return STATUS_CFG.partial;
   return STATUS_CFG.pending;
 };
 
@@ -123,7 +121,6 @@ const FILTERS = [
   { key: "lastMonth", label: (t) => t("collectorHistory.filters.lastMonth") },
   { key: "cash",      label: (t) => t("collectorHistory.filters.cash") },
   { key: "upi",       label: (t) => t("collectorHistory.filters.upi") },
-  { key: "partial",   label: (t) => t("collectorHistory.filters.partial") },
   { key: "advance",   label: (t) => t("collectorHistory.filters.advance") },
   { key: "verified",  label: (t) => t("collectorHistory.filters.verified") },
 ];
@@ -150,7 +147,6 @@ function passesFilter(item, filterKey) {
     case "fund":     return item.entry_type === "fund";
     case "cash":     return item.method === "cash";
     case "upi":      return item.method !== "cash";
-    case "partial":  return item.status === "partial";
     case "advance":  return !!item.is_advance;
     case "verified": return item.status === "verified";
     default: return true;
@@ -224,7 +220,6 @@ const TodayCard = ({ today, isOffline, lastSync, t }) => {
   const count = today?.count || 0;
   const cash = today?.cash || 0;
   const upi = today?.upi || 0;
-  const partial = today?.partial || 0;
   const advance = today?.advance || 0;
 
   return (
@@ -281,15 +276,8 @@ const TodayCard = ({ today, isOffline, lastSync, t }) => {
         </View>
       </View>
 
-      {(partial > 0 || advance > 0) && (
+      {advance > 0 && (
         <View style={s.todayTags}>
-          {partial > 0 && (
-            <View style={[s.tagPill, { backgroundColor: H.amberBg }]}>
-              <Text allowFontScaling={false} style={[s.tagPillTxt, { color: H.amber }]}>
-                {partial} {t("collectorHistory.filters.partial")}
-              </Text>
-            </View>
-          )}
           {advance > 0 && (
             <View style={[s.tagPill, { backgroundColor: H.subtleGreen }]}>
               <Text allowFontScaling={false} style={[s.tagPillTxt, { color: H.green }]}>
@@ -374,11 +362,6 @@ const PaymentCard = React.memo(({ item, t }) => {
           {item.is_advance && (
             <View style={s.advancePill}>
               <Text allowFontScaling={false} style={s.advancePillTxt}>{t("collectorHistory.filters.advance")}</Text>
-            </View>
-          )}
-          {item.status === "partial" && (
-            <View style={[s.advancePill, { backgroundColor: "rgba(107,63,160,0.06)", borderColor: "#6B3FA0" }]}>
-              <Text allowFontScaling={false} style={[s.advancePillTxt, { color: "#6B3FA0" }]}>{t("collectorHistory.filters.partial")}</Text>
             </View>
           )}
         </View>

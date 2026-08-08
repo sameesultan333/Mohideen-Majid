@@ -22,7 +22,7 @@ import { logger } from "../utils/logger";
 
 const { width: SW } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
-import { STATUSBAR_HEIGHT } from "../utils/statusBar";
+import SafeModal from "../components/SafeModal";
 
 // ─── Palette (identical source of truth as AskQuestionScreen) ──────
 const H = {
@@ -585,7 +585,7 @@ export default function ImamHadithScreen() {
         }
       />
 
-      <Modal visible={modalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={closeModal}>
+      <SafeModal visible={modalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={closeModal}>
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>{t("hadith.modalTitle")}</Text>
@@ -756,10 +756,10 @@ export default function ImamHadithScreen() {
             <View style={{ height: 40 }} />
           </Animated.ScrollView>
         </View>
-      </Modal>
+      </SafeModal>
 
       {/* ── Full-size image viewer ────────────────────────────── */}
-      <Modal
+      <SafeModal
         visible={imagePreviewVisible}
         transparent
         animationType="fade"
@@ -777,7 +777,7 @@ export default function ImamHadithScreen() {
             <CloseIcon color={H.white} />
           </AnimatedPressable>
         </AnimatedPressable>
-      </Modal>
+      </SafeModal>
     </View>
   );
 }
@@ -893,7 +893,7 @@ const styles = StyleSheet.create({
   },
   imageViewerFull: { width: SW - 32, height: "70%" },
   imageViewerClose: {
-    position: "absolute", top: STATUSBAR_HEIGHT + 12, right: 20,
+    position: "absolute", top: 12, right: 20,
     width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.15)",
     justifyContent: "center", alignItems: "center",
   },
@@ -902,11 +902,12 @@ const styles = StyleSheet.create({
 // ─── Header Styles ────────────────────────────────────────────────────
 const hs = StyleSheet.create({
   wrap: {
-    height: 148,
+    height: 136,
     paddingHorizontal: 20,
     overflow: "hidden",
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
+    paddingTop: 18,
   },
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 4 },
   titleContainer: { flex: 1, marginRight: 12 },

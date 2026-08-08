@@ -1,9 +1,35 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Base application theme. -->
-    <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
-        <!-- Customize your theme here. -->
+    <!-- Base application theme.
+         Light, not DayNight. Every screen in this app is designed light
+         (ivory / white / emerald) and there is no dark variant. Declaring
+         DayNight meant that on a phone in dark mode Android applied dark
+         defaults to everything it owns — the status bar, native dialogs, text
+         inputs — while the JS UI stayed light, which is what made the status
+         bar icons nearly unreadable. Light keeps the system chrome in step
+         with the UI we actually draw. -->
+    <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
         <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
+
+        <!-- Never let Android auto-invert this app in dark mode. Force-dark
+             recolours surfaces it thinks are light, which flipped the ivory
+             status-bar strip to a dark one while the icons stayed dark —
+             dark-on-dark, effectively invisible. -->
+        <item name="android:forceDarkAllowed" tools:targetApi="q">false</item>
+
+        <!-- Status bar icons.
+             The app renders a light (ivory) strip behind the status bar, so the
+             clock, battery and signal icons must be DARK or they vanish on it.
+             windowLightStatusBar is what actually controls that on Android, and
+             setting it here means the icons are correct from the moment the app
+             launches rather than only after the JS StatusBar component mounts.
+
+             android:statusBarColor is honoured up to API 34; from API 35
+             edge-to-edge is enforced and the system ignores it, which is fine —
+             the SafeAreaView in App.jsx paints the same ivory behind the bar on
+             those versions, so the strip looks identical either way. -->
+        <item name="android:statusBarColor">@color/status_bar_bg</item>
+        <item name="android:windowLightStatusBar">true</item>
     </style>
 
 </resources>
