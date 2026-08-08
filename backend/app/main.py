@@ -87,7 +87,18 @@ def _repair_missing_primary_keys() -> None:
     import logging as _l
     log = _l.getLogger(__name__)
 
-    for table, pk_col in (("approved_heads", "id"), ("users", "id")):
+    # Every table the models define with a single-column primary key. Derived
+    # from the metadata rather than hardcoded: the first fix named only
+    # approved_heads and users, and the next boot failed on payment_entries
+    # instead — a legacy schema can be missing the key on any number of tables,
+    # and each one blocks every table that references it.
+    candidates = []
+    for tbl in models.Base.metadata.sorted_tables:
+        pk_cols = list(tbl.primary_key.columns)
+        if len(pk_cols) == 1:
+            candidates.append((tbl.name, pk_cols[0].name))
+
+    for table, pk_col in candidates:
         try:
             with engine.begin() as conn:
                 exists = conn.execute(
