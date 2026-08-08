@@ -66,6 +66,67 @@ CLEANUP_INTERVAL_SECONDS = 60 * 60
 # -----------------------------
 # DB INIT
 # -----------------------------
+
+def _repair_missing_primary_keys() -> None:
+    """Restore primary keys that a legacy schema is missing, before create_all.
+
+    A table left over from an older schema can exist without a PRIMARY KEY. Any
+    table created afterwards that references it then fails with
+
+        InvalidForeignKey: there is no unique constraint matching given keys
+        for referenced table "approved_heads"
+
+    because Postgres will not point a foreign key at a non-unique column. That
+    happens during create_all, at import time, so the worker dies before serving
+    a single request — the whole service stays down rather than degrading.
+
+    Adding the PK back is safe and idempotent: it runs only when the table
+    exists AND has no primary key AND its id values are unique and non-null, so
+    a healthy database is untouched and bad data is never silently papered over.
+    """
+    import logging as _l
+    log = _l.getLogger(__name__)
+
+    for table, pk_col in (("approved_heads", "id"), ("users", "id")):
+        try:
+            with engine.begin() as conn:
+                exists = conn.execute(
+                    text("SELECT to_regclass(:t)"), {"t": f"public.{table}"}
+                ).scalar()
+                if not exists:
+                    continue
+
+                has_pk = conn.execute(text("""
+                    SELECT COUNT(*) FROM pg_constraint
+                    WHERE conrelid = to_regclass(:t) AND contype = 'p'
+                """), {"t": f"public.{table}"}).scalar()
+                if has_pk:
+                    continue
+
+                # Only safe if the column can actually be a key.
+                bad = conn.execute(text(f"""
+                    SELECT COUNT(*) FROM (
+                        SELECT {pk_col} FROM {table}
+                        WHERE {pk_col} IS NULL
+                        UNION ALL
+                        SELECT {pk_col} FROM {table}
+                        GROUP BY {pk_col} HAVING COUNT(*) > 1
+                    ) AS problems
+                """)).scalar()
+                if bad:
+                    log.error(
+                        "[db] %s has no primary key and %s is not unique/non-null "
+                        "— refusing to add one automatically", table, pk_col)
+                    continue
+
+                conn.execute(text(f"ALTER TABLE {table} ADD PRIMARY KEY ({pk_col})"))
+                log.warning("[db] restored missing PRIMARY KEY on %s(%s)", table, pk_col)
+        except Exception as exc:
+            # Never let the repair itself stop the app from booting.
+            log.warning("[db] primary-key check failed for %s: %s", table, exc)
+
+
+_repair_missing_primary_keys()
 models.Base.metadata.create_all(bind=engine)
 
 
