@@ -580,12 +580,11 @@ export default function DonationScreen({ navigation }) {
     if (res.assets?.length > 0) setSelectedImage(res.assets[0]);
   };
 
-  if (!roleChecked) return <View style={styles.root}><StatusBar barStyle="light-content" backgroundColor={G.deep} /></View>;
+  if (!roleChecked) return <View style={styles.root}></View>;
 
   if (!canAccessPay(role)) {
     return (
       <View style={[styles.root, styles.center]}>
-        <StatusBar barStyle="light-content" backgroundColor={G.deep} />
         <Text style={styles.restrictedTitle}>{t("donation.restricted.title")}</Text>
         <Text style={styles.restrictedSub}>{t("donation.restricted.sub")}</Text>
         <AnimatedPressable style={styles.restrictedBtn} onPress={() => navigation.navigate("Home")}>
@@ -603,7 +602,6 @@ export default function DonationScreen({ navigation }) {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor={G.deep} />
 
       <View style={[styles.header, { height: HEADER_H }]}>
         <Svg width={width} height={HEADER_H} style={StyleSheet.absoluteFill}>

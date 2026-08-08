@@ -16,7 +16,6 @@ import { COLORS as C } from "../config/theme";
 
 const { width: SW } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
-import { useTopInset } from "../hooks/useSafeArea";
 
 // ─── Palette ──────────────────────────────────────────────────────────
 const H = {
@@ -107,21 +106,20 @@ const getHijriDateString = (date) => {
 
 // ─── Compact Header ──────────────────────────────────────────────────
 const CompactHeader = ({ title, hijriDate, gregorianDate }) => {
-  const topInset = useTopInset();
   const safeTitle = title ? String(title) : '';
   const safeGregorian = gregorianDate ? String(gregorianDate) : '';
   const safeHijri = hijriDate ? String(hijriDate) : '';
 
   return (
-    <View style={[hs.wrap, { paddingTop: topInset }]}>
-      <Svg width={SW} height={148 + topInset} style={StyleSheet.absoluteFill}>
+    <View style={hs.wrap}>
+      <Svg width={SW} height={148} style={StyleSheet.absoluteFill}>
         <Defs>
           <LinearGradient id="headerGrad" x1="0" y1="0" x2="1" y2="1">
             <Stop offset="0%" stopColor={H.headerDeep} />
             <Stop offset="100%" stopColor={H.headerLight} />
           </LinearGradient>
         </Defs>
-        <Rect x="0" y="0" width={SW} height={148 + topInset} fill="url(#headerGrad)" />
+        <Rect x="0" y="0" width={SW} height={148} fill="url(#headerGrad)" />
       </Svg>
       <HeaderPattern w={SW} h={148} />
 
@@ -313,7 +311,6 @@ export default function HadithFeedScreen({ navigation, route }) {
   if (loading && !refreshing) {
     return (
       <SafeAreaView style={styles.root}>
-        <StatusBar barStyle="light-content" backgroundColor={H.headerDeep} />
         <CompactHeader
           title={t("hadith.title")}
           hijriDate={hijriDate}
@@ -329,7 +326,6 @@ export default function HadithFeedScreen({ navigation, route }) {
 
   return (
     <SafeAreaView style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor={H.headerDeep} />
 
       <CompactHeader
         title={t("hadith.title")}

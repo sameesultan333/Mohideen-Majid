@@ -305,7 +305,6 @@ export default function FamilySearchScreen({ navigation }) {
 
   return (
     <View style={s.root}>
-      <StatusBar barStyle="dark-content" backgroundColor={H.bg} />
 
       <View style={s.navBar}>
         <View style={s.navLeft}>

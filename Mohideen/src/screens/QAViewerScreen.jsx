@@ -20,7 +20,6 @@ import { logger } from "../utils/logger";
 
 const { width: SW, height: SH } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
-import { useTopInset } from "../hooks/useSafeArea";
 
 // ─── Palette (identical to HomeScreen) ─────────────────────────────
 const H = {
@@ -179,20 +178,19 @@ const getHijriDateString = (date) => {
 
 // ─── Compact Header ──────────────────────────────────────────────────
 const CompactHeader = ({ onBack, title, hijriDate, gregorianDate, connectionStatus }) => {
-  const topInset = useTopInset();
   const statusColor = connectionStatus === "connected" ? H.success : connectionStatus === "connecting" ? H.gold : H.error;
   const statusText = connectionStatus === "connected" ? "Live" : connectionStatus === "connecting" ? "Connecting..." : "Offline";
 
   return (
-    <View style={[hs.wrap, { paddingTop: topInset }]}>
-      <Svg width={SW} height={148 + topInset} style={StyleSheet.absoluteFill}>
+    <View style={hs.wrap}>
+      <Svg width={SW} height={148} style={StyleSheet.absoluteFill}>
         <Defs>
           <LinearGradient id="headerGrad" x1="0" y1="0" x2="1" y2="1">
             <Stop offset={0} stopColor={H.headerDeep} />
             <Stop offset={1} stopColor={H.headerLight} />
           </LinearGradient>
         </Defs>
-        <Rect x="0" y="0" width={SW} height={148 + topInset} fill="url(#headerGrad)" />
+        <Rect x="0" y="0" width={SW} height={148} fill="url(#headerGrad)" />
       </Svg>
       <HeaderPattern w={SW} h={148} />
 
@@ -723,7 +721,6 @@ export default function QAViewerScreen({ navigation, route }) {
 
   return (
     <SafeAreaView style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor={H.headerDeep} />
 
       <CompactHeader
         onBack={() => navigation.goBack()}

@@ -4,7 +4,7 @@ import enum
 from datetime import datetime
 
 from sqlalchemy import (
-    JSON, Boolean, Column, DateTime, Enum, Float,
+    JSON, Boolean, Column, DateTime, Float,
     ForeignKey, Integer, Numeric, String, Text, UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB

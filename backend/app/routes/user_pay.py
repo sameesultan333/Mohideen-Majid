@@ -25,7 +25,6 @@ from app.database import SessionLocal
 from app.security import get_current_user
 
 from app.utils.chanda_months import (
-    current_month_key,
     pending_month_filter,
     visible_month_filter,
 )
@@ -286,8 +285,6 @@ async def user_pay(
             db.flush()
 
             coverage_map = {current_month: round(float(amount), 2)}
-
-            unallocated = 0
 
 
 
@@ -693,23 +690,22 @@ def get_current_chanda(
 
     month = india_month_key(utc_now())
 
-    all_cols = db.query(models.ChandaCollection).filter_by(head_id=head.id).all()
+    # Generated months + any month already paid in advance. Blank future rows
+    # left by the historical import are excluded — see utils/chanda_months.
 
-    # Only count generated months (ChandaCollection records that exist)
+    all_cols = db.query(models.ChandaCollection).filter(
 
-    # Filter to months <= current month to avoid counting future ungenerated months
+        models.ChandaCollection.head_id == head.id,
 
-    visible_cols = [c for c in all_cols if (c.month or "") <= month]
+        visible_month_filter(month),
 
-    paid_months = sum(1 for c in visible_cols if c.status == "paid")
+    ).all()
 
-    pending_months = sum(1 for c in visible_cols if c.status != "paid")
+    # Advance months count towards Paid, but only generated months can be pending.
 
+    paid_months = sum(1 for c in all_cols if c.status == "paid")
 
-
-    # Check if current month collection exists
-
-    collection = next((_c for c in all_cols if c.month == month), None)
+    pending_months = sum(1 for c in all_cols if c.status != "paid" and (c.month or "") <= month)
 
     collection = next((c for c in all_cols if c.month == month), None)
     if not collection:

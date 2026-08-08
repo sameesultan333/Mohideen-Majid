@@ -2,14 +2,13 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List
 
 from app import models, schemas
 from app.database import SessionLocal
 from app.security import require_admin, require_collector
 from app.utils.payment_ledger import (
-    apply_coverage_to_collections,
     apply_rate_to_open_months,
     apply_coverage_to_existing_collections,
     apply_coverage_to_generated_collections,
@@ -24,7 +23,7 @@ from app.utils.chanda_months import (
     pending_month_filter,
     visible_month_filter,
 )
-from app.utils.timezones import add_months, india_month_key, parse_frontend_datetime, utc_now, utc_now_naive
+from app.utils.timezones import add_months, india_month_key, utc_now_naive
 from app.websocket_manager import manager
 from app.routes.finance import write_audit, write_ledger
 from app.rate_limit import rate_limit
@@ -769,8 +768,11 @@ def get_report(
 ):
     # A future month reports only the families who paid it in advance — never
     # the blank rows left behind by the historical import (utils/chanda_months).
+    # joinedload: total_due reads collection.head.is_active below, which lazily
+    # fired one SELECT per row — 422 queries for a 421-family month.
     collections = (
         db.query(models.ChandaCollection)
+        .options(joinedload(models.ChandaCollection.head))
         .filter(
             models.ChandaCollection.month == month,
             visible_month_filter(),
@@ -986,20 +988,36 @@ def get_defaulters(
     """Returns families with N+ pending generated months.
 
     Generated months only — see utils/chanda_months.
-    """
-    heads = db.query(models.ApprovedHead).filter(models.ApprovedHead.is_deleted.is_(False)).all()
-    result = []
-    for head in heads:
-        collections = (
-            db.query(models.ChandaCollection)
-            .filter(
-                models.ChandaCollection.head_id == head.id,
-                pending_month_filter(),
-            )
-            .all()
-        )
-        pending_months = len([c for c in collections if c.status != "paid"])
-        if pending_months >= months:
-            result.append({"head": head, "pending_months": pending_months})
 
-    return {"threshold_months": months, "count": len(result), "items": result}
+    Counted with one GROUP BY instead of a query per family: at 421 families the
+    per-family loop cost 422 round-trips, which is seconds of latency once the
+    database is a network hop away rather than localhost.
+    """
+    pending_counts = (
+        db.query(
+            models.ChandaCollection.head_id,
+            func.count(models.ChandaCollection.id).label("pending_months"),
+        )
+        .join(models.ApprovedHead, models.ApprovedHead.id == models.ChandaCollection.head_id)
+        .filter(
+            models.ApprovedHead.is_deleted.is_(False),
+            models.ChandaCollection.status != "paid",
+            pending_month_filter(),
+        )
+        .group_by(models.ChandaCollection.head_id)
+        .having(func.count(models.ChandaCollection.id) >= months)
+        .all()
+    )
+    if not pending_counts:
+        return {"threshold_months": months, "count": 0, "items": []}
+
+    by_head = {head_id: count for head_id, count in pending_counts}
+    heads = (
+        db.query(models.ApprovedHead)
+        .filter(models.ApprovedHead.id.in_(list(by_head.keys())))
+        .all()
+    )
+    items = [{"head": head, "pending_months": by_head[head.id]} for head in heads]
+    items.sort(key=lambda i: i["pending_months"], reverse=True)
+
+    return {"threshold_months": months, "count": len(items), "items": items}

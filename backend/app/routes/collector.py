@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.database import SessionLocal
-from app.security import require_collector, require_admin, get_current_user
+from app.security import require_collector, require_admin
 from app.services.audit_service import AuditAction, log_action
 from app.services.cash_submission_service import CashSubmissionService, get_submission_transactions
 from app.services.chanda_number_service import generate_next_chanda_no

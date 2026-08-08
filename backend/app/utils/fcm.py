@@ -52,7 +52,7 @@ def send_fcm_prayer_times_update(prayer) -> bool:
             # the announcements topic that drives visible push notifications.
             topic="prayer_times",
         )
-        response = messaging.send(message)
+        messaging.send(message)
         import logging as _l; _l.getLogger(__name__).info("[FCM] prayer times push sent")
         return True
     except Exception as exc:
@@ -129,7 +129,7 @@ def send_fcm_prayer_notification(
             ),
             topic=topic,
         )
-        response = messaging.send(message)
+        messaging.send(message)
         import logging as _l; _l.getLogger(__name__).info("[FCM] prayer %s sent", title)
         return True
     except Exception as exc:
@@ -160,7 +160,7 @@ def send_fcm_topic_notification(
             ),
             topic=topic,
         )
-        response = messaging.send(message)
+        messaging.send(message)
         import logging as _l; _l.getLogger(__name__).info("[FCM] topic %s sent", topic)
         return True
     except Exception as exc:

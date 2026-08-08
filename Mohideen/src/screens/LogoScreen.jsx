@@ -300,7 +300,6 @@ const LogoScreen = ({ navigation }) => {
 
   return (
     <Animated.View style={[styles.container, { opacity: bgOpacity }]}>
-      <StatusBar backgroundColor={colors.emerald.deep} barStyle="light-content" />
 
       <View style={styles.glowCircle} />
 

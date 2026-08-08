@@ -82,7 +82,6 @@ import {
 
 } from "react-native";
 
-import { useTopInset } from "../hooks/useSafeArea";
 
 import { useTranslation } from "react-i18next";
 
@@ -1011,7 +1010,6 @@ export default function QiblaScreen({ navigation }) {
   const { t } = useTranslation();
 
   // Real top inset — covers status bar + display cutout, updates on rotation.
-  const topInset = useTopInset(28);
 
 
 
@@ -1477,7 +1475,6 @@ export default function QiblaScreen({ navigation }) {
 
     <>
 
-      <StatusBar barStyle="light-content" backgroundColor={C.bg} />
 
       <ErrorView message={error} t={t} />
 
@@ -1491,7 +1488,6 @@ export default function QiblaScreen({ navigation }) {
 
     <>
 
-      <StatusBar barStyle="light-content" backgroundColor={C.bg} />
 
       <LoadingView phase={phase} t={t} />
 
@@ -1505,9 +1501,8 @@ export default function QiblaScreen({ navigation }) {
 
   return (
 
-    <Animated.View style={[st.root, { opacity: screenFade, paddingTop: topInset }]}>
+    <Animated.View style={[st.root, { opacity: screenFade }]}>
 
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
 
 
@@ -1714,7 +1709,9 @@ const st = StyleSheet.create({
 
     alignItems: "center",
 
-    // paddingTop comes from useTopInset() at runtime — see src/hooks/useSafeArea.
+    // No status-bar padding here: App.jsx keeps the whole app below the system
+    // bar, so screens start at y=0 of the usable area.
+    paddingTop: 12,
 
     paddingHorizontal: 20,
 

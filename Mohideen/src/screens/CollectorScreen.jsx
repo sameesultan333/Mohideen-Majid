@@ -1267,12 +1267,11 @@ export default function CollectorScreen({ navigation, route }) {
   const keyExtractorMember = useCallback((item) => String(item.member.id), []);
 
   if (!roleChecked) {
-    return <View style={s.root}><StatusBar barStyle="dark-content" backgroundColor={H.bg} /></View>;
+    return <View style={s.root}></View>;
   }
   if (!canAccessCollector(role)) {
     return (
       <View style={s.root}>
-        <StatusBar barStyle="dark-content" backgroundColor={H.bg} />
         <View style={s.restricted}>
           <Text allowFontScaling={false} style={s.restrictedTitle}>{t("collector.restrictedTitle")}</Text>
           <Text allowFontScaling={false} style={s.restrictedSub}>{t("collector.restrictedSub")}</Text>
@@ -1286,7 +1285,6 @@ export default function CollectorScreen({ navigation, route }) {
 
   return (
     <View style={s.root}>
-      <StatusBar barStyle="dark-content" backgroundColor={H.bg} />
 
       <Animated.View style={[s.header, { opacity: hFade }]}>
         <View style={s.navBar}>

@@ -13,7 +13,6 @@ import BottomNav from "../components/BottomNav";
 
 const { width: SW } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
-import { STATUSBAR_HEIGHT as STATUSBAR_H } from "../utils/statusBar";
 const HEADER_H = 120;
 const BOTTOM_NAV_H = Platform.select({ ios: 89, android: 73 });
 
@@ -84,7 +83,6 @@ const PremiumHeader = memo(({ title }) => {
 const headerStyles = StyleSheet.create({
   wrap: {
     height: HEADER_H,
-    paddingTop: STATUSBAR_H + 8,
     paddingHorizontal: 20,
     overflow: "hidden",
     borderBottomLeftRadius: 24,
@@ -294,7 +292,6 @@ const HistoryScreen = ({ navigation }) => {
   if (data.length === 0) {
     return (
       <View style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor={H.headerDeep} />
         <PremiumHeader title={t("history.title")} />
         <View style={styles.empty}>
           <Text style={styles.emptyText}>{t("history.noTransactions")}</Text>
@@ -306,7 +303,6 @@ const HistoryScreen = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={H.headerDeep} />
       <PremiumHeader title={t("history.title")} />
 
       <Animated.View

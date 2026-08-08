@@ -569,7 +569,7 @@ async def periodic_session_cleanup():
         try:
             from sqlalchemy import text as _text
             from datetime import datetime as _dt
-            result = db.execute(
+            db.execute(
                 _text("DELETE FROM user_sessions WHERE expires_at < :now AND is_active = FALSE"),
                 {"now": _dt.utcnow()},
             )
@@ -689,7 +689,6 @@ def root():
 async def health():
     import shutil
     import psutil
-    from datetime import datetime
 
     result: dict = {"status": "ok", "uptime_seconds": round(_time.monotonic() - _APP_START_TIME)}
 

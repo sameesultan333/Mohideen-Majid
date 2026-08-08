@@ -10,7 +10,6 @@ import { useTranslation } from "react-i18next";
 
 const { width } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
-import { useTopInset } from "../hooks/useSafeArea";
 const HEADER_H = 116;
 const MAX_ATTEMPTS = 5;
 
@@ -306,7 +305,6 @@ const TimeRow = ({ label, value, done = false, delay = 0 }) => {
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 const ReceiptScreen = ({ route, navigation }) => {
   const { t } = useTranslation();
-  const topInset = useTopInset();
   const { payment: init } = route.params;
   const [payment, setPayment] = useState(init);
   const isFocused = useIsFocused();
@@ -366,23 +364,22 @@ const ReceiptScreen = ({ route, navigation }) => {
 
   return (
     <Animated.View style={[styles.screen, { opacity: screenFade }]}>
-      <StatusBar barStyle="light-content" backgroundColor={G.headerDeep} />
 
       {/* ── Header — same gradient + gold star pattern as Profile/Donation ── */}
       <Animated.View
         style={[
           styles.header,
-          { opacity: headerOpacity, transform: [{ translateY: headerY }], paddingTop: topInset },
+          { opacity: headerOpacity, transform: [{ translateY: headerY }] },
         ]}
       >
-        <Svg width={width} height={HEADER_H + topInset} style={StyleSheet.absoluteFill}>
+        <Svg width={width} height={HEADER_H} style={StyleSheet.absoluteFill}>
           <Defs>
             <LinearGradient id="receiptHeaderGrad" x1="0" y1="0" x2="1" y2="1">
               <Stop offset="0%" stopColor={G.headerDeep} />
               <Stop offset="100%" stopColor={G.headerLight} />
             </LinearGradient>
           </Defs>
-          <Rect x="0" y="0" width={width} height={HEADER_H + topInset} fill="url(#receiptHeaderGrad)" />
+          <Rect x="0" y="0" width={width} height={HEADER_H} fill="url(#receiptHeaderGrad)" />
         </Svg>
         <HeaderPattern w={width} h={HEADER_H} />
 

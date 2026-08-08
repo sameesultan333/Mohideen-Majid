@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import io
-import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -15,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import models
-from app.security import require_superadmin, require_admin
+from app.security import require_admin
 from app.utils.timezones import to_india, utc_now
 
 from sqlalchemy import text as _sql_text

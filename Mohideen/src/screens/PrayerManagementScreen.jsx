@@ -34,7 +34,6 @@ const { width: SW } = Dimensions.get("window");
 
 const IOS = Platform.OS === "ios";
 
-import { useTopInset } from "../hooks/useSafeArea";
 
 
 
@@ -211,7 +210,6 @@ const InfoDotIcon = ({ color = H.goldLight, size = 6 }) => (
 // ─── Header pattern (identical motif to other screens) ──────────────
 
 const HeaderPattern = ({ w = SW, h = 152 }) => {
-  const topInset = useTopInset();
 
   const step = 40;
 
@@ -311,9 +309,9 @@ const formatDisplayTime = (value) => {
 
 const CompactHeader = ({ title, version, updatedByLabel }) => (
 
-  <View style={[hs.wrap, { paddingTop: topInset }]}>
+  <View style={hs.wrap}>
 
-    <Svg width={SW} height={152 + topInset} style={StyleSheet.absoluteFill}>
+    <Svg width={SW} height={152} style={StyleSheet.absoluteFill}>
 
       <Defs>
 
@@ -327,7 +325,7 @@ const CompactHeader = ({ title, version, updatedByLabel }) => (
 
       </Defs>
 
-      <Rect x="0" y="0" width={SW} height={152 + topInset} fill="url(#headerGrad)" />
+      <Rect x="0" y="0" width={SW} height={152} fill="url(#headerGrad)" />
 
     </Svg>
 
@@ -837,7 +835,6 @@ export default function PrayerManagementScreen() {
 
       <View style={styles.root}>
 
-        <StatusBar barStyle="light-content" backgroundColor={H.headerDeep} />
 
         <CompactHeader title={t("prayerManagement.title")} version={null} updatedByLabel={null} />
 
@@ -861,7 +858,6 @@ export default function PrayerManagementScreen() {
 
     <View style={styles.root}>
 
-      <StatusBar barStyle="light-content" backgroundColor={H.headerDeep} />
 
 
 

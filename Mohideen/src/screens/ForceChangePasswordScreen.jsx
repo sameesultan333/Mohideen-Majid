@@ -51,7 +51,6 @@ export default function ForceChangePasswordScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#0D2B1A" />
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
 
         <View style={styles.iconWrap}>

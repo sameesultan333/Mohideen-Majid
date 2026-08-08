@@ -57,7 +57,6 @@ const PRAYER_CACHE_KEY = "cached_prayer_timings";
 const ANNOUNCEMENTS_CACHE_KEY = "cached_announcements";
 const EXACT_ALARM_PROMPT_KEY = "exact_alarm_prompt_shown";
 const IOS = Platform.OS === "ios";
-import { useTopInset } from "../hooks/useSafeArea";
 
 // Android 13+ only grants SCHEDULE_EXACT_ALARM via a manual Settings toggle —
 // there's no runtime permission dialog for it. Without it, the offline
@@ -827,7 +826,6 @@ const BOTTOM_NAV_H = Platform.select({ ios: 89, android: 73 });
 
 const CompactHeader = ({ userName, greetingKey, hijriDate, gregorianDate, unreadCount, onBellPress, onAvatarPress }) => {
   const { t } = useTranslation();
-  const topInset = useTopInset();
   const initial = (userName || "U").trim().charAt(0).toUpperCase();
   const [quoteIndex, setQuoteIndex] = useState(() => {
     const dayOfYear = Math.floor((new Date() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
@@ -848,15 +846,15 @@ const CompactHeader = ({ userName, greetingKey, hijriDate, gregorianDate, unread
   const verse = QURAN_VERSES[quoteIndex];
 
   return (
-    <View style={[hs.wrap, { height: HEADER_H + topInset, paddingTop: topInset }]}>
-      <Svg width={SW} height={HEADER_H + topInset} style={StyleSheet.absoluteFill}>
+    <View style={[hs.wrap, { height: HEADER_H }]}>
+      <Svg width={SW} height={HEADER_H} style={StyleSheet.absoluteFill}>
         <Defs>
           <LinearGradient id="headerGrad" x1="0" y1="0" x2="1" y2="1">
             <Stop offset={0} stopColor={H.headerDeep} />
             <Stop offset={1} stopColor={H.headerLight} />
           </LinearGradient>
         </Defs>
-        <Rect x="0" y="0" width={SW} height={HEADER_H + topInset} fill="url(#headerGrad)" />
+        <Rect x="0" y="0" width={SW} height={HEADER_H} fill="url(#headerGrad)" />
       </Svg>
       <HeaderPattern w={SW} h={HEADER_H} />
 
@@ -1336,7 +1334,6 @@ export default function HomeScreen({ navigation, route }) {
   if (userStatus === "PENDING_APPROVAL") {
     return (
       <View style={s.container}>
-        <StatusBar barStyle="light-content" backgroundColor={H.headerDeep} />
         <View style={pending.root}>
           {/* Mosque icon header */}
           <View style={pending.iconWrap}>
@@ -1406,7 +1403,6 @@ export default function HomeScreen({ navigation, route }) {
     return (
       <View style={s.container}>
         <View style={s.loadingContainer}>
-          <StatusBar barStyle="dark-content" backgroundColor={H.bg} />
           <ActivityIndicator size="large" color={H.gold} />
           <Text allowFontScaling={false} style={s.loadingText}>{t("common.loading")}</Text>
         </View>
@@ -1419,7 +1415,6 @@ export default function HomeScreen({ navigation, route }) {
   if (!timings) {
     return (
       <View style={s.container}>
-        <StatusBar barStyle="light-content" backgroundColor={H.headerDeep} />
         <View style={s.emptyState}>
           <Text allowFontScaling={false} style={s.errorTxt}>{t("errors.loadPrayerTimes")}</Text>
           <AnimatedPressable onPress={fetchPrayerTimes} style={s.retryBtn}>
@@ -1433,7 +1428,6 @@ export default function HomeScreen({ navigation, route }) {
 
   return (
     <View style={s.container}>
-      <StatusBar barStyle="light-content" backgroundColor={H.headerDeep} />
 
       <Animated.View style={{ opacity: headerAnim }}>
         <CompactHeader

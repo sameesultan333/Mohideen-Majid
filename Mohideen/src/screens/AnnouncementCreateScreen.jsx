@@ -23,7 +23,6 @@ import { logger } from "../utils/logger";
 const { width: SW } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
 import { STATUSBAR_HEIGHT } from "../utils/statusBar";
-import { useTopInset } from "../hooks/useSafeArea";
 
 // ─── Palette (identical source of truth as other screens) ──────────
 const H = {
@@ -135,7 +134,6 @@ const MegaphoneIcon = ({ color = H.goldDeep, size = 15 }) => (
 
 // ─── Header Pattern (identical motif to other screens) ─────────────
 const HeaderPattern = ({ w = SW, h = 148 }) => {
-  const topInset = useTopInset();
   const step = 40;
   const cols = Math.ceil(w / step) + 1;
   const rows = Math.ceil(h / step) + 1;
@@ -212,15 +210,15 @@ const formatRelativeTime = (isoString, t) => {
 
 // ─── Compact Header ──────────────────────────────────────────────────
 const CompactHeader = ({ title, subtitle, onAdd }) => (
-  <View style={[hs.wrap, { paddingTop: topInset }]}>
-    <Svg width={SW} height={148 + topInset} style={StyleSheet.absoluteFill}>
+  <View style={hs.wrap}>
+    <Svg width={SW} height={148} style={StyleSheet.absoluteFill}>
       <Defs>
         <LinearGradient id="headerGrad" x1="0" y1="0" x2="1" y2="1">
           <Stop offset={0} stopColor={H.headerDeep} />
           <Stop offset={1} stopColor={H.headerLight} />
         </LinearGradient>
       </Defs>
-      <Rect x="0" y="0" width={SW} height={148 + topInset} fill="url(#headerGrad)" />
+      <Rect x="0" y="0" width={SW} height={148} fill="url(#headerGrad)" />
     </Svg>
     <HeaderPattern w={SW} h={148} />
 
@@ -559,7 +557,6 @@ export default function AnnouncementScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor={H.headerDeep} />
 
       <CompactHeader
         title={t("announcements.title")}

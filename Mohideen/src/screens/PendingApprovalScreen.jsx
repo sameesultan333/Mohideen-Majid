@@ -96,7 +96,6 @@ export default function PendingApprovalScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.emerald.deep} />
       <View style={styles.container}>
         {/* Icon */}
         <View style={styles.iconWrap}>

@@ -6,12 +6,10 @@ import { authApiAxios } from "../config/server";
 import { PasswordInput } from "../components/AuthComponents";
 import { clearAuthSession } from "../utils/authSession";
 import { COLORS as C, RADII, SPACING } from "../config/theme";
-import { useTopInset } from "../hooks/useSafeArea";
 
 const IOS = Platform.OS === "ios";
 
 export default function DeleteAccountScreen({ navigation }) {
-  const topInset = useTopInset(12);
   const { t } = useTranslation();
   const [password, setPassword] = useState("");
   const [reason, setReason] = useState("");
@@ -53,9 +51,8 @@ export default function DeleteAccountScreen({ navigation }) {
 
   return (
     <View style={s.root}>
-      <StatusBar barStyle="light-content" backgroundColor={C.bg} />
 
-      <View style={[s.header, { paddingTop: topInset }]}>
+      <View style={s.header}>
         <AnimatedPressable onPress={() => navigation.goBack()} style={s.backBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
           <View style={s.backArrow} />
         </AnimatedPressable>
@@ -182,7 +179,7 @@ const s = StyleSheet.create({
     borderRadius: RADII.xl,
     paddingHorizontal: 24,
     paddingBottom: 24,
-    paddingTop: 0,
+    paddingTop: 12,
     overflow: "hidden",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 8 },

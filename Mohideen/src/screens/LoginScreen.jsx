@@ -183,7 +183,6 @@ export default function LoginScreen({ navigation, route }) {
 
   return (
     <View style={s.root}>
-      <StatusBar barStyle="light-content" backgroundColor={C.bg} translucent={false} />
       <Animated.View style={[s.topGlow, { opacity: bgOpacity }]} pointerEvents="none" />
 
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>

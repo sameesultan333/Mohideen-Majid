@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app import models, schemas
 from app.database import SessionLocal
-from app.routes.finance import write_audit, write_ledger, invalidate_dashboard_cache
+from app.routes.finance import write_audit, invalidate_dashboard_cache
 from app.security import require_admin, require_superadmin, get_current_user
 from app.websocket_manager import manager
 
@@ -813,8 +813,6 @@ def _pdf_report(fund, stats, donations, expenses):
 
     DARK   = colors.HexColor("#1E3A5F")
     LIGHT  = colors.HexColor("#EBF0F7")
-    GREEN  = colors.HexColor("#27AE60")
-    RED    = colors.HexColor("#E74C3C")
 
     story.append(Paragraph(f"Fund Report: {fund.name}", styles["Title"]))
     story.append(Paragraph(f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC", styles["Normal"]))

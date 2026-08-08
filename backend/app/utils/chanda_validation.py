@@ -78,37 +78,55 @@ def detect_all_missing_collections(
 ) -> List[Dict[str, Any]]:
     """
     Detect missing ChandaCollection records for all active families.
-    
+
+    Loads every head and every existing month in two queries, then walks the
+    expected range in memory. The previous per-head helper call issued two
+    queries per family — 842 round-trips at 421 families.
+
     Args:
         db: Database session
         start_month: Optional start month (YYYY-MM). If None, uses each head's registration_date
         end_month: Optional end month (YYYY-MM). If None, uses current month
-    
+
     Returns:
         List of dictionaries with missing month information for all heads
     """
     current_month = india_month_key(utc_now())
     end_month = end_month or current_month
-    
-    # Get all active heads
+
     heads = db.query(models.ApprovedHead).filter_by(is_active=True).all()
-    
+    if not heads:
+        return []
+
+    head_ids = [h.id for h in heads]
+    existing_by_head: Dict[int, set] = {hid: set() for hid in head_ids}
+    for head_id, month in (
+        db.query(models.ChandaCollection.head_id, models.ChandaCollection.month)
+        .filter(models.ChandaCollection.head_id.in_(head_ids))
+        .all()
+    ):
+        existing_by_head.setdefault(head_id, set()).add(month)
+
     all_missing = []
     for head in heads:
-        # Use head-specific start month if not provided globally
         head_start = start_month
         if head_start is None:
             start_dt = head.registration_date or head.created_at
-            if start_dt:
-                head_start = india_month_key(start_dt)
-            else:
-                head_start = current_month
-        
-        head_missing = detect_missing_collections_for_head(
-            db, head.id, head_start, end_month
-        )
-        all_missing.extend(head_missing)
-    
+            head_start = india_month_key(start_dt) if start_dt else current_month
+
+        existing = existing_by_head.get(head.id, set())
+        cursor = head_start
+        while cursor <= end_month:
+            if cursor not in existing:
+                all_missing.append({
+                    "head_id": head.id,
+                    "head_name": head.name,
+                    "chanda_no": head.chanda_no,
+                    "missing_month": cursor,
+                    "expected_amount": head.monthly_amount or 0,
+                })
+            cursor = add_months(cursor, 1)
+
     return all_missing
 
 
@@ -125,38 +143,40 @@ def detect_payment_without_collection(
     Returns:
         List of dictionaries with payment information that has no matching collection
     """
-    # Get all verified payments that have a collection_id
-    payments = (
-        db.query(models.PaymentEntry)
+    # One LEFT JOIN finds every orphan directly. Checking each payment with its
+    # own SELECT (plus another for the head) cost two queries per payment, which
+    # grows without bound as payment history accumulates.
+    orphans = (
+        db.query(models.PaymentEntry, models.ApprovedHead)
+        .outerjoin(
+            models.ChandaCollection,
+            models.ChandaCollection.id == models.PaymentEntry.collection_id,
+        )
+        .outerjoin(
+            models.ApprovedHead,
+            models.ApprovedHead.id == models.PaymentEntry.head_id,
+        )
         .filter(
             models.PaymentEntry.status == "verified",
             models.PaymentEntry.collection_id.isnot(None),
+            models.ChandaCollection.id.is_(None),
         )
         .all()
     )
-    
-    missing = []
-    for payment in payments:
-        if payment.collection_id:
-            collection = db.query(models.ChandaCollection).filter_by(
-                id=payment.collection_id
-            ).first()
-            if not collection:
-                head = db.query(models.ApprovedHead).filter_by(
-                    id=payment.head_id
-                ).first()
-                missing.append({
-                    "payment_id": payment.id,
-                    "head_id": payment.head_id,
-                    "head_name": head.name if head else "Unknown",
-                    "chanda_no": head.chanda_no if head else "Unknown",
-                    "missing_collection_id": payment.collection_id,
-                    "payment_amount": payment.amount,
-                    "payment_month": payment.covered_months[0] if payment.covered_months else "Unknown",
-                    "payment_date": payment.created_at,
-                })
-    
-    return missing
+
+    return [
+        {
+            "payment_id": payment.id,
+            "head_id": payment.head_id,
+            "head_name": head.name if head else "Unknown",
+            "chanda_no": head.chanda_no if head else "Unknown",
+            "missing_collection_id": payment.collection_id,
+            "payment_amount": payment.amount,
+            "payment_month": payment.covered_months[0] if payment.covered_months else "Unknown",
+            "payment_date": payment.created_at,
+        }
+        for payment, head in orphans
+    ]
 
 
 def validate_chanda_consistency(

@@ -178,7 +178,6 @@ export default function FamilyHistoryScreen({ navigation, route }) {
   if (loading) {
     return (
       <View style={s.center}>
-        <StatusBar barStyle="dark-content" backgroundColor={H.bg} />
         <ActivityIndicator size="large" color={H.gold} />
       </View>
     );
@@ -187,7 +186,6 @@ export default function FamilyHistoryScreen({ navigation, route }) {
   if (error || !data) {
     return (
       <View style={s.center}>
-        <StatusBar barStyle="dark-content" backgroundColor={H.bg} />
         <Text allowFontScaling={false} style={s.errorTxt}>{error || t("familyHistory.genericError")}</Text>
         <AnimatedPressable style={s.retryBtn} onPress={load}>
           <Text allowFontScaling={false} style={s.retryTxt}>{t("familyHistory.retry")}</Text>
@@ -205,7 +203,6 @@ export default function FamilyHistoryScreen({ navigation, route }) {
 
   return (
     <View style={s.root}>
-      <StatusBar barStyle="dark-content" backgroundColor={H.bg} />
       <View style={s.header}>
         <AnimatedPressable onPress={() => navigation.goBack()} style={s.backBtn}>
           <Text allowFontScaling={false} style={s.backTxt}>‹ {t("familyHistory.back")}</Text>

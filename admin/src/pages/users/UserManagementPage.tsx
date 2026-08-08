@@ -902,12 +902,16 @@ const UserManagementPage: React.FC = () => {
   // ── Filter ───────────────────────────────────────────────────────────────────
 
   // Case/space/punctuation-insensitive — "sa mohideen" finds "S.A. Mohideen".
-  const matches = makeSearchMatcher(search);
+  // Memoised so the query is normalised once per search, not once per row, and
+  // so the filters below can declare honest dependencies.
+  const matches = useMemo(() => makeSearchMatcher(search), [search]);
 
-  const familyMatches = (f: Family) =>
-    matches(f.name, f.phone, f.chanda_no, f.address);
+  const familyMatches = useCallback(
+    (f: Family) => matches(f.name, f.phone, f.chanda_no, f.address),
+    [matches]
+  );
 
-  const userMatches = (u: User) => matches(u.name, u.phone);
+  const userMatches = useCallback((u: User) => matches(u.name, u.phone), [matches]);
 
   const filteredFamilies = useMemo(
     () =>
@@ -923,7 +927,7 @@ const UserManagementPage: React.FC = () => {
         }
         return true;
       }),
-    [families, roleFilter, statusFilter, zoneFilter, search, membersByFamily]
+    [families, roleFilter, statusFilter, zoneFilter, search, membersByFamily, familyMatches, userMatches]
   );
 
   const filteredStaff = useMemo(
@@ -935,7 +939,7 @@ const UserManagementPage: React.FC = () => {
         if (statusFilter === "inactive" && u.is_active) return false;
         return userMatches(u);
       }),
-    [staffUsers, roleFilter, statusFilter, search]
+    [staffUsers, roleFilter, statusFilter, userMatches]
   );
 
   // ── Stats ────────────────────────────────────────────────────────────────────

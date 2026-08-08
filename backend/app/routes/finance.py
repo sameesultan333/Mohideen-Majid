@@ -12,7 +12,7 @@ import calendar
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, case, or_
 from sqlalchemy.orm import Session
@@ -130,7 +130,6 @@ def finance_dashboard(
     )
     paid_count = partial_count = pending_count = 0
     due_month = collected_month = 0.0
-    families_with_record: set = set()
     for _st, _cnt, _due, _paid in _chanda_agg:
         if _st == "paid":      paid_count    = _cnt
         elif _st == "partial": partial_count = _cnt
@@ -562,6 +561,31 @@ def notify_defaulters(
     )
     head_map = {h.id: h for h in heads}
 
+    # Pending counts and head users resolved in two aggregate queries rather
+    # than two per family — a bulk "notify all defaulters" click used to fan out
+    # into hundreds of round-trips before the first push was even sent.
+    pending_by_head = dict(
+        db.query(
+            models.ChandaCollection.head_id,
+            func.count(models.ChandaCollection.id),
+        )
+        .filter(
+            models.ChandaCollection.head_id.in_(family_ids),
+            models.ChandaCollection.status != "paid",
+            pending_month_filter(),
+        )
+        .group_by(models.ChandaCollection.head_id)
+        .all()
+    )
+    users_by_head = {
+        u.family_id: u
+        for u in db.query(models.User).filter(
+            models.User.family_id.in_(family_ids),
+            models.User.role == "head",
+            models.User.is_active == True,
+        ).all()
+    }
+
     notified = 0
     skipped: list[int] = []
     for fid in family_ids:
@@ -570,20 +594,12 @@ def notify_defaulters(
             skipped.append(fid)
             continue
 
-        pending = (
-            db.query(models.ChandaCollection)
-            .filter(
-                models.ChandaCollection.head_id == fid,
-                models.ChandaCollection.status != "paid",
-                pending_month_filter(),
-            )
-            .count()
-        )
+        pending = pending_by_head.get(fid, 0)
         if pending == 0:
             skipped.append(fid)
             continue
 
-        user = db.query(models.User).filter_by(family_id=fid, role="head", is_active=True).first()
+        user = users_by_head.get(fid)
         if not user:
             skipped.append(fid)
             continue
@@ -1638,7 +1654,6 @@ def analytics_report(
     now_dt     = utc_now().replace(tzinfo=None)
     monthly_trend = []
     for i in range(11, -1, -1):
-        m_dt     = now_dt.replace(day=1) - timedelta(days=1)
         # build month key going back i months from today
         yr       = now_dt.year
         mo       = now_dt.month - i

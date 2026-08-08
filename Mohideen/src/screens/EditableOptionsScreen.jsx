@@ -63,7 +63,6 @@ const { width: SW } = Dimensions.get("window");
 
 const IOS = Platform.OS === "ios";
 
-import { useTopInset } from "../hooks/useSafeArea";
 
 const HEADER_H = 148;
 
@@ -300,7 +299,6 @@ const ArrowIcon = memo(({ color = H.gold, size = 15 }) => (
 
 
 const HeaderPattern = memo(({ w = SW, h = HEADER_H }) => {
-  const topInset = useTopInset();
 
   const step = 40;
 
@@ -348,9 +346,9 @@ const HeaderPattern = memo(({ w = SW, h = HEADER_H }) => {
 
 const CompactHeader = ({ onBack, title, hijriDate, gregorianDate }) => (
 
-  <View style={[hs.wrap, { height: HEADER_H + topInset, paddingTop: topInset }]}>
+  <View style={[hs.wrap, { height: HEADER_H }]}>
 
-    <Svg width={SW} height={HEADER_H + topInset} style={StyleSheet.absoluteFill}>
+    <Svg width={SW} height={HEADER_H} style={StyleSheet.absoluteFill}>
 
       <Defs>
 
@@ -364,7 +362,7 @@ const CompactHeader = ({ onBack, title, hijriDate, gregorianDate }) => (
 
       </Defs>
 
-      <Rect x="0" y="0" width={SW} height={HEADER_H + topInset} fill="url(#editableHeaderGrad)" />
+      <Rect x="0" y="0" width={SW} height={HEADER_H} fill="url(#editableHeaderGrad)" />
 
     </Svg>
 
@@ -597,7 +595,6 @@ export default function EditableOptionsScreen({ navigation, route }) {
 
       <View style={styles.root}>
 
-        <StatusBar barStyle="light-content" backgroundColor={H.headerDeep} />
 
         <CompactHeader onBack={() => navigation.goBack()} title={t("editable.title")} hijriDate={hijriDate} gregorianDate={gregorianDate} />
 
@@ -617,7 +614,6 @@ export default function EditableOptionsScreen({ navigation, route }) {
 
       <View style={styles.root}>
 
-        <StatusBar barStyle="light-content" backgroundColor={H.headerDeep} />
 
         <CompactHeader onBack={() => navigation.goBack()} title={dashboardTitle} hijriDate={hijriDate} gregorianDate={gregorianDate} />
 
@@ -649,7 +645,6 @@ export default function EditableOptionsScreen({ navigation, route }) {
 
     <View style={styles.root}>
 
-      <StatusBar barStyle="light-content" backgroundColor={H.headerDeep} />
 
 
 

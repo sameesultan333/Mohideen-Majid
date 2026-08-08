@@ -21,7 +21,6 @@ from app.security import (
     revoke_all_sessions,
     set_refresh_cookie,
     clear_refresh_cookie,
-    decode_token,
     get_current_user,
     hash_password,
     verify_password,

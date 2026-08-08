@@ -6,7 +6,6 @@ when you need fine-grained control beyond the four roles.
 """
 
 from fastapi import HTTPException, status
-from fastapi.security import HTTPBearer
 from app.security import get_current_user
 from fastapi import Depends
 

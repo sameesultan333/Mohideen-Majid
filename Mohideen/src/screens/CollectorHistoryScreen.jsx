@@ -20,7 +20,6 @@ import BottomNav from "../components/BottomNav";
 
 const { width: SW } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
-import { STATUSBAR_HEIGHT as STATUSBAR_H } from "../utils/statusBar";
 const HEADER_H = 110;
 const BOTTOM_NAV_H = Platform.select({ ios: 89, android: 73 });
 const CACHE_KEY = "collector_history_cache";
@@ -611,7 +610,6 @@ export default function CollectorHistoryScreen({ navigation }) {
 
   return (
     <View style={s.root}>
-      <StatusBar barStyle="light-content" backgroundColor={H.headerDeep} />
 
       <Animated.View style={[s.header, { opacity: headerFade }]}>
         <Svg width={SW} height={HEADER_H} style={StyleSheet.absoluteFill}>
@@ -707,7 +705,6 @@ const s = StyleSheet.create({
   // Header — Clean, no search
   header: {
     height: HEADER_H,
-    paddingTop: STATUSBAR_H,
     paddingHorizontal: 18,
     overflow: "hidden",
     borderBottomLeftRadius: 24,

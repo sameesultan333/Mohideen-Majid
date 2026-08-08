@@ -1,12 +1,11 @@
 # backend/app/routes/admin.py
 
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import Optional
 
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from pydantic import BaseModel
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app import models, schemas
@@ -400,10 +399,6 @@ async def upload_heads(
         inserted += 1
 
     db.commit()
-
-    unique_phones = len(seen_in_batch) + sum(
-        1 for p in existing_phones if p not in seen_in_batch
-    )
 
     invalid_rows = skipped - len(chanda_duplicates)
 

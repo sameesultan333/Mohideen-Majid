@@ -16,7 +16,6 @@ import { COLORS, RADII, FONTS } from "../config/theme";
 const { width: SW } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
 import { STATUSBAR_HEIGHT } from "../utils/statusBar";
-import { useTopInset } from "../hooks/useSafeArea";
 
 // ─── Palette directly from theme ─────────────────────────────────────
 const C = {
@@ -183,17 +182,16 @@ const HeaderPattern = ({ w = SW, h = 148 }) => {
 
 // ─── Compact Header ──────────────────────────────────────────────────
 const CompactHeader = ({ title, hijriDate, gregorianDate, onBackPress, onRefreshPress }) => {
-  const topInset = useTopInset();
   return (
-    <View style={[hs.wrap, { paddingTop: topInset }]}>
-      <Svg width={SW} height={148 + topInset} style={StyleSheet.absoluteFill}>
+    <View style={hs.wrap}>
+      <Svg width={SW} height={148} style={StyleSheet.absoluteFill}>
         <Defs>
           <LinearGradient id="headerGrad" x1="0" y1="0" x2="1" y2="1">
             <Stop offset={0} stopColor={C.headerDeep} />
             <Stop offset={1} stopColor={C.headerLight} />
           </LinearGradient>
         </Defs>
-        <Rect x="0" y="0" width={SW} height={148 + topInset} fill="url(#headerGrad)" />
+        <Rect x="0" y="0" width={SW} height={148} fill="url(#headerGrad)" />
       </Svg>
       <HeaderPattern w={SW} h={148} />
       <View style={hs.row}>
@@ -592,7 +590,6 @@ export default function ImamQAScreen({ navigation }) {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor={C.headerDeep} />
 
       <CompactHeader
         title={t("qa.title")}

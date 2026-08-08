@@ -35,12 +35,17 @@ def job_generate_chanda_month():
     try:
         month = india_month_key(utc_now())
         heads = db.query(models.ApprovedHead).filter_by(is_active=True).all()
+        # One query for every head already holding this month, instead of an
+        # existence check per family (421 round-trips on the 1st of the month).
+        already_generated = {
+            head_id
+            for (head_id,) in db.query(models.ChandaCollection.head_id)
+            .filter(models.ChandaCollection.month == month)
+            .all()
+        }
         created = 0
         for head in heads:
-            exists = db.query(models.ChandaCollection).filter_by(
-                head_id=head.id, month=month
-            ).first()
-            if not exists:
+            if head.id not in already_generated:
                 col = models.ChandaCollection(
                     head_id=head.id,
                     month=month,
@@ -67,44 +72,55 @@ def job_send_chanda_reminders():
 
     Generated months only — see utils/chanda_months.
     """
-    import os
     from app.database import SessionLocal
     from app import models
+    from sqlalchemy import func
     from app.utils.chanda_months import pending_month_filter
     from app.utils.fcm import notify_user
 
     db = SessionLocal()
     try:
-        settings = _get_settings(db)
-        mosque = settings.get("mosque_name", "Mohideen Masjid")
-
-        heads = db.query(models.ApprovedHead).filter_by(is_active=True).all()
-        notified = 0
-        for head in heads:
-            pending = db.query(models.ChandaCollection).filter(
-                models.ChandaCollection.head_id == head.id,
+        # Two aggregate queries rather than a pending-count and a user lookup per
+        # family: at 421 families that loop issued ~1,200 round-trips per run.
+        pending_by_head = dict(
+            db.query(
+                models.ChandaCollection.head_id,
+                func.count(models.ChandaCollection.id),
+            )
+            .join(models.ApprovedHead, models.ApprovedHead.id == models.ChandaCollection.head_id)
+            .filter(
+                models.ApprovedHead.is_active.is_(True),
                 models.ChandaCollection.status != "paid",
                 pending_month_filter(),
-            ).all()
-            if not pending:
-                continue
+            )
+            .group_by(models.ChandaCollection.head_id)
+            .all()
+        )
+        if not pending_by_head:
+            log.info("[scheduler] chanda reminders: nobody pending")
+            return
 
-            n = len(pending)
+        users_by_head = {
+            u.family_id: u
+            for u in db.query(models.User).filter(
+                models.User.family_id.in_(list(pending_by_head.keys())),
+                models.User.role == "head",
+                models.User.is_active.is_(True),
+            ).all()
+        }
+
+        notified = 0
+        for head_id, n in pending_by_head.items():
+            user = users_by_head.get(head_id)
+            if not user:
+                continue
             months_word = "month" if n == 1 else "months"
             body = (
                 f"You have {n} pending chanda {months_word}. "
                 "Please pay or contact your collector."
             )
-            title = "Chanda Reminder"
-
-            # Find registered user for this head to send device notification
-            user = db.query(models.User).filter_by(
-                family_id=head.id, role="head", is_active=True
-            ).first()
-            if user:
-                sent = notify_user(db, user.id, title, body, data={"type": "chanda_reminder"})
-                if sent:
-                    notified += 1
+            if notify_user(db, user.id, "Chanda Reminder", body, data={"type": "chanda_reminder"}):
+                notified += 1
 
         db.commit()
         log.info(f"[scheduler] chanda reminders sent to {notified} families")

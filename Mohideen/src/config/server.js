@@ -6,13 +6,21 @@ import { resetToLogin } from "../navigation/navigationRef";
 
 const WORKING_SERVER_KEY = "working_server_url";
 const DEFAULT_BASE_URL = "https://mohideen-majid.onrender.com";
-const DEFAULT_TIMEOUT_MS = 3000;
-// File/image uploads (multipart FormData) need much more headroom than plain
-// JSON calls — 3s is enough to fail routinely on real mobile networks even
-// for a small photo, which is why "Self Pay" and other upload screens were
-// intermittently showing "Failed to submit. Check your connection" even
-// when the request would have succeeded given a few more seconds.
+// 3s used to be the default here and it failed routinely. The backend runs on a
+// Render instance that sleeps when idle: the first request after a quiet period
+// waits for a cold start, which regularly takes far longer than 3s, and a mobile
+// connection on a weak signal is slow even when the server is warm. Aborting
+// that early turns a request that would have succeeded into "Check your
+// connection". Matches the admin portal's 30s and sits well inside gunicorn's
+// own 120s request timeout.
+const DEFAULT_TIMEOUT_MS = 30000;
+// Uploads (multipart FormData) already used this headroom for the same reason —
+// it is now simply the same budget as every other call.
 const UPLOAD_TIMEOUT_MS = 30000;
+// The /health probe only decides which base URL to use, so it must not sit for
+// the full budget on a sleeping server — but it still needs longer than 3s or a
+// cold instance is wrongly marked unreachable.
+const HEALTH_TIMEOUT_MS = 10000;
 
 const CANDIDATE_BASE_URLS = [DEFAULT_BASE_URL];
 
@@ -56,7 +64,7 @@ const isReachable = async (baseUrl) => {
       headers: {
         Accept: "application/json",
       },
-    });
+    }, HEALTH_TIMEOUT_MS);
     return response.ok;
   } catch {
     return false;

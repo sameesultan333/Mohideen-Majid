@@ -278,7 +278,6 @@ export default function RegisterScreen({ navigation }) {
 
   return (
     <View style={s.root}>
-      <StatusBar barStyle="light-content" backgroundColor={C.bg} translucent={false} />
 
       {/* Compact header */}
       <Animated.View style={[s.header, { opacity: fadeAnim }]}>

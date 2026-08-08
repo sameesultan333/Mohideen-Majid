@@ -14,7 +14,6 @@ import { logger } from "../utils/logger";
 
 const { width: SW } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
-import { useTopInset } from "../hooks/useSafeArea";
 
 // ─── Palette (exact same as HomeScreen) ─────────────────────────────
 const H = {
@@ -243,18 +242,17 @@ const LanguageModal = ({ visible, onClose, currentLang, onSelect }) => {
 
 // ─── Header Component ──────────────────────────────────────────────
 const CompactHeader = ({ userName, greetingKey, hijriDate, gregorianDate, unreadCount, onBellPress }) => {
-  const topInset = useTopInset();
   const initial = (userName || "U").trim().charAt(0).toUpperCase();
   return (
-    <View style={[hs.wrap, { height: 148 + topInset, paddingTop: topInset }]}>
-      <Svg width={SW} height={148 + topInset} style={StyleSheet.absoluteFill}>
+    <View style={[hs.wrap, { height: 148 }]}>
+      <Svg width={SW} height={148} style={StyleSheet.absoluteFill}>
         <Defs>
           <LinearGradient id="headerGrad" x1="0" y1="0" x2="1" y2="1">
             <Stop offset={0} stopColor={H.headerDeep} />
             <Stop offset={1} stopColor={H.headerLight} />
           </LinearGradient>
         </Defs>
-        <Rect x="0" y="0" width={SW} height={148 + topInset} fill="url(#headerGrad)" />
+        <Rect x="0" y="0" width={SW} height={148} fill="url(#headerGrad)" />
       </Svg>
       <HeaderPattern w={SW} h={148} />
 
@@ -471,7 +469,6 @@ export default function ProfileScreen({ navigation, route }) {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <StatusBar barStyle="light-content" backgroundColor={H.headerDeep} />
         <ActivityIndicator size="large" color={H.gold} />
         <Text style={styles.loadingText}>{t("common.loading")}</Text>
         <BottomNav navigation={navigation} currentRoute={currentRoute} />
@@ -482,7 +479,6 @@ export default function ProfileScreen({ navigation, route }) {
   // ─── Main render ──────────────────────────────────────────────────
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={H.headerDeep} />
 
       <Animated.ScrollView
         style={{ flex: 1, opacity: fade, transform: [{ translateY: translate }, { scale: scale }] }}

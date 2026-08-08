@@ -33,7 +33,6 @@ import { syncPrayerTimesToLocalScheduler } from "../utils/prayerScheduleSync";
 
 const { width: SW } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
-import { useTopInset } from "../hooks/useSafeArea";
 const PRAYER_CACHE_KEY = "cached_prayer_timings"; // shared with HomeScreen
 
 const H = {
@@ -299,7 +298,6 @@ const ProgressRing = memo(({ progress, size = 84, color = H.gold, trackColor = "
 });
 
 const HeaderPattern = memo(({ w = SW, h = 150 }) => {
-  const topInset = useTopInset();
   const step = 40;
   const cols = Math.ceil(w / step) + 1;
   const rows = Math.ceil(h / step) + 1;
@@ -325,15 +323,15 @@ const HeaderPattern = memo(({ w = SW, h = 150 }) => {
 const HEADER_H = 150;
 
 const CompactHeader = ({ title, hijriDate, gregorianDate, onSettingsPress }) => (
-  <View style={[hs.wrap, { height: HEADER_H + topInset, paddingTop: topInset }]}>
-    <Svg width={SW} height={HEADER_H + topInset} style={StyleSheet.absoluteFill}>
+  <View style={[hs.wrap, { height: HEADER_H }]}>
+    <Svg width={SW} height={HEADER_H} style={StyleSheet.absoluteFill}>
       <Defs>
         <LinearGradient id="prayerHeaderGrad" x1="0" y1="0" x2="1" y2="1">
           <Stop offset="0%" stopColor={H.headerDeep} />
           <Stop offset="100%" stopColor={H.headerLight} />
         </LinearGradient>
       </Defs>
-      <Rect x="0" y="0" width={SW} height={HEADER_H + topInset} fill="url(#prayerHeaderGrad)" />
+      <Rect x="0" y="0" width={SW} height={HEADER_H} fill="url(#prayerHeaderGrad)" />
     </Svg>
     <HeaderPattern w={SW} h={HEADER_H} />
 
@@ -572,7 +570,6 @@ export default function PrayerScreen({ navigation, route }) {
   if (loading && !timings) {
     return (
       <View style={styles.root}>
-        <StatusBar barStyle="light-content" backgroundColor={H.headerDeep} />
         <CompactHeader title={t("prayer.title")} hijriDate={hijriDate} gregorianDate={gregorianDate} onSettingsPress={() => navigation.navigate("NotificationSettings")} />
         <View style={styles.center}>
           <ActivityIndicator size="large" color={H.gold} />
@@ -586,7 +583,6 @@ export default function PrayerScreen({ navigation, route }) {
   if (!timings) {
     return (
       <View style={styles.root}>
-        <StatusBar barStyle="light-content" backgroundColor={H.headerDeep} />
         <CompactHeader title={t("prayer.title")} hijriDate={hijriDate} gregorianDate={gregorianDate} onSettingsPress={() => navigation.navigate("NotificationSettings")} />
         <View style={styles.center}>
           <Text allowFontScaling={false} style={styles.errorTitle}>{t("prayer.errorTitle")}</Text>
@@ -602,7 +598,6 @@ export default function PrayerScreen({ navigation, route }) {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor={H.headerDeep} />
 
       <CompactHeader title={t("prayer.title")} hijriDate={hijriDate} gregorianDate={gregorianDate} onSettingsPress={() => navigation.navigate("NotificationSettings")} />
 

@@ -13,16 +13,16 @@ import calendar
 from datetime import datetime, date, timedelta
 from typing import List, Optional, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, or_, and_, case
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app import models, schemas
 from app.database import SessionLocal
 from app.security import require_admin, require_superadmin
 from app.websocket_manager import manager
-from app.routes.finance import write_audit, write_ledger, _sanitize, invalidate_dashboard_cache, invalidate_dashboard_cache
+from app.routes.finance import write_audit, write_ledger, _sanitize, invalidate_dashboard_cache
 from app.utils.payment_ledger import generate_receipt_id
 
 router = APIRouter(prefix="/expenses", tags=["Expenses"])
@@ -621,8 +621,6 @@ def expense_report(
                                     textColor=green_color, alignment=TA_CENTER, fontSize=16)
     subtitle_style = ParagraphStyle("Sub", parent=styles["Normal"],
                                     textColor=colors.grey, alignment=TA_CENTER, fontSize=9)
-    footer_style   = ParagraphStyle("Footer", parent=styles["Normal"],
-                                    textColor=colors.grey, alignment=TA_CENTER, fontSize=8)
 
     story = [
         Paragraph("Mohideen Masjid", title_style),
