@@ -3,6 +3,7 @@ import { X, UserPlus } from "lucide-react";
 
 import COLORS from "../theme/colors";
 import { getZones, getStreets } from "../api/families";
+import ComboBox from "./ComboBox";
 
 interface AddFamilyData {
   chandaNo: string;
@@ -252,16 +253,14 @@ export default function AddFamilyModal({
           />
 
           <label style={LB}>Zone</label>
-          <input
-            list="zone-options-add-family"
-            style={{ ...inputStyle, marginBottom: zonesError ? 6 : 16 }}
-            placeholder="Select or type a zone"
+          <ComboBox
             value={form.zone}
-            onChange={(e) => update("zone", e.target.value)}
+            options={zones}
+            onChange={(v) => update("zone", v)}
+            placeholder="Select or type a zone"
+            emptyHint="No zones recorded yet — type to add one."
+            style={{ marginBottom: zonesError ? 6 : 16 }}
           />
-          <datalist id="zone-options-add-family">
-            {zones.map(z => <option key={z} value={z} />)}
-          </datalist>
           {zonesError && (
             <div style={{ fontSize: 11, color: COLORS.danger, marginBottom: 16 }}>
               Couldn't load the zone list — you can still type a zone manually.
@@ -269,16 +268,14 @@ export default function AddFamilyModal({
           )}
 
           <label style={LB}>Street</label>
-          <input
-            list="street-options-add-family"
-            style={{ ...inputStyle, marginBottom: streetsError ? 6 : 16 }}
-            placeholder="Select or type a street"
+          <ComboBox
             value={form.street}
-            onChange={(e) => update("street", e.target.value)}
+            options={streets}
+            onChange={(v) => update("street", v)}
+            placeholder={form.zone ? `Streets in ${form.zone}` : "Select or type a street"}
+            emptyHint="No streets recorded yet — type to add one."
+            style={{ marginBottom: streetsError ? 6 : 16 }}
           />
-          <datalist id="street-options-add-family">
-            {streets.map(st => <option key={st} value={st} />)}
-          </datalist>
           {streetsError && (
             <div style={{ fontSize: 11, color: COLORS.danger, marginBottom: 16 }}>
               Couldn't load the street list — you can still type a street manually.

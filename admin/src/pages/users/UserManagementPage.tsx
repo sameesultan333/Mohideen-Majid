@@ -944,14 +944,31 @@ const UserManagementPage: React.FC = () => {
 
   // ── Stats ────────────────────────────────────────────────────────────────────
 
-  const stats = useMemo(() => ({
-    families: families.length,
-    users: users.length,
-    active: users.filter((u) => u.is_active).length + families.filter((f) => f.is_active).length,
-    members: users.filter((u) => u.role === "member").length,
-    heads: users.filter((u) => u.role === "head").length,
-    staff: users.filter((u) => !["head", "member"].includes(u.role)).length,
-  }), [users, families]);
+  /**
+   * An approved head row IS the family and IS its head — one row, one family,
+   * one head. `is_registered` only records whether that head has claimed a
+   * login account.
+   *
+   * These counters used to read the head count off the users table
+   * (`role === "head"`), which counts *registered* heads: with one family
+   * signed up it showed "Heads 1" against 421 families. "Families" meanwhile
+   * counted every row including deactivated ones, so a single inactive family
+   * made it read 421 instead of 420. Both cards now come from the families
+   * table with the active filter applied, and the registered/unregistered
+   * split is shown for what it is instead of being mislabelled as the head
+   * count.
+   */
+  const stats = useMemo(() => {
+    const activeFamilies = families.filter((f) => f.is_active);
+    return {
+      families: activeFamilies.length,
+      inactive: families.length - activeFamilies.length,
+      registered: activeFamilies.filter((f) => f.is_registered).length,
+      users: users.length,
+      members: users.filter((u) => u.role === "member").length,
+      staff: users.filter((u) => !["head", "member"].includes(u.role)).length,
+    };
+  }, [users, families]);
 
   // ── Toggle expand ─────────────────────────────────────────────────────────────
 
@@ -969,7 +986,7 @@ const UserManagementPage: React.FC = () => {
   const statColors: Record<string, string> = {
     families: COLORS.primary,
     users: COLORS.lapis,
-    active: COLORS.success,
+    inactive: COLORS.danger,
     heads: COLORS.warning,
     members: COLORS.accent,
     staff: COLORS.textMuted,
@@ -1532,14 +1549,18 @@ const UserManagementPage: React.FC = () => {
 
       <div style={S.stats}>
         {[
-          { key: "families", label: "Families", value: stats.families, color: statColors.families },
-          { key: "users", label: "User Accounts", value: stats.users, color: statColors.users },
-          { key: "active", label: "Active", value: stats.active, color: statColors.active },
-          { key: "heads", label: "Heads", value: stats.heads, color: statColors.heads },
-          { key: "members", label: "Members", value: stats.members, color: statColors.members },
-          { key: "staff", label: "Staff", value: stats.staff, color: statColors.staff },
+          // One card, one population. "Heads" is gone as a separate figure
+          // because a head and a family are the same record — it could only
+          // ever repeat the families count or, as before, quietly mean
+          // something else.
+          { key: "families", label: "Families", value: stats.families, color: statColors.families, hint: "Active families. Each one is a single head." },
+          { key: "inactive", label: "Inactive", value: stats.inactive, color: statColors.inactive, hint: "Deactivated families, excluded from every count above." },
+          { key: "registered", label: "Registered", value: stats.registered, color: statColors.heads, hint: "Active families whose head has a login account." },
+          { key: "members", label: "Members", value: stats.members, color: statColors.members, hint: "Family members with a login account." },
+          { key: "staff", label: "Staff", value: stats.staff, color: statColors.staff, hint: "Admin, imam and collector accounts." },
+          { key: "users", label: "User Accounts", value: stats.users, color: statColors.users, hint: "Every login account, all roles." },
         ].map((s, i) => (
-          <div key={i} style={S.statCard}>
+          <div key={i} style={S.statCard} title={s.hint}>
             <div style={{ ...S.statDot, background: s.color }} />
             <div style={S.statNumber}>{s.value}</div>
             <div style={S.statLabel}>{s.label}</div>

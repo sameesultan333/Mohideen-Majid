@@ -448,23 +448,50 @@ export default function CollectionHistoryPage() {
     if (toDate)       params.to_date    = toDate   + "T23:59:59";
     if (search.trim()) params.search    = search.trim();
 
+    // The snapshot is only a truthful answer for the unfiltered first page.
+    // It used to be written and read under one key for every page and filter
+    // combination, so a failed request on page 1 could serve back rows cached
+    // from page 3 of an expense-filtered view — old entries presented as if
+    // they were the current ones.
+    const cacheable = p === 1
+      && !filterType && !filterBy && !filterMethod
+      && !fromDate && !toDate && !search.trim();
+
     try {
       const { data } = await api.get("/finance/timeline", { params });
       setEntries(data.entries ?? []);
       setTotal(data.total ?? 0);
       setIsOffline(false);
-      localStorage.setItem(CACHE_KEY, JSON.stringify({ entries: data.entries ?? [], total: data.total ?? 0, ts: Date.now() }));
+      if (cacheable) {
+        localStorage.setItem(CACHE_KEY, JSON.stringify({ entries: data.entries ?? [], total: data.total ?? 0, ts: Date.now() }));
+      }
     } catch {
-      const raw = localStorage.getItem(CACHE_KEY);
+      // One retry before giving up. The backend sleeps when idle and the first
+      // request after a wake routinely times out; without this the admin was
+      // shown the cached snapshot — no new collections in it — and concluded
+      // the timeline had stopped recording.
+      try {
+        const { data } = await api.get("/finance/timeline", { params });
+        setEntries(data.entries ?? []);
+        setTotal(data.total ?? 0);
+        setIsOffline(false);
+        if (cacheable) {
+          localStorage.setItem(CACHE_KEY, JSON.stringify({ entries: data.entries ?? [], total: data.total ?? 0, ts: Date.now() }));
+        }
+        return;
+      } catch {}
+
+      const raw = cacheable ? localStorage.getItem(CACHE_KEY) : null;
       if (raw) {
         try {
           const cached = JSON.parse(raw);
           setEntries(cached.entries ?? []);
           setTotal(cached.total ?? 0);
           setIsOffline(true);
-        } catch { setEntries([]); }
+        } catch { setEntries([]); setIsOffline(true); }
       } else {
         setEntries([]);
+        setIsOffline(true);
       }
     } finally {
       setLoading(false);
@@ -483,17 +510,47 @@ export default function CollectionHistoryPage() {
   const pageRef = useRef(page);
   useEffect(() => { pageRef.current = page; });
 
+  // Refetch whenever the admin returns to this tab. Live events are broadcast
+  // once and never replayed, and browsers throttle or close background
+  // sockets — so a payment recorded while this tab sat behind another one
+  // never arrived, and the list stayed as it was until a manual reload.
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === "visible") loadRef.current(pageRef.current);
+    };
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, []);
+
   useEffect(() => {
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
     const apiBase = (import.meta as any).env?.VITE_BACKEND_URL || "";
     const host = apiBase ? new URL(apiBase).host : window.location.host;
-    const token = localStorage.getItem("access_token") || "";
-    const wsUrl = `${proto}://${host}/ws/finance${token ? `?token=${token}` : ""}`;
+    // No token in the URL: the access token is held in memory, never in
+    // localStorage, so reading it from there always produced an empty string.
+    // /ws/finance broadcasts no member data and does not authenticate.
+    const wsUrl = `${proto}://${host}/ws/finance`;
     let ws: WebSocket | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let attempt = 0;
+    let closed = false;
+
     const connect = () => {
+      if (closed) return;
       try {
         ws = new WebSocket(wsUrl);
+
+        // Catch up on whatever happened while the socket was down. Live events
+        // are fire-and-forget: anything broadcast while disconnected is gone,
+        // so without this a collection recorded during the gap never appeared
+        // until the page was reloaded by hand — and the backend sleeps, so the
+        // socket drops routinely.
+        ws.onopen = () => { attempt = 0; loadRef.current(pageRef.current); };
+
         ws.onmessage = (e) => {
           try {
             const msg = JSON.parse(e.data);
@@ -507,11 +564,18 @@ export default function CollectionHistoryPage() {
           } catch {}
         };
         ws.onerror = () => {};
-        ws.onclose = () => { retryTimer = setTimeout(connect, 20_000); };
+        ws.onclose = () => {
+          if (closed) return;
+          // Back off 2s -> 30s instead of a flat 20s, so an ordinary blip
+          // recovers in seconds rather than leaving the page stale.
+          const delay = Math.min(2_000 * 2 ** attempt, 30_000);
+          attempt += 1;
+          retryTimer = setTimeout(connect, delay);
+        };
       } catch {}
     };
     connect();
-    return () => { ws?.close(); if (retryTimer) clearTimeout(retryTimer); };
+    return () => { closed = true; ws?.close(); if (retryTimer) clearTimeout(retryTimer); };
   }, []);
 
   const hasFilters = !!(filterType || filterBy || filterMethod || fromDate || toDate || search);

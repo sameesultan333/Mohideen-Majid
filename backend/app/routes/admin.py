@@ -209,6 +209,9 @@ async def upload_heads(
         "chanda no":             "chanda_no",
         "head name":             "name",
         "monthly chanda amount": "monthly_amount",
+        "street name":           "street",
+        "street/area":           "street",
+        "area":                  "street",
     })
     # phone is now optional — only chanda_no + name + monthly_amount are required
     missing = {"chanda_no", "name", "monthly_amount"} - set(df.columns)
@@ -289,12 +292,22 @@ async def upload_heads(
             no_phone_count += 1
 
         address  = str(row.get("address", "")).strip() or None
-        raw_zone = row.get("zone", None)
-        zone = (
-            str(raw_zone).strip().title()
-            if raw_zone and str(raw_zone).strip().lower() not in ("", "nan", "none", "null", "n/a")
-            else None
-        )
+
+        def _clean_label(raw):
+            """Excel gives blanks as NaN/'nan'; Title-case so the same street
+            typed differently does not become two entries in the picker."""
+            if raw is None:
+                return None
+            text = str(raw).strip()
+            if text.lower() in ("", "nan", "none", "null", "n/a"):
+                return None
+            return text.title()
+
+        zone = _clean_label(row.get("zone", None))
+        # Street was silently dropped by the importer, so every imported family
+        # had street = NULL and the Add Family street picker had nothing to
+        # offer — it fell back to free text and looked like no dropdown at all.
+        street = _clean_label(row.get("street", None))
         try:
             _raw = row.get("monthly_amount", 0)
             monthly_amount = float(_raw) if _raw is not None else 0
@@ -360,13 +373,15 @@ async def upload_heads(
                     existing_head.monthly_amount = monthly_amount
                 if zone and not existing_head.zone:
                     existing_head.zone = zone
+                if street and not existing_head.street:
+                    existing_head.street = street
                 updated += 1
             continue
 
         # ── Insert new family ─────────────────────────────────────────────────
         head = models.ApprovedHead(
             chanda_no=chanda_no, name=name, phone=phone,
-            address=address, zone=zone, monthly_amount=monthly_amount,
+            address=address, zone=zone, street=street, monthly_amount=monthly_amount,
             registration_date=_import_start_date(year),
         )
         db.add(head)
