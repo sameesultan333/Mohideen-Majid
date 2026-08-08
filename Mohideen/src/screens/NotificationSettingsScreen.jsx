@@ -59,7 +59,7 @@ const H = {
   white: C.white,
 };
 
-const STATUSBAR_HEIGHT = Platform.OS === "ios" ? 48 : (StatusBar.currentHeight || 0) + 6;
+import { useTopInset } from "../hooks/useSafeArea";
 
 const BackIcon = () => (
   <Svg width={24} height={24} viewBox="0 0 24 24">
@@ -90,6 +90,7 @@ const SettingRow = ({ label, description, value, onValueChange }) => (
 );
 
 const PrayerSettingRow = ({ label, arabic, adhan, iqamah, onAdhanChange, onIqamahChange, color }) => {
+  const topInset = useTopInset();
   const { t } = useTranslation();
   return (
     <View style={styles.prayerSettingRow}>
@@ -172,7 +173,7 @@ export default function NotificationSettingsScreen({ navigation }) {
     <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={H.headerDeep} />
 
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: topInset }]}>
         <AnimatedPressable style={styles.backBtn} onPress={() => navigation.goBack()} android_ripple={{ color: 'transparent' }}>
           <BackIcon />
         </AnimatedPressable>
@@ -229,7 +230,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingTop: STATUSBAR_HEIGHT,
     paddingBottom: 16,
     backgroundColor: H.headerDeep,
   },

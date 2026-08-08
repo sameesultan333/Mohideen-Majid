@@ -10,7 +10,7 @@ import Svg, { Path, Rect, Defs, LinearGradient, Stop, Circle } from "react-nativ
 
 const { width: SW } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
-const STATUSBAR_HEIGHT = IOS ? 48 : (StatusBar.currentHeight || 0) + 6;
+import { useTopInset } from "../hooks/useSafeArea";
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 const money = (v) => {
@@ -122,16 +122,17 @@ const HeaderPattern = memo(({ w = SW, h = 140 }) => {
 
 // ─── Header Component ────────────────────────────────────────────────
 const Header = memo(({ title, month, onPrev, onNext }) => {
+  const topInset = useTopInset(14);
   return (
-    <View style={hs.wrap}>
-      <Svg width={SW} height={140} style={StyleSheet.absoluteFill}>
+    <View style={[hs.wrap, { paddingTop: topInset }]}>
+      <Svg width={SW} height={140 + topInset} style={StyleSheet.absoluteFill}>
         <Defs>
           <LinearGradient id="chandaHeader" x1="0" y1="0" x2="1" y2="1">
             <Stop offset="0" stopColor={C.bg} />
             <Stop offset="1" stopColor={C.bgVivid} />
           </LinearGradient>
         </Defs>
-        <Rect x="0" y="0" width={SW} height={140} fill="url(#chandaHeader)" />
+        <Rect x="0" y="0" width={SW} height={140 + topInset} fill="url(#chandaHeader)" />
       </Svg>
       <HeaderPattern w={SW} h={140} />
       <View style={hs.content}>
@@ -590,7 +591,6 @@ const styles = StyleSheet.create({
 const hs = StyleSheet.create({
   wrap: {
     height: 140,
-    paddingTop: STATUSBAR_HEIGHT + 8,
     paddingHorizontal: 20,
     overflow: "hidden",
     borderBottomLeftRadius: 24,

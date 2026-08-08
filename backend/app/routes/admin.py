@@ -18,7 +18,8 @@ from app.services.registration_service import RegistrationApprovalService
 from app.services.chanda_number_service import generate_next_chanda_no
 from app.utils.chanda_months import current_month_key, visible_month_filter
 from app.utils.fcm import notify_user
-from app.utils.payment_ledger import generate_receipt_id
+from app.utils.payment_ledger import apply_rate_to_open_months, generate_receipt_id
+from app.utils.search import search_filter
 from app.websocket_manager import manager
 from app.routes.finance import write_audit, write_ledger
 
@@ -458,12 +459,15 @@ def list_families(
     if active_only:
         q = q.filter_by(is_active=True)
     if search:
-        term = f"%{search}%"
-        q = q.filter(
-            models.ApprovedHead.name.ilike(term)
-            | models.ApprovedHead.phone.ilike(term)
-            | models.ApprovedHead.chanda_no.ilike(term)
-        )
+        # Case/space/punctuation-insensitive — see utils/search.
+        q = q.filter(search_filter(
+            search,
+            models.ApprovedHead.name,
+            models.ApprovedHead.phone,
+            models.ApprovedHead.chanda_no,
+            models.ApprovedHead.address,
+            models.ApprovedHead.zone,
+        ))
     return q.order_by(models.ApprovedHead.chanda_no).all()
 
 
@@ -567,18 +571,11 @@ def edit_family(
         if data.monthly_amount <= 0:
             raise HTTPException(400, "Monthly amount must be > 0")
         head.monthly_amount = data.monthly_amount
-        # Apply the new rate to all pending (unpaid) month records so
-        # collector screen, member app, and dashboard stay consistent.
-        pending_cols = (
-            db.query(models.ChandaCollection)
-            .filter(
-                models.ChandaCollection.head_id == head.id,
-                models.ChandaCollection.status == "pending",
-            )
-            .all()
-        )
-        for col in pending_cols:
-            col.amount_due = data.monthly_amount
+        # Re-price every month that is not fully settled — not just the ones at
+        # status "pending". A family paying ₹100 against a mistyped ₹150 rate
+        # sits at "partial", so a pending-only update left the ₹50 balance in
+        # place after the rate was corrected. See apply_rate_to_open_months.
+        apply_rate_to_open_months(db, head.id, data.monthly_amount)
         manager.publish_sync("finance", "monthly_amount_updated", {"family_id": head.id, "amount": head.monthly_amount})
     if data.chanda_no is not None:
         new_no = data.chanda_no.strip().upper()
@@ -858,16 +855,16 @@ def search_member(
     if not q or len(q) < 2:
         return []
 
-    phone_q = normalize(q) or ""
     heads = (
         db.query(models.ApprovedHead)
-        .filter(
-            or_(
-                models.ApprovedHead.name.ilike(f"%{q}%"),
-                models.ApprovedHead.chanda_no.ilike(f"%{q}%"),
-                models.ApprovedHead.phone == phone_q if phone_q else False,
-            )
-        )
+        # Case/space/punctuation-insensitive — see utils/search. Phone is matched
+        # on the same normalized basis, so "98419 74095" finds "9841974095".
+        .filter(search_filter(
+            q,
+            models.ApprovedHead.name,
+            models.ApprovedHead.chanda_no,
+            models.ApprovedHead.phone,
+        ))
         .filter(models.ApprovedHead.is_active == True)
         .limit(8)
         .all()

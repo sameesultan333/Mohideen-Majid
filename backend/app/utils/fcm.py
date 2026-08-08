@@ -170,12 +170,22 @@ def send_fcm_topic_notification(
 
 # ── Single device token notification ─────────────────────────────────────────
 
+# Outcome of a single-device send. The distinction matters: only a token the
+# server has *proved* is dead may be deactivated. Treating a transient failure
+# (network blip, FCM 5xx, quota, timeout) as "dead" silently and permanently
+# stops that device from ever receiving another notification.
+SEND_OK = "ok"
+SEND_RETRY = "retry"        # transient — keep the token, try again next time
+SEND_TOKEN_DEAD = "dead"    # FCM says this token will never work again
+
+
 def send_fcm_device_notification(
     token: str,
     title: str,
     body: str,
     data: dict | None = None,
-) -> bool:
+) -> str:
+    """Send to one device token. Returns SEND_OK / SEND_RETRY / SEND_TOKEN_DEAD."""
     try:
         message = messaging.Message(
             notification=messaging.Notification(title=title, body=body),
@@ -191,15 +201,21 @@ def send_fcm_device_notification(
                 ),
             ),
         )
-        response = messaging.send(message)
+        messaging.send(message)
         import logging as _l; _l.getLogger(__name__).info("[FCM] device token sent")
-        return True
+        return SEND_OK
     except messaging.UnregisteredError:
+        # App uninstalled or token rotated — this token is genuinely dead.
         import logging as _l; _l.getLogger(__name__).info("[FCM] token unregistered: %s", token[:20])
-        return False
+        return SEND_TOKEN_DEAD
+    except ValueError as exc:
+        # Malformed token — it will never become valid.
+        import logging as _l; _l.getLogger(__name__).info("[FCM] invalid token %s: %s", token[:20], exc)
+        return SEND_TOKEN_DEAD
     except Exception as exc:
-        import logging as _l; _l.getLogger(__name__).warning("[FCM] device send failed: %s", exc)
-        return False
+        # Everything else (network, 5xx, quota, timeout) is transient. Keep it.
+        import logging as _l; _l.getLogger(__name__).warning("[FCM] device send failed (will retry next time): %s", exc)
+        return SEND_RETRY
 
 
 # ── Notify all active devices for a user ─────────────────────────────────────
@@ -214,14 +230,19 @@ def notify_user(db, user_id: int, title: str, body: str, data: dict | None = Non
         .all()
     )
     sent = 0
+    deactivated = False
     for dt in tokens:
-        ok = send_fcm_device_notification(dt.token, title, body, data)
-        if not ok and dt.token:
-            # Token no longer valid — deactivate it
-            dt.is_active = False
-            db.commit()
-        else:
+        result = send_fcm_device_notification(dt.token, title, body, data)
+        if result == SEND_OK:
             sent += 1
+        elif result == SEND_TOKEN_DEAD and dt.token:
+            # Only deactivate when FCM confirmed the token is dead. A transient
+            # failure must leave it active, or one network blip permanently
+            # silences that device.
+            dt.is_active = False
+            deactivated = True
+    if deactivated:
+        db.commit()
     return sent
 
 

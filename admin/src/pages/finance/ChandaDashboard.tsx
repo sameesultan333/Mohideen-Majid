@@ -17,6 +17,7 @@ import {
   type FinanceDashboard, type MemberWithCollection, type DefaulterItem,
 } from "../../api/chanda";
 import { getAccessToken } from "../../api/auth";
+import { makeSearchMatcher } from "../../utils/search";
 import { getZones } from "../../api/families";
 import { useNotifications } from "../../context/NotificationContext";
 
@@ -1313,17 +1314,15 @@ export default function ChandaDashboard() {
   // ── filter ───────────────────────────────────────────────
 
   const filteredRows = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    // Case/space/punctuation-insensitive — "sa mohideen" finds "S.A. Mohideen".
+    const matches = makeSearchMatcher(search);
     return members.filter(item => {
       const m = item.member;
       if (m.is_active === false) return false;
       const status = item.collections[0]?.status ?? "pending";
       if (statusFilter !== "all" && status !== statusFilter) return false;
       if (zoneFilter !== "all" && m.zone !== zoneFilter) return false;
-      if (q && !m.name.toLowerCase().includes(q) &&
-          !m.chanda_no.toLowerCase().includes(q) &&
-          !(m.phone ?? "").includes(q) &&
-          !(m.address ?? "").toLowerCase().includes(q)) return false;
+      if (!matches(m.name, m.chanda_no, m.phone, m.address, m.zone)) return false;
       return true;
     });
   }, [members, search, statusFilter, zoneFilter]);

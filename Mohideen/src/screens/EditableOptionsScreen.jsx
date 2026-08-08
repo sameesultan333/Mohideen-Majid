@@ -63,7 +63,7 @@ const { width: SW } = Dimensions.get("window");
 
 const IOS = Platform.OS === "ios";
 
-const STATUSBAR_HEIGHT = IOS ? 48 : (StatusBar.currentHeight || 0) + 6;
+import { useTopInset } from "../hooks/useSafeArea";
 
 const HEADER_H = 148;
 
@@ -300,6 +300,7 @@ const ArrowIcon = memo(({ color = H.gold, size = 15 }) => (
 
 
 const HeaderPattern = memo(({ w = SW, h = HEADER_H }) => {
+  const topInset = useTopInset();
 
   const step = 40;
 
@@ -347,9 +348,9 @@ const HeaderPattern = memo(({ w = SW, h = HEADER_H }) => {
 
 const CompactHeader = ({ onBack, title, hijriDate, gregorianDate }) => (
 
-  <View style={hs.wrap}>
+  <View style={[hs.wrap, { height: HEADER_H + topInset, paddingTop: topInset }]}>
 
-    <Svg width={SW} height={HEADER_H} style={StyleSheet.absoluteFill}>
+    <Svg width={SW} height={HEADER_H + topInset} style={StyleSheet.absoluteFill}>
 
       <Defs>
 
@@ -363,7 +364,7 @@ const CompactHeader = ({ onBack, title, hijriDate, gregorianDate }) => (
 
       </Defs>
 
-      <Rect x="0" y="0" width={SW} height={HEADER_H} fill="url(#editableHeaderGrad)" />
+      <Rect x="0" y="0" width={SW} height={HEADER_H + topInset} fill="url(#editableHeaderGrad)" />
 
     </Svg>
 
@@ -826,7 +827,7 @@ const styles = StyleSheet.create({
 
 const hs = StyleSheet.create({
 
-  wrap: { height: HEADER_H, paddingTop: STATUSBAR_HEIGHT, paddingHorizontal: 20, overflow: "hidden", borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
+  wrap: { height: HEADER_H, paddingHorizontal: 20, overflow: "hidden", borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
 
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 4 },
 

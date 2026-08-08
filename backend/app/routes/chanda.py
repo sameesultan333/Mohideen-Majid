@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from collections import defaultdict
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List
@@ -10,6 +10,7 @@ from app.database import SessionLocal
 from app.security import require_admin, require_collector
 from app.utils.payment_ledger import (
     apply_coverage_to_collections,
+    apply_rate_to_open_months,
     apply_coverage_to_existing_collections,
     apply_coverage_to_generated_collections,
     build_coverage_map,
@@ -28,7 +29,7 @@ from app.websocket_manager import manager
 from app.routes.finance import write_audit, write_ledger
 from app.rate_limit import rate_limit
 from app.utils.fcm import notify_user
-from app.utils.payment_notify import notify_chanda_payment
+from app.utils.payment_notify import notify_chanda_payment_later
 
 router = APIRouter(prefix="/chanda", tags=["Chanda"])
 
@@ -208,6 +209,7 @@ def generate_month(
 async def collect_payment(
     data: schemas.PaymentCreate,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user=Depends(require_collector),
 ):
@@ -371,13 +373,16 @@ async def collect_payment(
                 "payload": schemas.PaymentOut.model_validate(payment).model_dump(exclude_none=True),
             },
         )
-    notify_chanda_payment(db, payment)
+    # Pushed ~2.5s later on its own session so FCM latency never delays
+    # this response. Wording is derived from payment.created_by.
+    background_tasks.add_task(notify_chanda_payment_later, payment.id)
     return payment
 
 
 @router.put("/verify/{payment_id}", response_model=schemas.PaymentOut)
 def verify_payment(
     payment_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user=Depends(require_admin),
 ):
@@ -436,7 +441,9 @@ def verify_payment(
             },
         )
     # Personal push to the user who submitted this payment
-    notify_chanda_payment(db, payment)
+    # Pushed ~2.5s later on its own session so FCM latency never delays
+    # this response. Wording is derived from payment.created_by.
+    background_tasks.add_task(notify_chanda_payment_later, payment.id)
     return payment
 
 
@@ -617,6 +624,7 @@ def reject_payment_rollback(
 @router.post("/admin-record", response_model=schemas.PaymentOut)
 def admin_record_payment(
     data: schemas.AdminPaymentRecord,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user=Depends(require_admin),
 ):
@@ -746,7 +754,9 @@ def admin_record_payment(
             {"type": "receipt_update",
              "payload": schemas.PaymentOut.model_validate(payment).model_dump(exclude_none=True)},
         )
-    notify_chanda_payment(db, payment)
+    # Pushed ~2.5s later on its own session so FCM latency never delays
+    # this response. Wording is derived from payment.created_by.
+    background_tasks.add_task(notify_chanda_payment_later, payment.id)
 
     return payment
 
@@ -932,9 +942,10 @@ def update_chanda_rate(
 ):
     """
     Update a member's monthly chanda amount.
-    Cascades to future advance-paid collections:
-    - If new rate > old allocated amount → status becomes partial (remaining balance shown)
-    - Never modifies historical receipts or coverage_map values
+    Cascades to every month that is not fully settled, plus future months:
+    - If new rate > amount already allocated → status becomes partial (remaining balance shown)
+    - If the old rate was a typo, correcting it clears the phantom balance
+    - Fully-paid past months and historical receipts / coverage_map are never touched
     """
     head = db.query(models.ApprovedHead).filter_by(id=member_id).first()
     if not head:
@@ -946,28 +957,7 @@ def update_chanda_rate(
         raise HTTPException(400, "Monthly amount must be greater than zero")
 
     head.monthly_amount = new_rate
-
-    current_month = india_month_key(utc_now())
-
-    # Update future generated collections where amount_due should reflect new rate
-    future_cols = (
-        db.query(models.ChandaCollection)
-        .filter(
-            models.ChandaCollection.head_id == head.id,
-            models.ChandaCollection.month >= current_month,
-        )
-        .all()
-    )
-    for col in future_cols:
-        # Update amount_due to new rate for pending months
-        # For advance-paid months: keep total_paid unchanged but update amount_due
-        # → set_collection_status will correctly mark as partial if total_paid < new rate
-        if col.status == "pending":
-            col.amount_due = new_rate
-        elif col.is_advance or col.status in ("paid", "partial"):
-            col.amount_due = new_rate
-            # total_paid stays — reflects actual cash already allocated
-        set_collection_status(col)
+    apply_rate_to_open_months(db, head.id, new_rate)
 
     db.commit()
 

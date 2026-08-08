@@ -7,10 +7,12 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { authApiAxios } from "../config/server";
 import { PasswordInput } from "../components/AuthComponents";
 import { COLORS as C, RADII, SPACING, FONTS } from "../config/theme";
+import { useTopInset } from "../hooks/useSafeArea";
 
 const IOS = Platform.OS === "ios";
 
 export default function ChangePasswordScreen({ navigation }) {
+  const topInset = useTopInset(12);
   const { t } = useTranslation();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -62,7 +64,7 @@ export default function ChangePasswordScreen({ navigation }) {
     <View style={s.root}>
       <StatusBar barStyle="light-content" backgroundColor={C.bg} />
 
-      <View style={[s.header, { paddingTop: IOS ? 52 : (StatusBar.currentHeight || 0) + 12 }]}>
+      <View style={[s.header, { paddingTop: topInset }]}>
         <AnimatedPressable onPress={() => navigation.goBack()} style={s.backBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
           <View style={s.backArrow} />
         </AnimatedPressable>

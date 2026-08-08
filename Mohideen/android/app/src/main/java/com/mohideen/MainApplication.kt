@@ -75,7 +75,7 @@ class MainApplication : Application(), ReactApplication {
     // Version key — bump CHANNEL_VERSION whenever sound/importance changes.
     // Android permanently caches channel settings; deleting and recreating is the
     // only way to apply new sounds without asking users to reinstall.
-    val CHANNEL_VERSION = 5
+    val CHANNEL_VERSION = 6
     val prefs = getSharedPreferences("channel_prefs", Context.MODE_PRIVATE)
     val installedVersion = prefs.getInt("channel_version", 0)
 
@@ -99,7 +99,19 @@ class MainApplication : Application(), ReactApplication {
       lightColor = notifColor
     })
 
-    val audioAttrs = android.media.AudioAttributes.Builder()
+    // USAGE_ALARM, not USAGE_NOTIFICATION. The adhan is ~2-3 minutes long, and on
+    // the notification stream any WhatsApp/SMS arriving mid-adhan plays over it
+    // and Android ducks or cuts the adhan short. The alarm stream is not ducked
+    // by ordinary notification sounds, so the call to prayer plays through — the
+    // same treatment a clock alarm gets. It also follows the user's alarm volume
+    // rather than notification volume, which is what people expect for adhan.
+    val alarmAudioAttrs = android.media.AudioAttributes.Builder()
+      .setUsage(android.media.AudioAttributes.USAGE_ALARM)
+      .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+      .build()
+
+    // Ordinary notification sound behaviour for everything that is not adhan.
+    val notifAudioAttrs = android.media.AudioAttributes.Builder()
       .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
       .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
       .build()
@@ -112,9 +124,13 @@ class MainApplication : Application(), ReactApplication {
       NotificationManager.IMPORTANCE_HIGH
     ).apply {
       description = "Adhan call for each prayer"
-      setSound(adhanSound, audioAttrs)
+      setSound(adhanSound, alarmAudioAttrs)
       enableVibration(true)
       lightColor = notifColor
+      // Ask to sound through Do Not Disturb. The system honours this only when
+      // the user has granted DND policy access, and silently ignores it
+      // otherwise — it never throws and never blocks channel creation.
+      setBypassDnd(true)
     })
 
     // Iqamah channel — custom sound: res/raw/start_prayer.mp3
@@ -125,7 +141,7 @@ class MainApplication : Application(), ReactApplication {
       NotificationManager.IMPORTANCE_HIGH
     ).apply {
       description = "Congregation start reminder"
-      setSound(iqamahSound, audioAttrs)
+      setSound(iqamahSound, alarmAudioAttrs)
       enableVibration(true)
       lightColor = notifColor
     })

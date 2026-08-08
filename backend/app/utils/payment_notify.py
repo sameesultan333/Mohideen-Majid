@@ -9,11 +9,52 @@ one of the two functions below instead of building its own notify_user() call.
 
 from __future__ import annotations
 
+import logging
+import time
+
 from sqlalchemy.orm import Session
 
 from app import models
 from app.utils.fcm import notify_user
 from app.utils.timezones import month_key_to_full_label
+
+log = logging.getLogger(__name__)
+
+# The member's phone should buzz just after they see the on-screen confirmation,
+# not at the same instant — otherwise the push feels like a duplicate of the UI.
+NOTIFY_DELAY_SECONDS = 2.5
+
+
+def _rupees(amount: float | None) -> str:
+    """₹5,000 — Indian digit grouping, no trailing .00 on whole amounts."""
+    value = float(amount or 0)
+    whole = int(value)
+    formatted = f"{whole:,}" if value == whole else f"{value:,.2f}"
+    # en-IN grouping: 12,34,567 rather than 1,234,567
+    if len(str(abs(whole))) > 3:
+        head, _, tail = formatted.partition(".")
+        digits = head.replace(",", "").lstrip("-")
+        sign = "-" if head.startswith("-") else ""
+        last3, rest = digits[-3:], digits[:-3]
+        groups = []
+        while len(rest) > 2:
+            groups.insert(0, rest[-2:])
+            rest = rest[:-2]
+        if rest:
+            groups.insert(0, rest)
+        head = sign + ",".join(groups + [last3])
+        formatted = f"{head}.{tail}" if tail else head
+    return f"₹{formatted}"
+
+
+def _months_label(covered_months: list[str] | None) -> str | None:
+    """"August 2026" for one month, "August 2026 - October 2026" for a range."""
+    months = sorted(m for m in (covered_months or []) if m)
+    if not months:
+        return None
+    if len(months) == 1:
+        return month_key_to_full_label(months[0])
+    return f"{month_key_to_full_label(months[0])} - {month_key_to_full_label(months[-1])}"
 
 
 def _target_user_id(db: Session, head_id: int | None, fallback_user_id: int | None) -> int | None:
@@ -27,31 +68,81 @@ def _target_user_id(db: Session, head_id: int | None, fallback_user_id: int | No
     return fallback_user_id
 
 
+def _build_chanda_message(payment: models.PaymentEntry) -> tuple[str, str]:
+    """Title + body for a settled Chanda payment.
+
+    Wording is chosen from `created_by`, which every payment path already sets
+    ("collector" | "admin" | "user"), so the message can never drift out of sync
+    with how the payment was actually recorded. Every value below is read from
+    the payment row — nothing is hardcoded.
+    """
+    amount = _rupees(payment.amount)
+    months_label = _months_label(payment.covered_months)
+    receipt = payment.receipt_id
+    source = (payment.created_by or "").strip().lower()
+
+    lines = ["JazakAllahu Khairan.", ""]
+
+    if source == "collector":
+        title = "Monthly Subscription Collected"
+        # Collector name comes from the DB (payment.collected_by), never a literal.
+        collector = (payment.collected_by or "").strip()
+        who = f"Collector {collector}" if collector else "Your collector"
+        lines.append(f"{who} has successfully collected your Monthly Subscription.")
+        lines += ["", "Amount:", amount]
+    elif source == "admin":
+        title = "Payment Recorded"
+        lines.append("Your payment has been recorded successfully.")
+        lines += ["", "Amount:", amount]
+    else:
+        title = "Payment Successful"
+        lines.append(f"Your Monthly Subscription payment of {amount} has been received.")
+
+    if months_label:
+        lines += ["", "Covered Months:", months_label]
+    if receipt:
+        lines += ["", "Receipt No:" if source not in ("collector", "admin") else "Receipt:", receipt]
+
+    return title, "\n".join(lines)
+
+
 def notify_chanda_payment(db: Session, payment: models.PaymentEntry) -> None:
     user_id = _target_user_id(db, payment.head_id, payment.paid_by_user_id)
     if not user_id:
         return
 
-    months = payment.covered_months or []
-    months_label = ", ".join(month_key_to_full_label(m) for m in months) if months else None
-
-    body_lines = ["Your Chanda contribution has been successfully received."]
-    if months_label:
-        body_lines.append(f"Covered Months: {months_label}")
-    if payment.receipt_id:
-        body_lines.append(f"Receipt: {payment.receipt_id}")
-    body_lines.append("Please view your receipt from the Chanda History section inside your profile.")
-
+    title, body = _build_chanda_message(payment)
     notify_user(
         db, user_id,
-        title="Payment Received",
-        body="\n".join(body_lines),
+        title=title,
+        body=body,
         data={
             "type": "payment_received",
             "payment_id": str(payment.id),
             "receipt_id": payment.receipt_id or "",
         },
     )
+
+
+def notify_chanda_payment_later(payment_id: int, delay_seconds: float = NOTIFY_DELAY_SECONDS) -> None:
+    """Background task: wait briefly, then push on a fresh DB session.
+
+    Runs after the response is sent — the request-scoped session from get_db()
+    is already closed by then, so this opens its own. Keeping the push out of
+    the request means FCM latency never delays the payment API response.
+    """
+    from app.database import SessionLocal
+
+    time.sleep(delay_seconds)
+    db = SessionLocal()
+    try:
+        payment = db.query(models.PaymentEntry).filter_by(id=payment_id).first()
+        if payment:
+            notify_chanda_payment(db, payment)
+    except Exception:
+        log.warning("[notify] chanda payment push failed for id=%s", payment_id, exc_info=True)
+    finally:
+        db.close()
 
 
 def notify_donation_payment(db: Session, donation: models.Donation) -> None:

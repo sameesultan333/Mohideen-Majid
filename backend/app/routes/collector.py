@@ -420,10 +420,10 @@ async def update_family(
         family.monthly_amount = data.monthly_amount
         changed["monthly_amount"] = data.monthly_amount
 
-        db.query(models.ChandaCollection).filter(
-            models.ChandaCollection.head_id == family_id,
-            models.ChandaCollection.status == "pending",
-        ).update({"amount_due": data.monthly_amount, "rate_snapshot": data.monthly_amount})
+        # Every unsettled month, not just "pending" — a family part-paying
+        # against a mistyped rate sits at "partial" (see apply_rate_to_open_months).
+        from app.utils.payment_ledger import apply_rate_to_open_months
+        apply_rate_to_open_months(db, family_id, data.monthly_amount)
 
         await log_action(
             db, AuditAction.CHANDA_AMOUNT_UPDATED, "approved_heads", family_id,

@@ -40,9 +40,9 @@ class IqamahSchedulerModule(reactContext: ReactApplicationContext)
         val pi = PendingIntent.getActivity(ctx, 0, launchIntent, PendingIntent.FLAG_IMMUTABLE)
         // CATEGORY_ALARM so the adhan can sound through Do Not Disturb — for a
         // call to prayer that's the intended behavior. The volume stream is
-        // governed by the channel's own AudioAttributes (USAGE_NOTIFICATION in
-        // MainApplication.kt), not by this category, so it plays through the
-        // normal notification volume.
+        // governed by the channel's own AudioAttributes (USAGE_ALARM in
+        // MainApplication.kt), so the adhan plays on the alarm stream and an
+        // incoming WhatsApp/SMS notification cannot duck or cut it short.
         val notification = NotificationCompat.Builder(ctx, "prayer_adhan")
             .setSmallIcon(R.drawable.ic_notification)
             .setColor(ctx.getColor(R.color.notification_color))

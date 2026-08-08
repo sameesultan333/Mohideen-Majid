@@ -14,6 +14,7 @@ import {
 import { COLORS, TYPOGRAPHY } from "../../theme/colors";
 import AddEditStaffDialog from "../../components/AddEditStaffDialog";
 import DeleteStaffDialog from "../../components/DeleteStaffDialog";
+import { makeSearchMatcher } from "../../utils/search";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -507,10 +508,9 @@ const StaffManagementPage: React.FC = () => {
   const filteredStaff = useMemo(() => {
     let result = staff;
     if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      result = result.filter(
-        (s) => (s.name || "").toLowerCase().includes(q) || (s.phone || "").includes(q)
-      );
+      // Case/space/punctuation-insensitive — see utils/search.
+      const matches = makeSearchMatcher(search);
+      result = result.filter((s) => matches(s.name, s.phone));
     }
     if (roleFilter !== "all") {
       result = result.filter((s) => s.role === roleFilter);

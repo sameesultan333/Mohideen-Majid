@@ -159,3 +159,33 @@ def test_mixed_family_shows_advance_but_hides_blank_future_months():
 
 def test_current_month_key_is_generated():
     assert is_generated_month(current_month_key())
+
+
+def test_expected_for_ungenerated_month_is_the_full_projection():
+    """Only advance payers have rows, so Expected must not collapse to their total.
+
+    Regression: September showed Expected ₹1,200 — one advance payer's amount —
+    instead of the whole masjid's monthly total.
+    """
+    rates = [1200.0, 2000.0, 500.0]
+    full_expected = sum(rates)
+
+    engine = create_engine("sqlite:///:memory:")
+    models.Base.metadata.create_all(engine, tables=[models.ChandaCollection.__table__])
+    db = sessionmaker(bind=engine)()
+    try:
+        # Only the ₹1,200 family paid September ahead; nobody else has a row.
+        db.add(models.ChandaCollection(
+            head_id=1, month="2026-09", amount_due=1200.0,
+            total_paid=1200.0, status="paid",
+        ))
+        db.commit()
+
+        rows = db.query(models.ChandaCollection).filter_by(month="2026-09").all()
+        summed_from_rows = sum(c.amount_due for c in rows)
+
+        assert summed_from_rows == 1200.0          # the wrong number, from rows
+        assert full_expected == 3700.0             # what Expected must show
+        assert summed_from_rows != full_expected   # so rows can't be the source
+    finally:
+        db.close()

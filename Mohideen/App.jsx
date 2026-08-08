@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, LogBox, StyleSheet, View } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
+import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
 import messaging, { onMessage } from "@react-native-firebase/messaging";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -73,16 +74,25 @@ export default function App() {
 
   if (!isReady) {
     return (
-      <View style={styles.loader}>
-        <ActivityIndicator size="large" color="#0F5C4C" />
-      </View>
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+        <View style={styles.loader}>
+          <ActivityIndicator size="large" color="#0F5C4C" />
+        </View>
+      </SafeAreaProvider>
     );
   }
 
+  // SafeAreaProvider must wrap the whole tree: from targetSdk 35+ Android forces
+  // edge-to-edge, so screens draw behind the status bar and display cutout.
+  // Every header reads its top padding from useTopInset() (src/hooks/useSafeArea),
+  // which is backed by this provider. initialMetrics avoids the one-frame layout
+  // jump on cold start by seeding the insets synchronously from the native side.
   return (
-    <NavigationContainer ref={navigationRef}>
-      <AppNavigator />
-    </NavigationContainer>
+    <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+      <NavigationContainer ref={navigationRef}>
+        <AppNavigator />
+      </NavigationContainer>
+    </SafeAreaProvider>
   );
 }
 

@@ -22,7 +22,8 @@ import { logger } from "../utils/logger";
 
 const { width: SW } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
-const STATUSBAR_HEIGHT = IOS ? 48 : (StatusBar.currentHeight || 0) + 6;
+import { STATUSBAR_HEIGHT } from "../utils/statusBar";
+import { useTopInset } from "../hooks/useSafeArea";
 
 // ─── Palette (identical source of truth as AskQuestionScreen) ──────
 const H = {
@@ -215,20 +216,21 @@ const isUnsupportedImage = (asset) => {
 
 // ─── Compact Header ──────────────────────────────────────────────────
 const CompactHeader = ({ title, hijriDate, gregorianDate, onAdd }) => {
+  const topInset = useTopInset();
   const safeTitle = typeof title === "string" ? title : "";
   const safeGregorian = typeof gregorianDate === "string" ? gregorianDate : "";
   const safeHijri = typeof hijriDate === "string" ? hijriDate : "";
 
   return (
-    <View style={hs.wrap}>
-      <Svg width={SW} height={148} style={StyleSheet.absoluteFill}>
+    <View style={[hs.wrap, { paddingTop: topInset }]}>
+      <Svg width={SW} height={148 + topInset} style={StyleSheet.absoluteFill}>
         <Defs>
           <LinearGradient id="headerGrad" x1="0" y1="0" x2="1" y2="1">
             <Stop offset={0} stopColor={H.headerDeep} />
             <Stop offset={1} stopColor={H.headerLight} />
           </LinearGradient>
         </Defs>
-        <Rect x="0" y="0" width={SW} height={148} fill="url(#headerGrad)" />
+        <Rect x="0" y="0" width={SW} height={148 + topInset} fill="url(#headerGrad)" />
       </Svg>
       <HeaderPattern w={SW} h={148} />
 
@@ -904,7 +906,6 @@ const styles = StyleSheet.create({
 const hs = StyleSheet.create({
   wrap: {
     height: 148,
-    paddingTop: STATUSBAR_HEIGHT,
     paddingHorizontal: 20,
     overflow: "hidden",
     borderBottomLeftRadius: 24,

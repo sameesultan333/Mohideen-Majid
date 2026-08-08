@@ -78,7 +78,11 @@ import {
 
   StatusBar,
 
+  Pressable,
+
 } from "react-native";
+
+import { useTopInset } from "../hooks/useSafeArea";
 
 import { useTranslation } from "react-i18next";
 
@@ -1002,9 +1006,12 @@ const StatCell = ({ label, value, accent }) => (
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-export default function QiblaScreen() {
+export default function QiblaScreen({ navigation }) {
 
   const { t } = useTranslation();
+
+  // Real top inset — covers status bar + display cutout, updates on rotation.
+  const topInset = useTopInset(28);
 
 
 
@@ -1498,15 +1505,30 @@ export default function QiblaScreen() {
 
   return (
 
-    <Animated.View style={[st.root, { opacity: screenFade }]}>
+    <Animated.View style={[st.root, { opacity: screenFade, paddingTop: topInset }]}>
 
-      <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
 
 
       {/* ── Header ── */}
 
       <View style={st.header}>
+
+        {/* Back to Deen. Qibla is pushed from DeenScreen, so goBack() returns
+            there without resetting the stack or duplicating the screen. */}
+
+        <Pressable
+          onPress={() => navigation.goBack()}
+          style={st.backBtn}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel={t("common.back", "Back")}
+        >
+
+          <Text style={st.backIcon}>‹</Text>
+
+        </Pressable>
 
         <View style={st.headerRow}>
 
@@ -1692,7 +1714,7 @@ const st = StyleSheet.create({
 
     alignItems: "center",
 
-    paddingTop:        Platform.OS === "ios" ? 56 : 34,
+    // paddingTop comes from useTopInset() at runtime — see src/hooks/useSafeArea.
 
     paddingHorizontal: 20,
 
@@ -1718,7 +1740,16 @@ const st = StyleSheet.create({
 
   // Header
 
-  header:     { alignItems: "center", marginBottom: 20 },
+  header:     { alignItems: "center", marginBottom: 20, alignSelf: "stretch" },
+
+  backBtn:    {
+    position: "absolute", left: 0, top: 0, zIndex: 10,
+    width: 40, height: 40, borderRadius: 20,
+    alignItems: "center", justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+
+  backIcon:   { fontSize: 30, lineHeight: 34, color: C.gold, fontWeight: "700", marginTop: -2 },
 
   headerRow:  { flexDirection: "row", alignItems: "center", gap: 12 },
 

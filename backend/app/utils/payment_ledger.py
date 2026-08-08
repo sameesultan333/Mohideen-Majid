@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app import models
@@ -78,6 +79,54 @@ def set_collection_status(collection: models.ChandaCollection) -> None:
         collection.status = "paid"
     else:
         collection.status = "partial"
+
+
+def apply_rate_to_open_months(
+    db: Session,
+    head_id: int,
+    new_amount: float,
+    *,
+    current_month: str | None = None,
+) -> int:
+    """Re-price a family's months after their monthly amount changes.
+
+    A month is re-priced when it is not fully settled, or when it lies in the
+    future. That covers the two cases that matter:
+
+      * A mistyped rate. Someone entered ₹150 for a family that pays ₹100, so
+        every month sat at `partial` with a phantom ₹50 balance. Correcting the
+        rate to ₹100 re-prices those months and `set_collection_status` flips
+        them to `paid` — the balance disappears instead of lingering.
+      * A future month already covered in advance. Re-pricing keeps `total_paid`
+        (real cash received) and only moves `amount_due`, so a rate increase
+        surfaces the new shortfall as `partial`.
+
+    Fully-paid past months are never touched — that money was really collected
+    at the old rate and rewriting it would falsify history.
+
+    Returns the number of rows re-priced.
+    """
+    from app.utils.chanda_months import current_month_key
+
+    cutoff = current_month or current_month_key()
+    new_amount = round(float(new_amount), 2)
+
+    collections = (
+        db.query(models.ChandaCollection)
+        .filter(
+            models.ChandaCollection.head_id == head_id,
+            or_(
+                models.ChandaCollection.status != "paid",
+                models.ChandaCollection.month > cutoff,
+            ),
+        )
+        .all()
+    )
+    for collection in collections:
+        collection.amount_due = new_amount
+        collection.rate_snapshot = new_amount
+        set_collection_status(collection)
+    return len(collections)
 
 
 def verified_chanda_payments(db: Session, head_id: int):

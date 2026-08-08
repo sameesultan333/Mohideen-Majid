@@ -7,6 +7,7 @@ import { getCurrentUser } from "../../api/auth";
 import DeleteStaffDialog from "../../components/DeleteStaffDialog";
 import type { User, UserRole } from "../../types/users";
 import type { Family, FamilyMember } from "../../types/family";
+import { makeSearchMatcher } from "../../utils/search";
 
 // ─── Media Query Hook ──────────────────────────────────────────────────────
 
@@ -900,22 +901,13 @@ const UserManagementPage: React.FC = () => {
 
   // ── Filter ───────────────────────────────────────────────────────────────────
 
-  const q = search.trim().toLowerCase();
+  // Case/space/punctuation-insensitive — "sa mohideen" finds "S.A. Mohideen".
+  const matches = makeSearchMatcher(search);
 
-  const familyMatches = (f: Family) => {
-    if (!q) return true;
-    return (
-      f.name.toLowerCase().includes(q) ||
-      (f.phone ?? "").includes(q) ||
-      f.chanda_no.toLowerCase().includes(q) ||
-      (f.address ?? "").toLowerCase().includes(q)
-    );
-  };
+  const familyMatches = (f: Family) =>
+    matches(f.name, f.phone, f.chanda_no, f.address);
 
-  const userMatches = (u: User) => {
-    if (!q) return true;
-    return u.name.toLowerCase().includes(q) || (u.phone ?? "").includes(q);
-  };
+  const userMatches = (u: User) => matches(u.name, u.phone);
 
   const filteredFamilies = useMemo(
     () =>
@@ -925,13 +917,13 @@ const UserManagementPage: React.FC = () => {
         if (statusFilter === "active" && !f.is_active) return false;
         if (statusFilter === "inactive" && f.is_active) return false;
         if (zoneFilter !== "all" && f.zone !== zoneFilter) return false;
-        if (q) {
+        if (search.trim()) {
           const members = membersByFamily.get(f.id) ?? [];
           return familyMatches(f) || members.some(userMatches);
         }
         return true;
       }),
-    [families, roleFilter, statusFilter, zoneFilter, q, membersByFamily]
+    [families, roleFilter, statusFilter, zoneFilter, search, membersByFamily]
   );
 
   const filteredStaff = useMemo(
@@ -943,7 +935,7 @@ const UserManagementPage: React.FC = () => {
         if (statusFilter === "inactive" && u.is_active) return false;
         return userMatches(u);
       }),
-    [staffUsers, roleFilter, statusFilter, q]
+    [staffUsers, roleFilter, statusFilter, search]
   );
 
   // ── Stats ────────────────────────────────────────────────────────────────────

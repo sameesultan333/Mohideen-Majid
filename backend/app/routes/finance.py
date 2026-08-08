@@ -140,7 +140,24 @@ def finance_dashboard(
     # A family with no ChandaCollection row for target_month is NOT pending —
     # the month simply has not been generated for them. ChandaCollection is the
     # single source of truth; pending is never inferred from the calendar.
-    outstanding    = max(due_month - collected_month, 0)
+    if target_month > current_month_key():
+        # Month not generated yet. Only advance payers have a row, so summing
+        # amount_due would report a token "Expected" (one payer's ₹1,200 for the
+        # whole masjid). Expected is instead the full projection at today's
+        # rates — what generation will charge, and it moves only when a family's
+        # monthly amount is changed. Nothing is owed yet, so nothing is pending
+        # or outstanding; `collected` still reflects real advance payments.
+        due_month = float(
+            db.query(func.coalesce(func.sum(models.ApprovedHead.monthly_amount), 0.0))
+            .filter(models.ApprovedHead.is_active.is_(True))
+            .scalar() or 0
+        )
+        pending_count = 0
+        outstanding = 0.0
+    else:
+        # Generated: amount_due already holds each family's rate at generation
+        # time, so the sum is the real expected for that month.
+        outstanding = max(due_month - collected_month, 0)
     collection_pct = round((collected_month / due_month * 100) if due_month else 0, 1)
 
     # ── All-time outstanding (SQL aggregation) ─────────────────

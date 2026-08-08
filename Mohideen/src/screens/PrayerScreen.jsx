@@ -33,7 +33,7 @@ import { syncPrayerTimesToLocalScheduler } from "../utils/prayerScheduleSync";
 
 const { width: SW } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
-const STATUSBAR_HEIGHT = IOS ? 48 : (StatusBar.currentHeight || 0) + 6;
+import { useTopInset } from "../hooks/useSafeArea";
 const PRAYER_CACHE_KEY = "cached_prayer_timings"; // shared with HomeScreen
 
 const H = {
@@ -299,6 +299,7 @@ const ProgressRing = memo(({ progress, size = 84, color = H.gold, trackColor = "
 });
 
 const HeaderPattern = memo(({ w = SW, h = 150 }) => {
+  const topInset = useTopInset();
   const step = 40;
   const cols = Math.ceil(w / step) + 1;
   const rows = Math.ceil(h / step) + 1;
@@ -324,15 +325,15 @@ const HeaderPattern = memo(({ w = SW, h = 150 }) => {
 const HEADER_H = 150;
 
 const CompactHeader = ({ title, hijriDate, gregorianDate, onSettingsPress }) => (
-  <View style={hs.wrap}>
-    <Svg width={SW} height={HEADER_H} style={StyleSheet.absoluteFill}>
+  <View style={[hs.wrap, { height: HEADER_H + topInset, paddingTop: topInset }]}>
+    <Svg width={SW} height={HEADER_H + topInset} style={StyleSheet.absoluteFill}>
       <Defs>
         <LinearGradient id="prayerHeaderGrad" x1="0" y1="0" x2="1" y2="1">
           <Stop offset="0%" stopColor={H.headerDeep} />
           <Stop offset="100%" stopColor={H.headerLight} />
         </LinearGradient>
       </Defs>
-      <Rect x="0" y="0" width={SW} height={HEADER_H} fill="url(#prayerHeaderGrad)" />
+      <Rect x="0" y="0" width={SW} height={HEADER_H + topInset} fill="url(#prayerHeaderGrad)" />
     </Svg>
     <HeaderPattern w={SW} h={HEADER_H} />
 
@@ -755,7 +756,7 @@ const styles = StyleSheet.create({
 });
 
 const hs = StyleSheet.create({
-  wrap: { height: HEADER_H, paddingTop: STATUSBAR_HEIGHT, paddingHorizontal: 20, overflow: "hidden", borderBottomLeftRadius: 24, borderBottomRightRadius: 24, ...shadow(8, 0.16) },
+  wrap: { height: HEADER_H, paddingHorizontal: 20, overflow: "hidden", borderBottomLeftRadius: 24, borderBottomRightRadius: 24, ...shadow(8, 0.16) },
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 4 },
   title: { color: H.white, fontSize: 22, fontWeight: "700", letterSpacing: 0.4 },
   iconContainer: {

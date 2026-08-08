@@ -14,6 +14,25 @@ import { requestPaymentRollback } from "../../api/chanda";
 
 const SURFACE_HOVER = "#F7F9F8";
 
+/**
+ * Shown on any payment with a rollback awaiting a second admin's approval.
+ * The payment stays verified and visible until then — the backend only reverses
+ * on approval, so the timeline, receipt and audit trail must stay complete.
+ * Without this marker the row looks unchanged after requesting, which reads as
+ * "the transaction vanished".
+ */
+function RollbackPendingTag() {
+  return (
+    <span style={{
+      background: "#FFF7ED", color: "#C2620A", border: "1px solid #FED7AA",
+      borderRadius: 5, padding: "2px 7px", fontSize: 9.5, fontWeight: 800,
+      textTransform: "uppercase", whiteSpace: "nowrap",
+    }}>
+      Rollback pending
+    </span>
+  );
+}
+
 const fmt = (n: number | null | undefined) =>
   `₹${Math.abs(n ?? 0).toLocaleString("en-IN")}`;
 
@@ -167,7 +186,7 @@ const TYPE_META = {
 
 // ── Detail panel ──────────────────────────────────────────────────────────────
 
-function DetailPanel({ entry, onClose }: { entry: TimelineEntry | null; onClose: () => void }) {
+function DetailPanel({ entry, onClose, onRequested }: { entry: TimelineEntry | null; onClose: () => void; onRequested?: () => void }) {
   const BACKEND = (import.meta as any).env?.VITE_BACKEND_URL || "";
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [rollbackReason, setRollbackReason] = useState("");
@@ -188,6 +207,7 @@ function DetailPanel({ entry, onClose }: { entry: TimelineEntry | null; onClose:
     try {
       await requestPaymentRollback(entry.id, rollbackReason.trim() || undefined);
       setRollbackReason("");
+      onRequested?.();
       onClose();
     } catch {
       alert("Unable to submit rollback request.");
@@ -291,6 +311,27 @@ function DetailPanel({ entry, onClose }: { entry: TimelineEntry | null; onClose:
                     <span key={ym} style={{ background: COLORS.primaryLight, color: COLORS.primary, borderRadius: 6, padding: "3px 9px", fontSize: 11, fontWeight: 600 }}>{label}</span>
                   );
                 })}
+              </div>
+            </div>
+          )}
+
+          {/* Awaiting a second admin's approval. The payment deliberately stays
+              verified and visible until then — history and audit trail must
+              remain complete, so nothing is hidden before approval. */}
+          {entry.entry_type === "chanda" && entry.rollback_status === "pending" && (
+            <div style={{
+              marginTop: 18, marginBottom: 4, padding: "12px 14px", borderRadius: 8,
+              background: "#FFF7ED", border: "1px solid #FED7AA",
+              display: "flex", alignItems: "center", gap: 10,
+            }}>
+              <RotateCcw size={15} color="#C2620A" />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: "#C2620A" }}>
+                  Rollback Pending Approval
+                </div>
+                <div style={{ fontSize: 11.5, color: "#9A5510", marginTop: 2 }}>
+                  This payment stays active until a different administrator approves the rollback.
+                </div>
               </div>
             </div>
           )}
@@ -436,6 +477,11 @@ export default function CollectionHistoryPage() {
   // ── WebSocket: live updates ───────────────────────────────
   const loadRef = useRef(load);
   useEffect(() => { loadRef.current = load; });
+  // Reload the page the admin is actually on. Reloading page 1 unconditionally
+  // swapped in page-1 rows while the paginator still read "page 3", so the entry
+  // they had just acted on disappeared from view.
+  const pageRef = useRef(page);
+  useEffect(() => { pageRef.current = page; });
 
   useEffect(() => {
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
@@ -451,8 +497,12 @@ export default function CollectionHistoryPage() {
         ws.onmessage = (e) => {
           try {
             const msg = JSON.parse(e.data);
-            if (["dashboard_updated", "monthly_amount_updated", "payment_verified", "payment_collected"].includes(msg.type)) {
-              loadRef.current(1);
+            if ([
+              "dashboard_updated", "monthly_amount_updated", "payment_verified",
+              "payment_collected", "rollback_requested", "rollback_approved",
+              "rollback_rejected",
+            ].includes(msg.type)) {
+              loadRef.current(pageRef.current);
             }
           } catch {}
         };
@@ -469,7 +519,13 @@ export default function CollectionHistoryPage() {
 
   return (
     <div style={{ maxWidth: 1180, paddingBottom: 40, padding: isMobile ? "0 12px 40px" : "0" }}>
-      {selected && <DetailPanel entry={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <DetailPanel
+          entry={selected}
+          onClose={() => setSelected(null)}
+          onRequested={() => load(page)}
+        />
+      )}
 
       {/* Header */}
       <div style={{
@@ -623,6 +679,9 @@ export default function CollectionHistoryPage() {
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 13.5, fontWeight: 600, color: COLORS.text }}>{e.head_name}</div>
                       <ReceiptId id={e.receipt_id} />
+                      {e.rollback_status === "pending" && (
+                        <div style={{ marginTop: 4 }}><RollbackPendingTag /></div>
+                      )}
                     </div>
                   </div>
                   <ChevronRight size={16} color={COLORS.textMuted} style={{ flexShrink: 0, marginTop: 4 }} />
@@ -690,6 +749,9 @@ export default function CollectionHistoryPage() {
                       {e.entry_type === "chanda" ? (e.created_by !== "user" ? "Collector" : "App self-pay") : meta.label}
                       {e.entry_type === "chanda" && e.proof_image && <ImageIcon size={11} color={COLORS.primary} style={{ marginLeft: 4 }} />}
                     </div>
+                    {e.rollback_status === "pending" && (
+                      <div style={{ marginTop: 3 }}><RollbackPendingTag /></div>
+                    )}
                   </div>
                 </div>
 

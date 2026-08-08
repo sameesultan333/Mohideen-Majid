@@ -34,7 +34,7 @@ const { width: SW } = Dimensions.get("window");
 
 const IOS = Platform.OS === "ios";
 
-const STATUSBAR_HEIGHT = IOS ? 48 : (StatusBar.currentHeight || 0) + 6;
+import { useTopInset } from "../hooks/useSafeArea";
 
 
 
@@ -211,6 +211,7 @@ const InfoDotIcon = ({ color = H.goldLight, size = 6 }) => (
 // ─── Header pattern (identical motif to other screens) ──────────────
 
 const HeaderPattern = ({ w = SW, h = 152 }) => {
+  const topInset = useTopInset();
 
   const step = 40;
 
@@ -310,9 +311,9 @@ const formatDisplayTime = (value) => {
 
 const CompactHeader = ({ title, version, updatedByLabel }) => (
 
-  <View style={hs.wrap}>
+  <View style={[hs.wrap, { paddingTop: topInset }]}>
 
-    <Svg width={SW} height={152} style={StyleSheet.absoluteFill}>
+    <Svg width={SW} height={152 + topInset} style={StyleSheet.absoluteFill}>
 
       <Defs>
 
@@ -326,7 +327,7 @@ const CompactHeader = ({ title, version, updatedByLabel }) => (
 
       </Defs>
 
-      <Rect x="0" y="0" width={SW} height={152} fill="url(#headerGrad)" />
+      <Rect x="0" y="0" width={SW} height={152 + topInset} fill="url(#headerGrad)" />
 
     </Svg>
 
@@ -1477,8 +1478,6 @@ const hs = StyleSheet.create({
   wrap: {
 
     height: 152,
-
-    paddingTop: STATUSBAR_HEIGHT,
 
     paddingHorizontal: 20,
 

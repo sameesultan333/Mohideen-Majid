@@ -20,7 +20,7 @@ import BottomNav from "../components/BottomNav";
 
 const { width: SW } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
-const STATUSBAR_H = IOS ? 48 : (StatusBar.currentHeight || 0) + 6;
+import { STATUSBAR_HEIGHT as STATUSBAR_H } from "../utils/statusBar";
 const HEADER_H = 110;
 const BOTTOM_NAV_H = Platform.select({ ios: 89, android: 73 });
 const CACHE_KEY = "collector_history_cache";

@@ -14,7 +14,7 @@ import { logger } from "../utils/logger";
 
 const { width: SW } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
-const STATUSBAR_HEIGHT = IOS ? 48 : (StatusBar.currentHeight || 0) + 6;
+import { useTopInset } from "../hooks/useSafeArea";
 
 // ─── Palette (exact same as HomeScreen) ─────────────────────────────
 const H = {
@@ -243,17 +243,18 @@ const LanguageModal = ({ visible, onClose, currentLang, onSelect }) => {
 
 // ─── Header Component ──────────────────────────────────────────────
 const CompactHeader = ({ userName, greetingKey, hijriDate, gregorianDate, unreadCount, onBellPress }) => {
+  const topInset = useTopInset();
   const initial = (userName || "U").trim().charAt(0).toUpperCase();
   return (
-    <View style={hs.wrap}>
-      <Svg width={SW} height={148} style={StyleSheet.absoluteFill}>
+    <View style={[hs.wrap, { height: 148 + topInset, paddingTop: topInset }]}>
+      <Svg width={SW} height={148 + topInset} style={StyleSheet.absoluteFill}>
         <Defs>
           <LinearGradient id="headerGrad" x1="0" y1="0" x2="1" y2="1">
             <Stop offset={0} stopColor={H.headerDeep} />
             <Stop offset={1} stopColor={H.headerLight} />
           </LinearGradient>
         </Defs>
-        <Rect x="0" y="0" width={SW} height={148} fill="url(#headerGrad)" />
+        <Rect x="0" y="0" width={SW} height={148 + topInset} fill="url(#headerGrad)" />
       </Svg>
       <HeaderPattern w={SW} h={148} />
 
@@ -791,7 +792,7 @@ const styles = StyleSheet.create({
 
 // ─── Header Styles ────────────────────────────────────────────────────
 const hs = StyleSheet.create({
-  wrap: { height: 148, paddingTop: STATUSBAR_HEIGHT, paddingHorizontal: 20, overflow: "hidden", borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
+  wrap: { height: 148, paddingHorizontal: 20, overflow: "hidden", borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
   row: { flexDirection: "row", alignItems: "center", marginTop: 4 },
   avatar: {
     width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.14)",

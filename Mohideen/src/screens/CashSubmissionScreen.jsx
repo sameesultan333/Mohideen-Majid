@@ -9,7 +9,7 @@ import Svg, { Path, Rect, Defs, LinearGradient, Stop } from "react-native-svg";
 
 const { width: SW } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
-const STATUSBAR_HEIGHT = IOS ? 48 : (StatusBar.currentHeight || 0) + 6;
+import { useTopInset } from "../hooks/useSafeArea";
 
 // ─── SVG Icons ──────────────────────────────────────────────────────
 const ChevronLeftIcon = memo(({ color = C.white, size = 24 }) => (
@@ -32,6 +32,7 @@ const CloseIcon = memo(({ color = C.textMuted, size = 20 }) => (
 
 // ─── Header Pattern ──────────────────────────────────────────────
 const HeaderPattern = memo(({ w = SW, h = 148 }) => {
+  const topInset = useTopInset(14);
   const step = 40;
   const cols = Math.ceil(w / step) + 1;
   const rows = Math.ceil(h / step) + 1;
@@ -54,15 +55,15 @@ const HeaderPattern = memo(({ w = SW, h = 148 }) => {
 
 // ─── Premium Header ────────────────────────────────────────────────
 const PremiumHeader = memo(({ title, onBack }) => (
-  <View style={headerStyles.wrap}>
-    <Svg width={SW} height={148} style={StyleSheet.absoluteFill}>
+  <View style={[headerStyles.wrap, { paddingTop: topInset }]}>
+    <Svg width={SW} height={148 + topInset} style={StyleSheet.absoluteFill}>
       <Defs>
         <LinearGradient id="headerGrad" x1="0" y1="0" x2="1" y2="1">
           <Stop offset="0" stopColor={C.bg} />
           <Stop offset="1" stopColor={C.bgVivid} />
         </LinearGradient>
       </Defs>
-      <Rect x="0" y="0" width={SW} height={148} fill="url(#headerGrad)" />
+      <Rect x="0" y="0" width={SW} height={148 + topInset} fill="url(#headerGrad)" />
     </Svg>
     <HeaderPattern w={SW} h={148} />
     <View style={headerStyles.content}>
@@ -78,7 +79,6 @@ const PremiumHeader = memo(({ title, onBack }) => (
 const headerStyles = StyleSheet.create({
   wrap: {
     height: 148,
-    paddingTop: STATUSBAR_HEIGHT + 8,
     paddingHorizontal: 20,
     overflow: "hidden",
     borderBottomLeftRadius: 24,
