@@ -842,8 +842,26 @@ function ManualPaymentModal({ entry, onClose, onSaved }: {
   // How many months from the start of the run are selected. A run is always
   // contiguous, so one number describes the whole selection.
   const [monthCount, setMonthCount] = useState(0);
+  // Non-chanda purposes have no months to derive a total from, so they need
+  // their own amount. Without this the Save button could never be satisfied.
+  const [otherAmount, setOtherAmount] = useState("");
+  // Funds for attributing a donation. Loaded from /funds/ — the Record Payment
+  // sheet previously offered a "Donation" purpose with nowhere to attach it,
+  // so admin-recorded donations never reached the Funds dashboard.
+  const [funds, setFunds] = useState<Array<{ id: number; name: string }>>([]);
+  const [fundId, setFundId] = useState<number | null>(null);
   const [memberHistory, setMemberHistory] = useState<any>(null);
   const [histLoading, setHistLoading] = useState(false);
+
+  useEffect(() => {
+    if (!entry) return;
+    let cancelled = false;
+    import("../../api/fund")
+      .then(({ getFunds }) => getFunds({ status: "active" }))
+      .then(list => { if (!cancelled) setFunds(list.map(f => ({ id: f.id, name: f.name }))); })
+      .catch(() => { if (!cancelled) setFunds([]); });
+    return () => { cancelled = true; };
+  }, [entry?.member?.id]);
 
   useEffect(() => {
     if (!entry) return;
@@ -865,7 +883,10 @@ function ManualPaymentModal({ entry, onClose, onSaved }: {
     : [];
 
   const selectedMonths = monthRun.slice(0, monthCount).map(r => r.month);
-  const total = monthRun.slice(0, monthCount).reduce((sum, r) => sum + r.amount, 0);
+  const isChanda = purpose === "Monthly Chanda";
+  const total = isChanda
+    ? monthRun.slice(0, monthCount).reduce((sum, r) => sum + r.amount, 0)
+    : Number(otherAmount || 0);
 
 
 
@@ -887,13 +908,26 @@ function ManualPaymentModal({ entry, onClose, onSaved }: {
         note: note || undefined,
         collected_date: visitDate || undefined,
       };
+      let res;
       if (purpose === "Monthly Chanda") {
         payload.months_list = [...selectedMonths].sort();
         payload.amount = total;
+        res = await adminRecordPayment(payload);
       } else {
-        payload.amount = total > 0 ? total : 0;
+        // Route through /donations/ rather than admin-record: only a Donation
+        // row carries fund_id, so this is what makes the money show up on the
+        // Funds dashboard. admin-record would file it as a PaymentEntry with no
+        // fund link, which is why funds never reflected admin-side donations.
+        const { createDonation } = await import("../../api/donation");
+        res = await createDonation({
+          donor_name: m.name,
+          member_id: m.id,
+          amount: total,
+          method: method as any,
+          fund_id: fundId ?? undefined,
+          note: note || undefined,
+        });
       }
-      const res = await adminRecordPayment(payload);
       setResult(res);
       onSaved();
     } catch (e: any) {
@@ -901,7 +935,6 @@ function ManualPaymentModal({ entry, onClose, onSaved }: {
     } finally { setSaving(false); }
   }
 
-  const isChanda = purpose === "Monthly Chanda";
 
   return (
     <div style={{
@@ -978,6 +1011,54 @@ function ManualPaymentModal({ entry, onClose, onSaved }: {
                     )}
                   </div>
                 </div>
+              )}
+
+              {/* Amount + fund — non-chanda purposes.
+                  A donation has no months to price it, so it needs an explicit
+                  amount, and a fund to attribute it to. Neither existed before,
+                  which is why recording anything but Chanda always failed. */}
+              {!isChanda && (
+                <>
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={LB}>Amount (₹)</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={otherAmount}
+                      placeholder="0"
+                      onChange={e => setOtherAmount(e.target.value.replace(/[^0-9]/g, "").replace(/^0+(?=\d)/, ""))}
+                      style={{
+                        width: "100%", height: 42, marginTop: 6, padding: "0 12px",
+                        border: "1.5px solid #E0DDD5", borderRadius: 10, fontSize: 15,
+                        fontFamily: "monospace", fontWeight: 700, boxSizing: "border-box",
+                      }}
+                    />
+                  </div>
+
+                  {funds.length > 0 && (
+                    <div style={{ marginBottom: 14 }}>
+                      <label style={LB}>Fund (optional)</label>
+                      <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+                        <button onClick={() => setFundId(null)} style={{
+                          padding: "6px 14px", borderRadius: 99, border: "1.5px solid",
+                          borderColor: fundId === null ? "#0F5C4C" : "#E0DDD5",
+                          background: fundId === null ? "#E9F5F0" : "#fff",
+                          color: fundId === null ? "#0F5C4C" : "#5B6660",
+                          fontWeight: 700, fontSize: 12, cursor: "pointer",
+                        }}>General</button>
+                        {funds.map(f => (
+                          <button key={f.id} onClick={() => setFundId(f.id)} style={{
+                            padding: "6px 14px", borderRadius: 99, border: "1.5px solid",
+                            borderColor: fundId === f.id ? "#0F5C4C" : "#E0DDD5",
+                            background: fundId === f.id ? "#E9F5F0" : "#fff",
+                            color: fundId === f.id ? "#0F5C4C" : "#5B6660",
+                            fontWeight: 700, fontSize: 12, cursor: "pointer",
+                          }}>{f.name}</button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
 
               {/* Payment Method */}

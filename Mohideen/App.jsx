@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { ActivityIndicator, LogBox, StatusBar, StyleSheet, View } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { SafeAreaProvider, SafeAreaView, initialWindowMetrics } from "react-native-safe-area-context";
+import { StatusBarProvider, useStatusBarAppearance } from "./src/theme/statusBar";
 import messaging, { onMessage } from "@react-native-firebase/messaging";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -9,11 +10,6 @@ import AppNavigator from "./src/navigation/AppNavigator";
 import { navigationRef } from "./src/navigation/navigationRef";
 import { initializeI18n } from "./src/localization";
 import { syncPrayerTimesToLocalScheduler } from "./src/utils/prayerScheduleSync";
-
-// Colour of the strip behind the Android status bar. Deliberately the app's
-// neutral ivory rather than the green header, so the system bar reads as the
-// device's own chrome and our UI starts cleanly beneath it.
-const STATUS_BAR_BG = "#FFFDF7";
 
 LogBox.ignoreLogs([
   "react-native-video version 5.x is deprecated and not maintained anymore.",
@@ -89,38 +85,54 @@ export default function App() {
 
   // ── Global safe area ──────────────────────────────────────────────────────
   // From targetSdk 35 Android force-enables edge-to-edge, so without this the
-  // app draws *behind* the status bar: headers slid under the clock and the
-  // green header gradient tinted the status bar itself.
+  // app draws *behind* the status bar: headers slide under the clock and the
+  // header gradient tints the status bar itself.
   //
   // The inset is handled once, here, rather than by every screen. SafeAreaView
-  // with edges top/left/right shrinks the whole app to the usable area, so every
-  // screen begins below the status bar and the display cutout automatically —
-  // new screens included, with no per-screen padding to remember.
+  // with edges top/left/right shrinks the app to the usable area, so every
+  // screen begins below the status bar and any display cutout automatically —
+  // new screens included, with no per-screen padding to remember. Modals get
+  // the same treatment through SafeModal, since the platform renders those in
+  // their own window outside this hierarchy.
   //
-  //   - STATUS_BAR_BG is a neutral ivory strip, not the app's green. The bar
-  //     keeps the system look and our UI flows below it.
-  //   - barStyle dark-content keeps the clock/icons readable on that strip.
-  //   - left/right matter in landscape, where the cutout moves to a side.
-  //   - bottom is deliberately excluded so the bottom tab bar keeps owning its
-  //     own gesture-bar spacing exactly as before.
+  // The strip's colour and the system icon style come from StatusBarProvider:
+  // a screen declares the colour at its top edge and the icon style is derived
+  // from that colour's luminance, so the bar always matches the screen beneath
+  // it and the clock/battery/signal always have contrast. `bottom` is excluded
+  // so the tab bar keeps owning its own gesture-bar spacing.
   //
   // initialMetrics seeds the insets synchronously from the native side, which
   // avoids a one-frame layout jump on cold start.
   return (
     <SafeAreaProvider initialMetrics={initialWindowMetrics}>
-      <StatusBar barStyle="dark-content" backgroundColor={STATUS_BAR_BG} translucent={false} />
-      <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
+      <StatusBarProvider>
+        <AppShell />
+      </StatusBarProvider>
+    </SafeAreaProvider>
+  );
+}
+
+function AppShell() {
+  const { topColor, barStyle } = useStatusBarAppearance();
+  return (
+    <>
+      <StatusBar barStyle={barStyle} backgroundColor={topColor} translucent={false} />
+      <SafeAreaView
+        style={[styles.safeArea, { backgroundColor: topColor }]}
+        edges={["top", "left", "right"]}
+      >
         <NavigationContainer ref={navigationRef}>
           <AppNavigator />
         </NavigationContainer>
       </SafeAreaView>
-    </SafeAreaProvider>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   // Fills the status-bar strip. Neutral so the bar never shows the app's green.
-  safeArea: { flex: 1, backgroundColor: STATUS_BAR_BG },
+  // backgroundColor is supplied at runtime from the focused screen.
+  safeArea: { flex: 1 },
   loader: {
     flex: 1,
     justifyContent: "center",

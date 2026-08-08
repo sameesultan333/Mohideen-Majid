@@ -3,10 +3,11 @@
     <!-- Adaptive icon background — matches the app's primary green -->
     <color name="ic_launcher_background">#1B5E20</color>
 
-    <!-- Strip behind the Android status bar. Neutral ivory rather than the app's
-         green header, so the bar reads as the device's own chrome and the UI
-         flows below it. Must stay in sync with STATUS_BAR_BG in App.jsx. -->
-    <color name="status_bar_bg">#FFFDF7</color>
+    <!-- Launch-time status bar colour. JS takes over once loaded (see
+         src/theme/statusBar.js); this only covers the first frame, so it must
+         match DEFAULT_TOP_COLOR — the emerald header nearly every screen opens
+         with — or the bar flashes a different colour on cold start. -->
+    <color name="status_bar_bg">#053B26</color>
 
     <!-- Notification accent color (setColor). The status-bar icon itself is
          forced monochrome white by Android, but this tints the small icon and

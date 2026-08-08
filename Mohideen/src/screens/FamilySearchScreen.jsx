@@ -19,6 +19,7 @@ import { COLORS as C } from "../config/theme";
 import { t } from "../i18n";
 import SearchPickerModal from "../components/SearchPickerModal";
 import SafeModal from "../components/SafeModal";
+import { useScreenStatusBar } from "../theme/statusBar";
 
 const normalizeRole = (role) => (role || "").toString().trim().toLowerCase();
 const SUPERADMIN_ROLES = ["superadmin", "super_admin", "super admin"];
@@ -52,6 +53,8 @@ const getMemberStatus = (item, month) => {
 const EMPTY_FORM = { name: "", chanda_no: "", phone: "", monthly_amount: "", address: "", zone: "", street: "", registration_date: "" };
 
 export default function FamilySearchScreen({ navigation }) {
+  // Ivory screen — icon style is derived from this colour.
+  useScreenStatusBar(H.bg);
   const [role, setRole] = useState(null);
   const selectedMonth = useMemo(() => getMonthKey(), []);
 
@@ -295,12 +298,22 @@ export default function FamilySearchScreen({ navigation }) {
   const filteredFamilies = useMemo(() => {
     const normalize = (s) => (s || "").toLowerCase().replace(/[-\s]+/g, "");
     const q = normalize(familySearch);
-    if (!q) return members;
-    return members.filter((m) => {
+    const matched = !q ? members : members.filter((m) => {
       const haystack = normalize(
         `${m.member?.name} ${m.member?.address} ${m.member?.chanda_no} ${m.member?.phone}`
       );
       return haystack.includes(q);
+    });
+
+    // Deactivated families sink to the bottom rather than sitting among the
+    // active ones. They are not hidden here: this screen exists to FIND a
+    // family, including one that needs reactivating, and it has no Inactive
+    // filter to fall back on — unlike the collections list, which defaults to
+    // active only. Their history and receipts are untouched either way.
+    return matched.slice().sort((a, b) => {
+      const aInactive = a.member?.is_active === false ? 1 : 0;
+      const bInactive = b.member?.is_active === false ? 1 : 0;
+      return aInactive - bInactive;
     });
   }, [members, familySearch]);
 

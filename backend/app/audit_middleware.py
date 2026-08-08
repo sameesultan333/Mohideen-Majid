@@ -33,11 +33,20 @@ _SKIP_PREFIXES = (
     "/auth/sessions",
 )
 
-# Only log GETs for these high-value endpoints
-_AUDIT_GET_PATHS = {
-    "/finance/dashboard",
-    "/funds/dashboard",
-}
+# GETs that are worth an audit row. Deliberately empty.
+#
+# /finance/dashboard and /funds/dashboard used to be listed here, but they are
+# plain dashboard data fetches: polled on load, on every WebSocket refresh and on
+# each month change, so they buried the genuinely interesting entries in noise
+# and added a write to every read. Viewing a dashboard is not an auditable act —
+# it changes nothing.
+#
+# Auditing of mutations (POST/PUT/PATCH/DELETE) is untouched, as is auth: this
+# set only decides which *reads* get a row, never who may call them.
+#
+# Add a path here only if reading it is itself sensitive (say, exporting
+# member-level financial data).
+_AUDIT_GET_PATHS: set[str] = set()
 
 # ─── mapping helpers ─────────────────────────────────────────
 

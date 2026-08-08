@@ -13,6 +13,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { authApiFetch, getFallbackBaseUrl } from "../config/server";
 import { COLORS as C } from "../config/theme";
 import { useTranslation } from "react-i18next";
+import { useScreenStatusBar } from "../theme/statusBar";
 
 const H = {
   bg: "#FBF9F4",
@@ -148,6 +149,8 @@ const CollectionRow = ({ col }) => {
 };
 
 export default function FamilyHistoryScreen({ navigation, route }) {
+  // Ivory screen — icon style is derived from this colour.
+  useScreenStatusBar(H.bg);
   const { t } = useTranslation();
   const { familyId, familyName } = route?.params || {};
   const [data, setData] = useState(null);

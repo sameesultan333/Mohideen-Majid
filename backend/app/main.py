@@ -161,6 +161,16 @@ def ensure_columns():
         "ALTER TABLE expenses ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITHOUT TIME ZONE",
         "ALTER TABLE expenses ADD COLUMN IF NOT EXISTS deleted_by TEXT",
 
+        # chanda_collections — retire the "partial" status.
+        # Collection status is now two-valued (paid | pending): a month counts as
+        # paid only once the full amount is received, and anything short of that
+        # is pending. Rows written before that change still hold 'partial', which
+        # no longer satisfies the response schema and made GET /chanda/members
+        # fail with ResponseValidationError. The money itself is untouched — it
+        # stays in total_paid — so this only relabels the status.
+        # Idempotent: once migrated the UPDATE matches nothing.
+        "UPDATE chanda_collections SET status = 'pending' WHERE status = 'partial'",
+
         # indexes for performance
         "CREATE INDEX IF NOT EXISTS idx_expenses_category_id  ON expenses(category_id)",
         "CREATE INDEX IF NOT EXISTS idx_expenses_created_at   ON expenses(created_at)",

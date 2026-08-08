@@ -17,19 +17,21 @@
              dark-on-dark, effectively invisible. -->
         <item name="android:forceDarkAllowed" tools:targetApi="q">false</item>
 
-        <!-- Status bar icons.
-             The app renders a light (ivory) strip behind the status bar, so the
-             clock, battery and signal icons must be DARK or they vanish on it.
-             windowLightStatusBar is what actually controls that on Android, and
-             setting it here means the icons are correct from the moment the app
-             launches rather than only after the JS StatusBar component mounts.
+        <!-- Launch-time system bar appearance only.
+             Once JS is up, src/theme/statusBar.js owns both the strip colour and
+             the icon style: a screen declares the colour at its top edge and the
+             icon style is derived from that colour's luminance, so the bar always
+             matches the screen beneath it and the clock/battery/signal always
+             have contrast. These two values just cover the first frame and are
+             set to the emerald default nearly every screen opens with — light
+             icons on a dark bar. Keep them in step with DEFAULT_TOP_COLOR.
 
              android:statusBarColor is honoured up to API 34; from API 35
              edge-to-edge is enforced and the system ignores it, which is fine —
-             the SafeAreaView in App.jsx paints the same ivory behind the bar on
+             the SafeAreaView in App.jsx paints the same colour behind the bar on
              those versions, so the strip looks identical either way. -->
         <item name="android:statusBarColor">@color/status_bar_bg</item>
-        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightStatusBar">false</item>
     </style>
 
 </resources>

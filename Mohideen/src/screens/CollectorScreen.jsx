@@ -69,6 +69,7 @@ import MonthRunSelector, { buildMonthRun } from "../components/MonthRunSelector"
 import { t } from "../i18n";
 import SearchPickerModal from "../components/SearchPickerModal";
 import SafeModal from "../components/SafeModal";
+import { useScreenStatusBar } from "../theme/statusBar";
 
 const { width: SW } = Dimensions.get("window");
 const MEMBERS_CACHE_KEY = "collector_members_cache";
@@ -452,6 +453,8 @@ function QRViewerModal({ visible, onClose, imageSource }) {
 }
 
 export default function CollectorScreen({ navigation, route }) {
+  // Ivory screen — icon style is derived from this colour.
+  useScreenStatusBar(H.bg);
   const initialTab = route?.params?.initialTab || "collections";
   const searchRef = useRef(null);
 
@@ -518,7 +521,6 @@ export default function CollectorScreen({ navigation, route }) {
     { key: "overdue3", label: t("collector.filters.overdue3") },
     { key: "overdue6", label: t("collector.filters.overdue6") },
     { key: "overdue12", label: t("collector.filters.overdue12") },
-    { key: "active", label: t("collector.filters.active") },
     { key: "inactive", label: t("collector.filters.inactive") },
   ]), []);
 
@@ -987,19 +989,24 @@ export default function CollectorScreen({ navigation, route }) {
       if (isActive) cnt.active++; else cnt.inactive++;
     });
 
-    let shown = all;
+    // The list shows ACTIVE families by default. A deactivated family used to
+    // stay in the main list (the "all" branch filtered nothing), so removing a
+    // family appeared to do nothing except add an "Inactive" tag. Inactive
+    // records are not deleted — they stay reachable under the Inactive filter,
+    // and their payment history and receipts are untouched.
+    const base = filterStatus === "inactive"
+      ? all.filter((m) => m.member?.is_active === false)
+      : all.filter((m) => m.member?.is_active !== false);
+
+    let shown = base;
     if (filterStatus === "pending" || filterStatus === "paid") {
-      shown = all.filter((m) => getMemberStatus(m, selectedMonth).status === filterStatus);
+      shown = base.filter((m) => getMemberStatus(m, selectedMonth).status === filterStatus);
     } else if (filterStatus === "overdue3") {
-      shown = all.filter((m) => getConsecutiveUnpaidMonths(m) >= 3);
+      shown = base.filter((m) => getConsecutiveUnpaidMonths(m) >= 3);
     } else if (filterStatus === "overdue6") {
-      shown = all.filter((m) => getConsecutiveUnpaidMonths(m) >= 6);
+      shown = base.filter((m) => getConsecutiveUnpaidMonths(m) >= 6);
     } else if (filterStatus === "overdue12") {
-      shown = all.filter((m) => getConsecutiveUnpaidMonths(m) >= 12);
-    } else if (filterStatus === "active") {
-      shown = all.filter((m) => m.member?.is_active !== false);
-    } else if (filterStatus === "inactive") {
-      shown = all.filter((m) => m.member?.is_active === false);
+      shown = base.filter((m) => getConsecutiveUnpaidMonths(m) >= 12);
     }
 
     // Bucket paid members to the bottom first, then apply the active sort

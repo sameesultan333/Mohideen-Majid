@@ -2,7 +2,7 @@
 
 from typing import Annotated, Optional, List, Literal
 
-from pydantic import BaseModel, PlainSerializer
+from pydantic import BaseModel, PlainSerializer, field_validator
 from datetime import datetime
 
 # Every timestamp column in this app is written with datetime.utcnow() —
@@ -490,6 +490,22 @@ class HeadOut(HeadBase):
 
 
 # ─────────────────────────────────────────────
+# 🔁 LEGACY STATUS COERCION
+# ─────────────────────────────────────────────
+# Collection status is two-valued (paid | pending). Rows written before that
+# change may still hold "partial", and a value outside the Literal makes FastAPI
+# raise ResponseValidationError while serialising the response — which took
+# GET /chanda/members down entirely rather than degrading one field.
+#
+# The startup migration in main.py rewrites those rows, but this is the belt to
+# its braces: any status the schema does not recognise is read as "pending",
+# which is correct under the new rule (a month is paid only when settled in
+# full). The money received is never affected — it lives in total_paid.
+def _coerce_collection_status(value):
+    return value if value in ("paid", "pending") else "pending"
+
+
+# ─────────────────────────────────────────────
 # 📅 CHANDA COLLECTION
 # ─────────────────────────────────────────────
 class CollectionBase(BaseModel):
@@ -502,6 +518,12 @@ class CollectionOut(CollectionBase):
     id: int
     total_paid: float
     status: Literal["pending", "paid"]
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _legacy_status(cls, v):
+        return _coerce_collection_status(v)
+
     is_advance: bool = False
     advance_payment_id: Optional[int] = None
     rate_snapshot: Optional[float] = None
@@ -530,6 +552,12 @@ class CurrentChandaOut(BaseModel):
     total_paid: float
     balance: float
     status: Literal["pending", "paid", "not_generated"]
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _legacy_status(cls, v):
+        return v if v in ("paid", "pending", "not_generated") else "pending"
+
     paid_months: Optional[int] = None
     pending_months: Optional[int] = None
     chanda_no: Optional[str] = None
