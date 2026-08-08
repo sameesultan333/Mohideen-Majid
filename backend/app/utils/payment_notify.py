@@ -57,17 +57,6 @@ def _months_label(covered_months: list[str] | None) -> str | None:
     return f"{month_key_to_full_label(months[0])} - {month_key_to_full_label(months[-1])}"
 
 
-def _target_user_id(db: Session, head_id: int | None, fallback_user_id: int | None) -> int | None:
-    """Resolve who to notify: the family head's own app account if this was
-    recorded by staff (collector/admin) against a family, otherwise whoever
-    is directly attached to the record (self-service payments)."""
-    if head_id:
-        head = db.query(models.ApprovedHead).filter_by(id=head_id).first()
-        if head and head.user_id:
-            return head.user_id
-    return fallback_user_id
-
-
 def _chanda_recipient_id(db: Session, payment: models.PaymentEntry) -> int | None:
     """Who should receive the "your payment was received" push.
 
@@ -172,29 +161,64 @@ def notify_chanda_payment_later(payment_id: int, delay_seconds: float = NOTIFY_D
         db.close()
 
 
+def _donation_recipient_id(db: Session, donation: models.Donation) -> int | None:
+    """Who should receive the "your contribution was received" push.
+
+    Always the donor — never the collector or admin who recorded it.
+
+    donation.user_id is NOT reliably the donor: /donations/ sets it to the
+    authenticated actor, so for a collector-recorded fund contribution it holds
+    the *collector's* id. Falling back to it sent Mohamed's receipt to Ahmed's
+    phone whenever the donor's family had no linked app account.
+
+    collector_id separates the two: it is set only when staff recorded the
+    donation, and left null on a self-service donation from the member's own
+    app. So the fallback applies only to self-service, where donor and actor are
+    the same person; for a staff-recorded donation against someone with no app
+    account there is nobody to notify, and we send nothing.
+    """
+    if donation.head_id:
+        head = db.query(models.ApprovedHead).filter_by(id=donation.head_id).first()
+        if head and head.user_id:
+            return head.user_id
+
+    if donation.collector_id is None:
+        return donation.user_id
+
+    return None
+
+
 def notify_donation_payment(db: Session, donation: models.Donation) -> None:
-    user_id = _target_user_id(db, donation.head_id, donation.user_id)
+    user_id = _donation_recipient_id(db, donation)
     if not user_id:
         return
 
+    # Every value below is read from the donation row — nothing is hardcoded.
     is_fund = bool(donation.fund_id)
     fund_name = donation.fund_rel.name if is_fund and donation.fund_rel else None
+    amount = _rupees(donation.amount)
+
+    lines = ["JazakAllahu Khairan.", ""]
 
     if is_fund:
         title = "Fund Contribution Received"
-        intro = (
-            f"Your contribution to {fund_name} has been successfully received."
+        lines.append(
+            f"Your contribution of {amount} towards {fund_name} has been recorded successfully."
             if fund_name else
-            "Your fund contribution has been successfully received."
+            f"Your fund contribution of {amount} has been recorded successfully."
         )
     else:
         title = "Donation Received"
-        intro = "Your donation has been successfully received."
+        lines.append(f"Your donation of {amount} has been recorded successfully.")
 
-    body_lines = [intro]
+    # Named only when staff actually collected it; a self-service donation has
+    # no collector to credit.
+    if donation.collector_id and (donation.recorded_by or "").strip():
+        lines += ["", "Collected by:", donation.recorded_by.strip()]
     if donation.receipt_id:
-        body_lines.append(f"Receipt: {donation.receipt_id}")
-    body_lines.append("You can view the receipt anytime from your Profile.")
+        lines += ["", "Receipt No:", donation.receipt_id]
+
+    body_lines = lines
 
     notify_user(
         db, user_id,

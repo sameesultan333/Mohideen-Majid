@@ -51,6 +51,10 @@ import { COLORS as C } from "../config/theme";
 import { useTranslation } from "react-i18next";
 import BottomNav from "../components/BottomNav";
 import { logger } from "../utils/logger";
+import FivePrayerCelebration from "../components/FivePrayerCelebration";
+import {
+  localDayKey, trackerKeyFor, legacyTrackerKeyFor, celebrationKeyFor,
+} from "../utils/prayerDay";
 
 const { width: SW } = Dimensions.get("window");
 const PRAYER_CACHE_KEY = "cached_prayer_timings";
@@ -990,14 +994,35 @@ export default function HomeScreen({ navigation, route }) {
   const headerAnim = useRef(new Animated.Value(0)).current;
   const wsRef = useRef(null);
 
-  const todayDateStr = new Date().toISOString().split("T")[0];
-  const trackerKey = `prayer_tracker_${todayDateStr}`;
+  // Keyed to the user's own calendar day. toISOString() gave the UTC date, so in
+  // India the day only turned over at 05:30 and a Fajr marked at 5 AM was filed
+  // under yesterday. See utils/prayerDay.
+  const todayDateStr = localDayKey();
+  const trackerKey = trackerKeyFor(todayDateStr);
+  const celebrationKey = celebrationKeyFor(todayDateStr);
+
+  // Nothing may react to prayerConfirmed until the stored value has loaded,
+  // or hydrating a day that is already complete would look like completing it.
+  const [trackerHydrated, setTrackerHydrated] = useState(false);
 
   useEffect(() => {
-    AsyncStorage.getItem(trackerKey).then((saved) => {
+    let cancelled = false;
+    (async () => {
+      let saved = await AsyncStorage.getItem(trackerKey);
+      if (!saved) {
+        // Marks made earlier today under the old UTC-dated key.
+        const legacy = await AsyncStorage.getItem(legacyTrackerKeyFor());
+        if (legacy) {
+          saved = legacy;
+          await AsyncStorage.setItem(trackerKey, legacy);
+        }
+      }
+      if (cancelled) return;
       if (saved) setPrayerConfirmed(JSON.parse(saved));
-    });
-  }, []);
+      setTrackerHydrated(true);
+    })();
+    return () => { cancelled = true; };
+  }, [trackerKey]);
 
   useEffect(() => {
     (async () => {
@@ -1326,6 +1351,45 @@ export default function HomeScreen({ navigation, route }) {
 
   const friday = isFriday();
   const prayerList = useMemo(() => buildPrayerList(timings, friday, t), [timings, friday, t]);
+
+  // ── Five-prayer celebration ───────────────────────────────────────────────
+  // Fires on the TRANSITION to all-five-complete, not on the state itself, so it
+  // never appears merely because Home re-rendered, a tab changed, or the app was
+  // reopened on a day already finished. Two independent guards:
+  //
+  //   1. lastAllDoneRef starts as null and is seeded only once the stored
+  //      tracker has loaded — hydrating a completed day sets it to true without
+  //      ever being a false -> true edge.
+  //   2. A date-keyed flag in AsyncStorage, so even a genuine edge (untick the
+  //      fifth prayer, tick it again) shows it only once that day. It becomes
+  //      eligible again tomorrow because the key carries the local date.
+  //
+  // Prayer marks are local-only, so there is no later sync to re-trigger this.
+  const [showCelebration, setShowCelebration] = useState(false);
+  const lastAllDoneRef = useRef(null);
+
+  useEffect(() => {
+    if (!trackerHydrated) return;
+
+    // On Friday the list carries `jummah` in place of `dhuhr`, so read the keys
+    // off the rendered list rather than assuming a fixed set.
+    const keys = prayerList.map((p) => p.key);
+    const allDone = keys.length === 5 && keys.every((k) => prayerConfirmed[k]);
+
+    const previous = lastAllDoneRef.current;
+    lastAllDoneRef.current = allDone;
+
+    if (previous === null) return;        // first pass after hydration — seed only
+    if (!allDone || previous) return;     // only the false -> true edge
+
+    let cancelled = false;
+    AsyncStorage.getItem(celebrationKey).then((already) => {
+      if (cancelled || already) return;
+      AsyncStorage.setItem(celebrationKey, "1");   // written before showing, so a
+      setShowCelebration(true);                    // crash mid-animation cannot repeat it
+    });
+    return () => { cancelled = true; };
+  }, [trackerHydrated, prayerConfirmed, prayerList, celebrationKey]);
   const nextIndex = useMemo(() => getNextIndex(prayerList), [prayerList, currentTime]);
   const timeUntil = useMemo(() => getTimeUntil(prayerList, nextIndex), [prayerList, nextIndex, currentTime]);
   const windowProgress = useMemo(() => getWindowProgress(prayerList, nextIndex), [prayerList, nextIndex, currentTime]);
@@ -1480,6 +1544,12 @@ export default function HomeScreen({ navigation, route }) {
       </View>
 
       <BottomNav navigation={navigation} currentRoute={currentRoute} badges={{ Donation: chandaPending, Announcement: unreadCount, Deen: deenUnread }} />
+
+      <FivePrayerCelebration
+        visible={showCelebration}
+        onDismiss={() => setShowCelebration(false)}
+        t={t}
+      />
     </View>
   );
 }

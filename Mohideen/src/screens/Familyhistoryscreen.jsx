@@ -289,7 +289,7 @@ const s = StyleSheet.create({
   retryBtn: { backgroundColor: H.gold, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10 },
   retryTxt: { color: H.headerDeep, fontWeight: "800", fontSize: 13 },
 
-  header: { paddingTop: Platform.OS === "ios" ? 54 : 16, paddingHorizontal: 16, paddingBottom: 12, backgroundColor: H.bg, borderBottomWidth: 1, borderBottomColor: H.cardBorder },
+  header: { paddingTop: 16, paddingHorizontal: 16, paddingBottom: 12, backgroundColor: H.bg, borderBottomWidth: 1, borderBottomColor: H.cardBorder },
   backBtn: { marginBottom: 6 },
   backTxt: { color: H.gold, fontSize: 14, fontWeight: "700" },
   headerTitle: { color: H.textDark, fontSize: 19, fontWeight: "800" },

@@ -27,7 +27,6 @@ function normalizeFund(raw: BackendFund): Fund {
     progress_percentage: s?.progress_pct ?? 0,
     donation_count: s?.total_donations ?? 0,
     expense_count: s?.total_expenses ?? 0,
-    donor_count: s?.donor_count ?? 0,
     last_donation_at: s?.last_donation_at ?? null,
   };
 }

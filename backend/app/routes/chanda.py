@@ -23,7 +23,7 @@ from app.utils.chanda_months import (
     pending_month_filter,
     visible_month_filter,
 )
-from app.utils.timezones import add_months, india_month_key, utc_now_naive
+from app.utils.timezones import add_months, india_month_key, parse_frontend_datetime, utc_now_naive
 from app.websocket_manager import manager
 from app.routes.finance import write_audit, write_ledger
 from app.rate_limit import rate_limit
@@ -646,7 +646,16 @@ def admin_record_payment(
     device_collected_at = server_now
     if data.collected_date:
         try:
-            device_collected_at = datetime.fromisoformat(data.collected_date.replace("Z", ""))
+            # Honour the offset the client sent instead of discarding it.
+            # Stripping the "Z" parsed the value as naive and stored a wall clock
+            # as if it were UTC; the client then rendered it back in local time and
+            # added the offset a second time, so a payment taken at 12:12 AM
+            # appeared on the receipt as 5:41 AM. Normalising "Z" to "+00:00"
+            # keeps the value timezone-aware, and parse_frontend_datetime converts
+            # any offset to the naive UTC the column stores — correct from any
+            # timezone, with no fixed offset anywhere.
+            parsed = datetime.fromisoformat(data.collected_date.replace("Z", "+00:00"))
+            device_collected_at = parse_frontend_datetime(parsed) or server_now
         except ValueError:
             pass
     monthly_amount = round(float(head.monthly_amount or 0), 2)

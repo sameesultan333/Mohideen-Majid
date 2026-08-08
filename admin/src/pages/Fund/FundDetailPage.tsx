@@ -833,10 +833,6 @@ const FundDetailPage: React.FC = () => {
             <div style={S.statValue}>{fund.expense_count}</div>
             <div style={S.statLabel}>Expenses</div>
           </div>
-          <div style={S.statTile}>
-            <div style={S.statValue}>{fund.donor_count}</div>
-            <div style={S.statLabel}>Donors</div>
-          </div>
         </div>
 
         {/* Progress bar */}

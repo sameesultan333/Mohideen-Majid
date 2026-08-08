@@ -52,7 +52,6 @@ def _fund_stats(db: Session, fund_id: int) -> schemas.FundStats:
         db.query(
             func.count(models.Donation.id),
             func.coalesce(func.sum(models.Donation.amount), 0.0),
-            func.count(func.distinct(models.Donation.phone)),
             func.max(models.Donation.created_at),
         )
         .filter(models.Donation.fund_id == fund_id)
@@ -87,8 +86,7 @@ def _fund_stats(db: Session, fund_id: int) -> schemas.FundStats:
         balance=balance,
         goal_amount=goal,
         progress_pct=pct,
-        donor_count=int(donation_stats[2] or 0),
-        last_donation_at=donation_stats[3],
+        last_donation_at=donation_stats[2],
     )
 
 
@@ -127,7 +125,6 @@ def _batch_fund_stats(db: Session, fund_ids: list[int]) -> dict[int, schemas.Fun
             models.Donation.fund_id,
             func.count(models.Donation.id),
             func.coalesce(func.sum(models.Donation.amount), 0.0),
-            func.count(func.distinct(models.Donation.phone)),
             func.max(models.Donation.created_at),
         )
         .filter(models.Donation.fund_id.in_(fund_ids))
@@ -172,8 +169,7 @@ def _batch_fund_stats(db: Session, fund_ids: list[int]) -> dict[int, schemas.Fun
             balance=balance,
             goal_amount=goal,
             progress_pct=pct,
-            donor_count=int(dr[3]) if dr else 0,
-            last_donation_at=dr[4] if dr else None,
+            last_donation_at=dr[3] if dr else None,
         )
     return result
 
@@ -213,7 +209,7 @@ def _empty_stats(fund: models.Fund) -> schemas.FundStats:
         total_donations=0, total_collected=0.0,
         total_expenses=0, total_spent=0.0,
         balance=0.0, goal_amount=fund.goal_amount,
-        progress_pct=None, donor_count=0, last_donation_at=None,
+        progress_pct=None, last_donation_at=None,
     )
 
 
@@ -748,7 +744,6 @@ def _excel_report(fund, stats, donations, expenses):
     ws["A6"] = "Balance";          ws["B6"] = stats.balance
     ws["A7"] = "Goal Amount";      ws["B7"] = stats.goal_amount or "N/A"
     ws["A8"] = "Progress";         ws["B8"] = f"{stats.progress_pct}%" if stats.progress_pct else "N/A"
-    ws["A9"] = "Donors";           ws["B9"] = stats.donor_count
 
     # ── Donations sheet ──
     wd = wb.create_sheet("Donations")
@@ -826,7 +821,6 @@ def _pdf_report(fund, stats, donations, expenses):
         ["Balance",          f"₹{stats.balance:,.2f}"],
         ["Goal Amount",      f"₹{stats.goal_amount:,.2f}" if stats.goal_amount else "N/A"],
         ["Progress",         f"{stats.progress_pct}%" if stats.progress_pct else "N/A"],
-        ["Total Donors",     str(stats.donor_count)],
         ["Total Donations",  str(stats.total_donations)],
         ["Total Expenses",   str(stats.total_expenses)],
     ]

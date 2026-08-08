@@ -18,7 +18,6 @@ export interface BackendFundStats {
   balance: number;
   goal_amount?: number | null;
   progress_pct?: number | null;
-  donor_count: number;
   last_donation_at?: string | null;
 }
 
@@ -73,7 +72,6 @@ export interface Fund {
   progress_percentage: number;
   donation_count: number;
   expense_count: number;
-  donor_count: number;
   last_donation_at?: string | null;
 }
 
@@ -111,7 +109,6 @@ export interface FundStats {
   balance: number;
   goal_amount?: number | null;
   progress_pct?: number | null;
-  donor_count: number;
   last_donation_at?: string | null;
 }
 

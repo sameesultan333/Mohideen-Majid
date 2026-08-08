@@ -906,7 +906,13 @@ function ManualPaymentModal({ entry, onClose, onSaved }: {
         purpose,
         transaction_ref: txRef || undefined,
         note: note || undefined,
-        collected_date: visitDate || undefined,
+        // Send an absolute instant, not a wall clock. <input type="datetime-local">
+        // yields "2026-08-08T00:12" with no zone; sent as-is the backend stored it
+        // as if it were UTC, then the client rendered it back in local time and
+        // added the offset a second time — 12:12 AM arrived on the receipt as
+        // 5:41 AM. new Date(...) reads that string in the browser's own zone, so
+        // toISOString() gives the true instant and works from any timezone.
+        collected_date: visitDate ? new Date(visitDate).toISOString() : undefined,
       };
       let res;
       if (purpose === "Monthly Chanda") {

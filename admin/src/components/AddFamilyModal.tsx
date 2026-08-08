@@ -63,11 +63,20 @@ export default function AddFamilyModal({
     getZones()
       .then(z => { if (!cancelled) { setZones(z); setZonesError(false); } })
       .catch(() => { if (!cancelled) setZonesError(true); });
-    getStreets()
+    return () => { cancelled = true; };
+  }, [open]);
+
+  // Streets are re-fetched for the chosen zone, so the list offers only streets
+  // that actually occur there — and every street already in the data (they come
+  // in with the Excel import) rather than asking anyone to retype one.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    getStreets(form.zone?.trim() || undefined)
       .then(s => { if (!cancelled) { setStreets(s); setStreetsError(false); } })
       .catch(() => { if (!cancelled) setStreetsError(true); });
     return () => { cancelled = true; };
-  }, [open]);
+  }, [open, form.zone]);
 
   if (!open) return null;
 

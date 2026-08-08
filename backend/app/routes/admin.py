@@ -1092,20 +1092,27 @@ def get_zones(
 
 @router.get("/streets")
 def get_streets(
-    zone: str | None = None,
+    zone: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user=Depends(require_admin_or_collector),
 ):
-    """Return distinct, sorted street names for use in cascading Zone -> Street dropdown filters."""
-    q = db.query(models.ApprovedHead.street).filter(models.ApprovedHead.street.isnot(None))
+    """Distinct, sorted street names already present on families.
+
+    Streets arrive with the Excel import, so by the time anyone adds a family by
+    hand the real list already exists — retyping it invites "Bazaar St" and
+    "Bazaar Street" to become two streets. Optionally narrowed to one zone, so
+    the picker offers only streets that actually occur there.
+    """
+    q = (
+        db.query(models.ApprovedHead.street)
+        .filter(models.ApprovedHead.street.isnot(None))
+        .filter(models.ApprovedHead.street != "")
+    )
     if zone:
-        q = q.filter(models.ApprovedHead.zone == zone)
+        q = q.filter(models.ApprovedHead.zone == zone.strip().title())
     rows = q.distinct().order_by(models.ApprovedHead.street).all()
     return [r[0] for r in rows]
 
-
-# Prefer  GET /finance/dashboard  for new frontend code.
-# ─────────────────────────────────────────────────────────────
 
 @router.get("/dashboard")
 def dashboard_stats(

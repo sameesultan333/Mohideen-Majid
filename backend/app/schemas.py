@@ -348,7 +348,6 @@ class FundStats(BaseModel):
     balance: float
     goal_amount: Optional[float]
     progress_pct: Optional[float]
-    donor_count: int
     last_donation_at: Optional[UTCDateTime]
 
 class FundDetailOut(FundOut):

@@ -804,7 +804,7 @@ const styles = StyleSheet.create({
   restrictedBtnTxt: { color: G.deep, fontWeight: "800", fontSize: 13 },
 
   header: {
-    paddingTop: Platform.OS === "ios" ? 54 : 34,
+    paddingTop: 18,
     paddingBottom: 14, paddingHorizontal: 20,
     flexDirection: "row", alignItems: "center",
     overflow: "hidden",

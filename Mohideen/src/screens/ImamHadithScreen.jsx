@@ -812,7 +812,7 @@ const styles = StyleSheet.create({
   modalContainer: { flex: 1, backgroundColor: H.bg },
   modalHeader: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",
-    paddingHorizontal: 20, paddingTop: IOS ? 60 : 20, paddingBottom: 16,
+    paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16,
     backgroundColor: H.card, borderBottomWidth: 1, borderBottomColor: H.cardBorder,
   },
   modalTitle: { fontSize: 18, fontWeight: "700", color: H.textDark, fontFamily: FONTS.display },

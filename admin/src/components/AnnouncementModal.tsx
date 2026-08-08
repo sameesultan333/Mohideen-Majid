@@ -454,7 +454,7 @@ const AnnouncementModal: React.FC<AnnouncementModalProps> = ({ open, onClose, on
       const url = await uploadFile(file, "audio");
       setAudioUrl(url);
     } catch {
-      setError("Failed to upload audio");
+      setError("Couldn't upload that audio file. Supported: MP3, WAV, M4A, MP4, AAC, OGG, WEBM, AMR.");
     } finally {
       setUploading(false);
     }
@@ -698,7 +698,7 @@ const AnnouncementModal: React.FC<AnnouncementModalProps> = ({ open, onClose, on
                 </div>
               ) : (
                 <label style={{ ...S.uploadArea, opacity: uploading ? 0.6 : 1 }}>
-                  <input type="file" accept="audio/*" style={{ display: "none" }} ref={audioInputRef} onChange={handleAudioChange} disabled={uploading} />
+                  <input type="file" accept=".mp3,.wav,.m4a,.mp4,.aac,.ogg,.opus,.webm,.amr,audio/*" style={{ display: "none" }} ref={audioInputRef} onChange={handleAudioChange} disabled={uploading} />
                   {uploading ? "Uploading…" : "Choose Audio"}
                 </label>
               )}

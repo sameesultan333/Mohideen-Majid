@@ -471,32 +471,26 @@
     "south": "S",
     "west": "W",
     "km": "km",
-
     "loadingGps": "Acquiring location",
     "loadingCompass": "Calibrating compass",
-
     "statQibla": "QIBLA",
     "statHeading": "HEADING",
     "statDistance": "DISTANCE",
-
     "accuracyGood": "High accuracy",
     "accuracyLow": "Calibration needed",
     "calibrateTitle": "Calibration needed",
     "calibrateMsg": "Move your phone in a figure-8 motion",
-
     "alignedTitle": "Facing the Qibla",
     "alignedSub": "Your device points toward the Kaaba in Mecca",
     "turnRight": "turn right",
     "turnLeft": "turn left",
     "tip": "Hold flat · Keep from metal · Calibrate if drifting",
-
     "permissionTitle": "Location Permission",
     "permissionMessage": "Qibla compass needs your location to point toward the Kaaba.",
     "permissionAllow": "Allow",
     "permissionDeny": "Deny",
     "permissionDenied": "Location permission denied.\nPlease enable it in Settings.",
     "locationError": "Could not get location:\n{{message}}",
-
     "errorTitle": "Unable to start",
     "errorHint": "Check location permissions and GPS signal"
   },
@@ -523,7 +517,6 @@
     "recording": "Recording...",
     "recordingSub": "Will auto-stop on post",
     "submit": "Post Hadith",
-
     "stopAndPost": "Stop & Post",
     "posting": "Posting...",
     "translationRequiredTitle": "Translation required",
@@ -733,8 +726,6 @@
       "recordedBy": "Recorded By",
       "pendingValue": "Pending"
     }
-
-
   },
   "collectorHistory": {
     "title": "My Collections",
@@ -897,7 +888,6 @@
     "loading": "Loading prayer schedule…",
     "versionLabel": "v{{version}}",
     "lastUpdated": "Updated by {{name}} · {{date}}",
-
     "earlySection": "Early Timings",
     "earlySectionSub": "Imsak, sunrise and dhuha",
     "adhanSection": "Adhan Timings",
@@ -910,8 +900,7 @@
     "notesSectionSub": "Optional announcement shown with the schedule",
     "notesPlaceholder": "Add any notes for the congregation…",
     "pickerDone": "Done",
-"pickerCancel": "Cancel",
-
+    "pickerCancel": "Cancel",
     "fields": {
       "imsak": "Imsak",
       "sunrise": "Sunrise",
@@ -927,7 +916,6 @@
       "taraweeh": "Taraweeh",
       "sunset": "Sunset"
     },
-
     "save": "Save Prayer Times",
     "saving": "Saving…",
     "successTitle": "Saved",
@@ -938,62 +926,49 @@
     "invalidTimeTitle": "Check the time",
     "invalidTimeMsg": "{{field}} must be a valid time in HH:MM format."
   },
-
   "announcements": {
     "title": "Announcements",
     "subtitle": "Post updates to the congregation",
     "loading": "Loading announcements…",
-
     "justNow": "Just now",
     "minutesAgo": "{{count}}m ago",
     "hoursAgo": "{{count}}h ago",
     "daysAgo": "{{count}}d ago",
-
     "emptyState": "No announcements yet. Tap + to post one.",
-
     "modalTitle": "New Announcement",
     "titleLabel": "Title",
     "titlePlaceholder": "e.g. Friday Khutbah Reminder",
     "bodyLabel": "Message",
     "bodyPlaceholder": "Write the announcement details…",
-
     "pinLabel": "Pin this announcement",
     "pinSub": "Pinned posts stay at the top and are never auto-deleted",
-
     "imageLabel": "Image",
     "audioLabel": "Voice Note",
     "voiceNote": "Voice Note",
     "tapToView": "Tap to view full image",
-
     "addImage": "Add Image",
     "changeImage": "Change Image",
     "record": "Record",
     "stop": "Stop",
     "recording": "Recording",
     "recordingSub": "Tap stop when you're done",
-
     "submit": "Post Announcement",
     "stopAndPost": "Stop & Post",
-
     "delete": "Delete",
     "deleteConfirmTitle": "Delete Announcement",
     "deleteConfirmMsg": "Are you sure you want to delete \"{{title}}\"? This cannot be undone.",
-
     "successTitle": "Posted",
     "successMsg": "Announcement posted successfully.",
     "errorTitle": "Something went wrong",
     "postError": "Could not post the announcement. Please try again.",
     "deleteError": "Could not delete the announcement.",
-
     "emptyTitle": "Nothing to post",
     "emptyMsg": "Add a title, message, image, or voice note before posting.",
     "missingTitleTitle": "Title required",
     "missingTitleMsg": "Please add a title for the announcement.",
-
     "invalidImage": "This image format isn't supported. Please choose a JPG or PNG.",
     "imageUploadError": "Could not upload the image.",
     "audioUploadError": "Could not upload the voice note.",
-
     "permissionDeniedTitle": "Microphone access needed",
     "permissionDeniedMsg": "Please allow microphone access to record a voice note."
   },
@@ -1046,10 +1021,11 @@
     "verified": "Verified",
     "pending": "Pending",
     "noTransactions": "No transactions yet"
+  },
+  "home": {
+    "celebration": {
+      "title": "Alhamdulillah",
+      "subtitle": "All five daily prayers completed."
+    }
   }
 }
-
-
-
-
-

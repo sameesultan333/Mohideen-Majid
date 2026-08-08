@@ -31,10 +31,23 @@ _IMAGE_MAGIC: dict[str, list[tuple[int, bytes]]] = {
     "png":  [(0, b"\x89PNG\r\n\x1a\n")],
     "webp": [(0, b"RIFF"), (8, b"WEBP")],
 }
+# Formats people actually produce. mp3/wav/m4a alone rejected the everyday cases:
+# an Android voice recording is normally .mp4 or .aac, a desktop browser records
+# .webm or .ogg, and the admin picker offers "audio/*" — so choosing an ordinary
+# audio file failed the extension check and the announcement was published with
+# no audio attached. Every entry below is still magic-byte verified, so widening
+# the list does not weaken the upload check.
 _AUDIO_MAGIC: dict[str, list[tuple[int, bytes]]] = {
     "mp3":  [(0, b"ID3"), (0, b"\xff\xfb"), (0, b"\xff\xf3"), (0, b"\xff\xf2")],
     "wav":  [(0, b"RIFF"), (8, b"WAVE")],
+    # ISO base-media container — m4a, mp4 audio and AAC-in-mp4 share this header.
     "m4a":  [(4, b"ftyp")],
+    "mp4":  [(4, b"ftyp")],
+    "aac":  [(4, b"ftyp"), (0, b"\xff\xf1"), (0, b"\xff\xf9")],  # mp4-wrapped or raw ADTS
+    "ogg":  [(0, b"OggS")],
+    "opus": [(0, b"OggS")],
+    "webm": [(0, b"\x1a\x45\xdf\xa3")],
+    "amr":  [(0, b"#!AMR")],
 }
 
 ALLOWED_IMAGE_EXT = set(_IMAGE_MAGIC.keys())
