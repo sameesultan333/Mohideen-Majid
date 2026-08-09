@@ -46,9 +46,19 @@ export default function SafeModal({
   edges = ["top", "left", "right"],
   contentStyle,
   topColor,
-  // statusBarTranslucent keeps Android from shifting the modal window down by
-  // the status bar height itself, which would double-count the inset we apply.
-  statusBarTranslucent = true,
+  // Must match the app shell's own StatusBar, which is translucent={false}.
+  //
+  // With a non-translucent status bar Android insets the *app* window, so the
+  // root view already starts below the bar and useSafeAreaInsets() reports
+  // top: 0. Forcing the modal's window translucent broke that pairing: the
+  // modal became full-screen while the inset it padded with was zero, so its
+  // header drew underneath the status bar. Leaving it false lets Android inset
+  // the modal window the same way it insets the app, and the paddingTop below
+  // stays a no-op instead of double-counting.
+  //
+  // A modal that genuinely wants to paint edge to edge passes true explicitly
+  // together with edges={[]}.
+  statusBarTranslucent = false,
   ...modalProps
 }) {
   const insets = useSafeAreaInsets();

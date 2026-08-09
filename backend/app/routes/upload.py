@@ -73,6 +73,20 @@ try:
 except ImportError:
     pass
 
+if not _CLOUDINARY_AVAILABLE:
+    # Loud on purpose. Without Cloudinary every upload is written to the
+    # container filesystem, which on a hosted platform is wiped on each deploy
+    # and restart - announcement audio, announcement images and payment-proof
+    # screenshots are all permanently lost, while their rows keep pointing at
+    # a URL that now 404s. This used to fail silently, so the loss only showed
+    # up as a broken file days later.
+    logger.error(
+        "[upload] Cloudinary is NOT configured - uploads go to local disk and "
+        "WILL be lost when the container restarts. Set CLOUDINARY_CLOUD_NAME, "
+        "CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET, or attach a persistent "
+        "disk, before relying on stored media."
+    )
+
 
 def _upload_to_cloudinary(data: bytes, folder: str, public_id: str) -> dict:
     result = _cu.upload(

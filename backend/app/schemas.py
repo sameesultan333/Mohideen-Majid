@@ -208,6 +208,9 @@ class AnnouncementOut(BaseModel):
     body: str
     pinned: bool
     posted_by: str
+    # Resolved from the author's user record, never inferred from their name.
+    # None for announcements posted before the author link existed.
+    posted_by_role: Optional[str] = None
     created_at: UTCDateTime
     image_url: Optional[str] = None
     audio_url: Optional[str] = None

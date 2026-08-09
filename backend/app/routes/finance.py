@@ -1821,7 +1821,11 @@ def get_receipt(
                 "receipt_id":             receipt_id,
                 "name":                   head.name if head else None,
                 "chanda_no":              head.chanda_no if head else None,
-                "address":                head.address if head else None,
+                # Home address deliberately omitted. This endpoint is
+                # unauthenticated so QR receipt links work, and receipt ids are
+                # sequential (MM-CH-YYYYMM-000001), so anyone could walk the
+                # range and harvest every member's address. Name, amount and
+                # months are enough to verify a receipt.
                 "amount":                 rec.amount,
                 "gross_amount":           rec.gross_amount or rec.amount,
                 "discount_amount":        rec.discount_amount or 0,

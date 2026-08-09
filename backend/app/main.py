@@ -214,6 +214,7 @@ _repair_stale_sequences()
 def ensure_columns():
     statements = [
         # users
+        "ALTER TABLE announcements ADD COLUMN IF NOT EXISTS posted_by_user_id INTEGER REFERENCES users(id)",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_verified BOOLEAN DEFAULT TRUE",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMP WITHOUT TIME ZONE",

@@ -568,6 +568,19 @@ class Announcement(Base):
     expires_at = Column(DateTime, nullable=True)
     # NULL = broadcast to everyone; set to a user id for a private/targeted message
     target_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    # Who posted it. posted_by keeps the display name as written at the time;
+    # this resolves the author's role without guessing it from that name.
+    # Nullable because announcements posted before this column existed have no
+    # author link - they simply show no role.
+    posted_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+
+    posted_by_user = relationship("User", foreign_keys=[posted_by_user_id])
+
+    @property
+    def posted_by_role(self) -> str | None:
+        """The author's current role, straight off their user record."""
+        author = self.posted_by_user
+        return author.role if author else None
 
 
 class Hadith(Base):

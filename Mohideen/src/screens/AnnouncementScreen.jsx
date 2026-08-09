@@ -139,6 +139,31 @@ const CompactHeader = ({ onBack, title, hijriDate, gregorianDate }) => {
   );
 };
 
+
+/**
+ * Present a role code as a readable title.
+ *
+ * The role always comes from the API (resolved server-side from the author's
+ * user record). Anything unrecognised is title-cased rather than dropped, so a
+ * role added later still displays instead of silently disappearing.
+ */
+function roleLabel(role, t) {
+  if (!role) return "";
+  const key = String(role).trim().toLowerCase();
+  const fallback = {
+    superadmin: "Super Admin",
+    admin: "Admin",
+    imam: "Imam",
+    collector: "Collector",
+    modhin: "Modhin",
+    watchman: "Watchman",
+    head: "Head",
+    member: "Member",
+  }[key];
+  if (fallback) return t("roles." + key, fallback);
+  return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
 // ─── Full-screen image preview modal ────────────────────────────────
 function ImagePreviewModal({ uri, onClose }) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -494,7 +519,14 @@ export default function AnnouncementScreen({ navigation, route }) {
                   <View style={styles.metaRow}>
                     <Text style={styles.time}>{formatTime(item.created_at)}</Text>
                     {item.posted_by && (
-                      <Text style={styles.postedBy}>{t("announcement.postedBy")} {item.posted_by}</Text>
+                      <Text style={styles.postedBy}>
+                        {t("announcement.postedBy")} {item.posted_by}
+                        {item.posted_by_role ? (
+                          <Text style={styles.postedByRole}>
+                            {"  \u00B7  "}{roleLabel(item.posted_by_role, t)}
+                          </Text>
+                        ) : null}
+                      </Text>
                     )}
                   </View>
                 </Animated.View>
@@ -625,6 +657,7 @@ const styles = StyleSheet.create({
     color: H.textMuted,
     fontWeight: "600",
   },
+  postedByRole: { fontWeight: "800", letterSpacing: 0.2 },
   postedBy: {
     fontSize: 11,
     color: H.textMuted,

@@ -5,12 +5,12 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app import models, schemas
 from app.cache import cache_get, cache_set, cache_invalidate
 from app.database import SessionLocal
-from app.security import require_admin_or_imam
+from app.security import get_current_user, require_admin_or_imam
 from app.services.audit_service import AuditAction, log_action
 from app.utils.fcm import send_fcm_topic_notification, notify_user
 from app.websocket_manager import manager
@@ -43,14 +43,51 @@ def delete_expired_announcements(db: Session):
 # ?user_id=<id>  → broadcast + targeted for that user (mobile app)
 # ?all=true      → everything including targeted (admin view)
 # (no params)    → broadcast only
+def _caller_id(user: dict) -> Optional[int]:
+    raw = user.get("sub")
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _has_role(user: dict, *roles: str) -> bool:
+    owned = {str(r).lower() for r in (user.get("roles") or [])}
+    if user.get("role"):
+        owned.add(str(user["role"]).lower())
+    return bool(owned & {r.lower() for r in roles})
+
+
 @router.get("/", response_model=list[schemas.AnnouncementOut])
 async def get_announcements(
-    user_id: Optional[int] = Query(None),
+    user_id: Optional[int] = Query(
+        None,
+        description="Deprecated and ignored; the caller's own id is used.",
+    ),
     all: Optional[bool] = Query(False),
     db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
 ):
+    """
+    Announcements visible to the caller.
+
+    Previously unauthenticated and it trusted the `user_id` query parameter, so
+    anyone could walk the range and read every member's private, targeted
+    announcements - and `all=true` returned the lot in one request. The
+    audience is now derived from the caller's own token, and the unfiltered
+    view is restricted to the roles that administer announcements.
+    """
+    is_manager = _has_role(user, "superadmin", "admin", "imam")
+    if all and not is_manager:
+        raise HTTPException(status_code=403, detail="Not permitted")
+    # Never trust a caller-supplied identity.
+    user_id = _caller_id(user)
     delete_expired_announcements(db)
-    q = db.query(models.Announcement)
+    # joinedload: posted_by_role reads the author record, so without this the
+    # list issues one extra query per announcement.
+    q = db.query(models.Announcement).options(
+        joinedload(models.Announcement.posted_by_user)
+    )
 
     if all:
         # Admin view — return everything, no filter
@@ -103,6 +140,7 @@ async def post_announcement(
         image_url=data.image_url,
         audio_url=data.audio_url,
         posted_by=db_user.name,
+        posted_by_user_id=db_user.id,
         target_user_id=data.target_user_id,
     )
     db.add(ann)

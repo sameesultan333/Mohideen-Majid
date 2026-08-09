@@ -55,6 +55,16 @@ const PlusIcon = ({ color = H.white, size = 22 }) => (
   </Svg>
 );
 
+const BackIcon = ({ color = H.white, size = 22 }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path
+      d="M15 18 L9 12 L15 6"
+      stroke={color} strokeWidth={2.4} fill="none"
+      strokeLinecap="round" strokeLinejoin="round"
+    />
+  </Svg>
+);
+
 const CloseIcon = ({ color = H.gold, size = 20 }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24">
     <Path d="M6 6 L18 18 M18 6 L6 18" stroke={color} strokeWidth={2.2} strokeLinecap="round" />
@@ -209,7 +219,7 @@ const formatRelativeTime = (isoString, t) => {
 };
 
 // ─── Compact Header ──────────────────────────────────────────────────
-const CompactHeader = ({ title, subtitle, onAdd }) => (
+const CompactHeader = ({ title, subtitle, onAdd, onBack }) => (
   <View style={hs.wrap}>
     <Svg width={SW} height={148} style={StyleSheet.absoluteFill}>
       <Defs>
@@ -223,6 +233,18 @@ const CompactHeader = ({ title, subtitle, onAdd }) => (
     <HeaderPattern w={SW} h={148} />
 
     <View style={hs.row}>
+      {/* This screen is pushed from Editable Options and has no bottom nav, so
+          without this the only way out was the hardware back key. */}
+      <AnimatedPressable
+        onPress={onBack}
+        style={hs.backBtn}
+        activeOpacity={0.8}
+        hitSlop={12}
+        accessibilityRole="button"
+        accessibilityLabel="Back"
+      >
+        <BackIcon />
+      </AnimatedPressable>
       <View style={hs.titleContainer}>
         <Text style={hs.title}>{title}</Text>
       </View>
@@ -239,7 +261,7 @@ const CompactHeader = ({ title, subtitle, onAdd }) => (
 );
 
 // ─── Main Component ──────────────────────────────────────────────────
-export default function AnnouncementScreen() {
+export default function AnnouncementScreen({ navigation }) {
   const { t } = useTranslation();
 
   const [announcements, setAnnouncements] = useState([]);
@@ -562,6 +584,7 @@ export default function AnnouncementScreen() {
         title={t("announcements.title")}
         subtitle={t("announcements.subtitle")}
         onAdd={openModal}
+        onBack={() => navigation.goBack()}
       />
 
       {fetching ? (
@@ -1013,7 +1036,13 @@ const hs = StyleSheet.create({
     paddingTop: 18,
   },
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 4 },
-  titleContainer: { flex: 1, marginRight: 12 },
+  backBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderWidth: 1, borderColor: "rgba(212,175,55,0.4)",
+    justifyContent: "center", alignItems: "center",
+  },
+  titleContainer: { flex: 1, marginLeft: 12, marginRight: 12 },
   title: { color: H.white, fontSize: 18, fontWeight: "700", fontFamily: FONTS.display },
   addBtn: {
     width: 44, height: 44, borderRadius: 22, backgroundColor: H.gold,

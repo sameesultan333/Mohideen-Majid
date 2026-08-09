@@ -11,6 +11,17 @@ import uuid
 
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
+from pathlib import Path
+
+from app.routes.upload import (
+    ALLOWED_IMAGE_EXT,
+    MAX_FILE_SIZE_MB,
+    _IMAGE_MAGIC,
+    _read_bytes,
+    _safe_ext,
+    _save_local,
+    _verify_magic,
+)
 
 from sqlalchemy import or_
 
@@ -288,15 +299,22 @@ async def user_pay(
 
 
 
-        ext = (file.filename or "jpg").split(".")[-1]
+        # The extension used to be taken straight from the uploaded filename
+        # with no allowlist, no size cap and no content check. /uploads is
+        # served by StaticFiles from this same origin, so a file named
+        # "x.html" was stored and then served as HTML - stored XSS against any
+        # admin who opened the payment proof. Reuse the hardened image path
+        # that /upload/image already goes through.
 
-        filename = f"{uuid.uuid4()}.{ext}"
+        ext = _safe_ext(file.filename or "", ALLOWED_IMAGE_EXT)
+
+        data = await _read_bytes(file, MAX_FILE_SIZE_MB)
+
+        _verify_magic(data, ext, _IMAGE_MAGIC)
+
+        filename = _save_local(data, Path(UPLOAD_DIR), ext)
 
         filepath = os.path.join(UPLOAD_DIR, filename)
-
-        with open(filepath, "wb") as buffer:
-
-            shutil.copyfileobj(file.file, buffer)
 
 
 
@@ -420,15 +438,19 @@ async def user_pay(
 
 
 
-    ext = (file.filename or "jpg").split(".")[-1]
+    # Donation branch - same hardening as the chanda branch above. An
+    # attacker-named "x.html" was previously stored and then served as HTML
+    # from /uploads on this origin.
 
-    filename = f"{uuid.uuid4()}.{ext}"
+    ext = _safe_ext(file.filename or "", ALLOWED_IMAGE_EXT)
+
+    data = await _read_bytes(file, MAX_FILE_SIZE_MB)
+
+    _verify_magic(data, ext, _IMAGE_MAGIC)
+
+    filename = _save_local(data, Path(UPLOAD_DIR), ext)
 
     filepath = os.path.join(UPLOAD_DIR, filename)
-
-    with open(filepath, "wb") as buffer:
-
-        shutil.copyfileobj(file.file, buffer)
 
 
 

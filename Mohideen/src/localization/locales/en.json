@@ -1028,5 +1028,15 @@
       "title": "Alhamdulillah",
       "subtitle": "All five daily prayers completed."
     }
+  },
+  "roles": {
+    "superadmin": "Super Admin",
+    "admin": "Admin",
+    "imam": "Imam",
+    "collector": "Collector",
+    "modhin": "Modhin",
+    "watchman": "Watchman",
+    "head": "Head",
+    "member": "Member"
   }
 }
