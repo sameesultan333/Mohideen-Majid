@@ -137,8 +137,78 @@ def _repair_missing_primary_keys() -> None:
             log.warning("[db] primary-key check failed for %s: %s", table, exc)
 
 
+def _repair_stale_sequences() -> None:
+    """
+    Advance any identity sequence that has fallen behind its table's max(id).
+
+    A SERIAL column draws ids from a sequence. Restoring a dump, or inserting
+    rows with explicit ids (which the Excel importer does), does NOT advance
+    that sequence, so it hands back an id that already exists and the INSERT
+    fails with
+
+        duplicate key value violates unique constraint "<table>_pkey"
+
+    The row is never written. From the outside this looks exactly like "new
+    collections stop appearing": reads are perfect, writes silently go nowhere.
+    It is the same class of latent-schema damage _repair_missing_primary_keys
+    already handles at boot, so it belongs in the same place rather than in a
+    script someone has to remember to run against production.
+
+    Only ever moves a sequence FORWARD, and only when it is already behind, so
+    it is safe to run on every boot and a no-op on a healthy database.
+    """
+    import logging as _l
+    log = _l.getLogger(__name__)
+
+    if engine.dialect.name != "postgresql":
+        return
+    try:
+        with engine.begin() as conn:
+            rows = conn.execute(text("""
+                SELECT c.relname, a.attname,
+                       pg_get_serial_sequence(c.relname, a.attname) AS seq
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                JOIN pg_attribute a ON a.attrelid = c.oid
+                WHERE n.nspname = 'public'
+                  AND c.relkind = 'r'
+                  AND a.attnum > 0
+                  AND NOT a.attisdropped
+                  AND pg_get_serial_sequence(c.relname, a.attname) IS NOT NULL
+            """)).fetchall()
+
+            repaired = 0
+            for table, column, seq in rows:
+                try:
+                    max_id = conn.execute(
+                        text(f'SELECT COALESCE(MAX("{column}"), 0) FROM "{table}"')
+                    ).scalar() or 0
+                    last_value, is_called = conn.execute(
+                        text(f'SELECT last_value, is_called FROM {seq}')
+                    ).fetchone()
+                    next_id = last_value + 1 if is_called else last_value
+                    if next_id <= max_id:
+                        conn.execute(text("SELECT setval(:s, :v, true)"),
+                                     {"s": seq, "v": max_id})
+                        log.warning(
+                            "[db] sequence %s was behind (next=%s, max id=%s) - advanced to %s",
+                            seq, next_id, max_id, max_id,
+                        )
+                        repaired += 1
+                except Exception as exc:
+                    log.warning("[db] sequence check failed for %s.%s: %s", table, column, exc)
+
+            if repaired:
+                log.warning("[db] repaired %s stale sequence(s)", repaired)
+    except Exception as exc:
+        # Never let the repair itself stop the app from booting.
+        log.warning("[db] sequence repair skipped: %s", exc)
+
+
 _repair_missing_primary_keys()
 models.Base.metadata.create_all(bind=engine)
+# After create_all, so a table created on this very boot is included.
+_repair_stale_sequences()
 
 
 def ensure_columns():
