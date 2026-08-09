@@ -25,7 +25,7 @@ from app.utils.chanda_months import (
     pending_month_filter,
     visible_month_filter,
 )
-from app.utils.timezones import india_month_key, utc_now, to_india
+from app.utils.timezones import india_month_key, utc_now, utc_now_naive, to_india
 from app.websocket_manager import manager
 from app.services.audit_service import AuditAction
 
@@ -276,11 +276,19 @@ def finance_dashboard(
 
     # ── Recent activity (last 10 of each) ─────────────────────
     from sqlalchemy.orm import joinedload as _jl
+    # Same ordering rule as the Finance Timeline: the migration stamps imported
+    # payments with the month they cover, so importing paid-up-to-December in
+    # August leaves rows dated ahead of today. Without the first clause those
+    # future rows filled all ten slots and no real collection was ever shown.
+    _now = utc_now_naive()
     recent_payments = (
         db.query(models.PaymentEntry)
         .options(_jl(models.PaymentEntry.head))
         .filter(models.PaymentEntry.status == "verified")
-        .order_by(models.PaymentEntry.created_at.desc())
+        .order_by(
+            (models.PaymentEntry.created_at <= _now).desc(),
+            models.PaymentEntry.created_at.desc(),
+        )
         .limit(10).all()
     )
     recent_donations = (
@@ -2410,10 +2418,25 @@ def get_finance_timeline(
                 "end_date":      cs.end_date.isoformat() + "Z" if cs.end_date else None,
             })
 
-    # Sort all items by created_at descending
+    # Newest first — but a transaction dated in the future has not happened yet,
+    # so it must not outrank one that has.
+    #
+    # The Excel migration stamps each imported payment with created_at = the
+    # month it covers (admin.py, historical import). Importing paid-up-to-
+    # December while the current month is August therefore writes rows dated
+    # months ahead, and a collection recorded today sorted *below* every one of
+    # them — the collector's payment was in the database and simply never
+    # appeared near the top of the Finance Timeline.
+    #
+    # Two tiers: everything up to now, newest first; then future-dated rows
+    # after them. Advance payments taken through the app are unaffected — their
+    # created_at is the moment they were recorded, and only covered_months
+    # points at a future month.
+    now_iso = utc_now_naive().isoformat() + "Z"
+
     def _sort_key(x):
         ts = x.get("created_at") or ""
-        return ts
+        return (0 if ts > now_iso else 1, ts)
 
     items.sort(key=_sort_key, reverse=True)
     total = len(items)
