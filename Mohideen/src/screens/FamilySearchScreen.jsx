@@ -451,8 +451,13 @@ export default function FamilySearchScreen({ navigation }) {
       {/* ── Add Family modal ─────────────────────────────────────────────── */}
       <SafeModal visible={showAddFamily} transparent animationType="slide" onRequestClose={() => setShowAddFamily(false)}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-          <Pressable style={s.overlay} onPress={() => setShowAddFamily(false)}>
-            <View style={[s.sheet, { height: "90%" }]} onStartShouldSetResponder={() => true}>
+          <View style={s.overlay}>
+          {/* Backdrop is a sibling, not the sheet's parent - nesting made the
+              sheet claim the touch responder on every touch start just to stop
+              taps closing it, which competed with the inner ScrollView and left
+              scrolling working only from certain spots. */}
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowAddFamily(false)} accessibilityLabel="Close" />
+            <View style={[s.sheet, { height: "90%" }]}>
               <View style={s.handle} />
               <Text allowFontScaling={false} style={[s.sheetEye, { marginBottom: 2 }]}>NEW FAMILY</Text>
               <Text allowFontScaling={false} style={[s.sheetName, { marginBottom: 14 }]}>Add Family</Text>
@@ -531,15 +536,20 @@ export default function FamilySearchScreen({ navigation }) {
                 </AnimatedPressable>
               </ScrollView>
             </View>
-          </Pressable>
+          </View>
         </KeyboardAvoidingView>
       </SafeModal>
 
       {/* ── Edit Family modal ────────────────────────────────────────────── */}
       <SafeModal visible={showEditFamily} transparent animationType="slide" onRequestClose={() => setShowEditFamily(false)}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-          <Pressable style={s.overlay} onPress={() => setShowEditFamily(false)}>
-            <View style={[s.sheet, { height: "90%" }]} onStartShouldSetResponder={() => true}>
+          <View style={s.overlay}>
+          {/* Backdrop is a sibling, not the sheet's parent - nesting made the
+              sheet claim the touch responder on every touch start just to stop
+              taps closing it, which competed with the inner ScrollView and left
+              scrolling working only from certain spots. */}
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowEditFamily(false)} accessibilityLabel="Close" />
+            <View style={[s.sheet, { height: "90%" }]}>
               <View style={s.handle} />
               <Text allowFontScaling={false} style={[s.sheetEye, { marginBottom: 2 }]}>EDIT FAMILY</Text>
               <Text allowFontScaling={false} style={[s.sheetName, { marginBottom: 14 }]}>{editItem?.name || "Edit"}</Text>
@@ -618,7 +628,7 @@ export default function FamilySearchScreen({ navigation }) {
                 </AnimatedPressable>
               </ScrollView>
             </View>
-          </Pressable>
+          </View>
         </KeyboardAvoidingView>
       </SafeModal>
 

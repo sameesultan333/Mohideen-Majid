@@ -53,7 +53,7 @@ import BottomNav from "../components/BottomNav";
 import { logger } from "../utils/logger";
 import FivePrayerCelebration from "../components/FivePrayerCelebration";
 import {
-  localDayKey, trackerKeyFor, legacyTrackerKeyFor, celebrationKeyFor,
+  localDayKey, trackerKeyFor, celebrationKeyFor,
 } from "../utils/prayerDay";
 
 const { width: SW } = Dimensions.get("window");
@@ -1008,15 +1008,15 @@ export default function HomeScreen({ navigation, route }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      let saved = await AsyncStorage.getItem(trackerKey);
-      if (!saved) {
-        // Marks made earlier today under the old UTC-dated key.
-        const legacy = await AsyncStorage.getItem(legacyTrackerKeyFor());
-        if (legacy) {
-          saved = legacy;
-          await AsyncStorage.setItem(trackerKey, legacy);
-        }
-      }
+      // Read only this day's own key. There used to be a fallback to the old
+      // UTC-dated key, which was wrong between midnight and 05:30 IST: at that
+      // hour the local date is already today while the UTC date is still
+      // yesterday, so opening the app overnight copied YESTERDAY's completed
+      // prayers into today and persisted them. Every prayer then showed as
+      // already offered without the user marking anything. Losing a stale
+      // one-off migration is far better than telling someone they have prayed
+      // when they have not.
+      const saved = await AsyncStorage.getItem(trackerKey);
       if (cancelled) return;
       if (saved) setPrayerConfirmed(JSON.parse(saved));
       setTrackerHydrated(true);

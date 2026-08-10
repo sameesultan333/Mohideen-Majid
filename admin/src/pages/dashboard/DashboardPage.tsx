@@ -536,7 +536,7 @@ export default function DashboardPage() {
             <StatCard label="Active Families" value={String(totalFamilies)}
               accent={COLORS.lapis} icon={Users}
               sub={`${paidCount} paid · ${pendingCount} pending`}
-              onClick={() => navigate("/chanda")} />
+              onClick={() => navigate("/Users")} />
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: cols2, gap: GAP, marginBottom: MB }}>

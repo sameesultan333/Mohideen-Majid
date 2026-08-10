@@ -214,7 +214,17 @@ _repair_stale_sequences()
 def ensure_columns():
     statements = [
         # users
-        "ALTER TABLE announcements ADD COLUMN IF NOT EXISTS posted_by_user_id INTEGER REFERENCES users(id)",
+        # Plain INTEGER, deliberately WITHOUT a REFERENCES constraint.
+        #
+        # This column is added at boot, so it exists on the server but not in a
+        # dump taken from a database that has not run this build. pg_restore
+        # then has no DROP for it, and the constraint blocks "DROP TABLE users"
+        # - which silently leaves the old users table in place while the rest of
+        # the restore proceeds. Adding it as a bare column keeps restores from
+        # any snapshot working. The ORM still declares the ForeignKey, so
+        # Announcement.posted_by_user resolves exactly the same way.
+        "ALTER TABLE announcements DROP CONSTRAINT IF EXISTS announcements_posted_by_user_id_fkey",
+        "ALTER TABLE announcements ADD COLUMN IF NOT EXISTS posted_by_user_id INTEGER",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_verified BOOLEAN DEFAULT TRUE",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMP WITHOUT TIME ZONE",

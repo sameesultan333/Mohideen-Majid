@@ -1259,7 +1259,7 @@ export default function CollectorScreen({ navigation, route }) {
         </View>
       )}
 
-      <QRViewerModal visible={qrViewerVisible} onClose={() => setQrViewerVisible(false)} imageSource={require("../../assests/upi_qr.png")} />
+      <QRViewerModal visible={qrViewerVisible} onClose={() => setQrViewerVisible(false)} imageSource={require("../../assests/upi_qr.jpg")} />
 
       {/* ── Zone dropdown modal ──────────────────────────────────────────── */}
       <SearchPickerModal
@@ -1288,8 +1288,23 @@ export default function CollectorScreen({ navigation, route }) {
 
       <SafeModal visible={!!selected} transparent animationType="slide" onRequestClose={closeModal}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-          <Pressable style={s.overlay} onPress={closeModal}>
-            <View style={s.sheet} onStartShouldSetResponder={() => true} onResponderTerminationRequest={() => true}>
+          <View style={s.overlay}>
+          {/* Backdrop is a SIBLING of the sheet, not its parent.
+              While the sheet was nested inside the backdrop Pressable, every
+              touch inside the sheet went through that Pressable's responder
+              negotiation, and the sheet had to claim the responder on touch
+              start (onStartShouldSetResponder) just to stop taps closing it.
+              That claim competed with the inner ScrollView, so a drag only
+              scrolled when it happened to start where the ScrollView won the
+              negotiation - the "have to press in one spot to scroll" bug.
+              As siblings, the backdrop only ever sees touches that miss the
+              sheet, and the ScrollView owns its gestures outright. */}
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={closeModal}
+              accessibilityLabel="Close"
+            />
+            <View style={s.sheet}>
               {selected && (
                 <>
                   <View style={s.handle} />
@@ -1414,7 +1429,7 @@ export default function CollectorScreen({ navigation, route }) {
                         <Text allowFontScaling={false} style={s.secLabel}>{t("collector.scanToPay")}</Text>
                         <View style={s.upiInner}>
                           <AnimatedPressable onPress={() => setQrViewerVisible(true)} activeOpacity={0.9} style={s.qrThumbBox}>
-                            <Image source={require("../../assests/upi_qr.png")} style={s.qrThumbImg} resizeMode="contain" />
+                            <Image source={require("../../assests/upi_qr.jpg")} style={s.qrThumbImg} resizeMode="contain" />
                           </AnimatedPressable>
                           <View style={s.upiRight}>
                             <AnimatedPressable onPress={pickImage} style={[s.uploadBtn, proofImage && s.uploadBtnDone]}>
@@ -1480,7 +1495,7 @@ export default function CollectorScreen({ navigation, route }) {
                 </>
               )}
             </View>
-          </Pressable>
+          </View>
         </KeyboardAvoidingView>
       </SafeModal>
 

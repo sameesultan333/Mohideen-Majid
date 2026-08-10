@@ -16,13 +16,6 @@ export const localDayKey = (date = new Date()) => date.toLocaleDateString("en-CA
 /** Storage key for a day's prayer tracker. */
 export const trackerKeyFor = (dayKey = localDayKey()) => `prayer_tracker_${dayKey}`;
 
-/**
- * Legacy UTC-dated key for the same moment. Read once as a fallback so marks
- * made before this fix are not lost when the key shape changes mid-day.
- */
-export const legacyTrackerKeyFor = (date = new Date()) =>
-  `prayer_tracker_${date.toISOString().split("T")[0]}`;
-
 /** Storage key for "the five-prayer celebration has already been shown today". */
 export const celebrationKeyFor = (dayKey = localDayKey()) =>
   `five_prayer_celebration_${dayKey}`;

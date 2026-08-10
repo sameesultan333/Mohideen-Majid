@@ -1,20 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Protects the custom notification sounds from Android's resource shrinker.
+  Protects React Native's bundled assets from the release resource shrinker.
 
-  build.gradle has `shrinkResources true`, which strips any resource it can't
-  find a static reference to. These sounds are referenced ONLY through runtime
-  string URIs (android.resource://<pkg>/raw/adhan, .../raw/start_prayer) in
-  MainApplication.kt / IqamahSchedulerModule.kt / PrayerNotificationService.js
-  — the shrinker cannot see string-based references, so in a RELEASE build it
-  removes/dummies these files and the notifications fire silently. Debug builds
-  don't shrink, which is exactly why the sound works over USB debugging but not
-  in the release APK.
+  `shrinkResources true` decides what to keep by looking for references in Java
+  and XML. Every image a React Native screen uses is required from JavaScript
+  and resolved by name at runtime, so the shrinker sees no reference and treats
+  it as dead. It does not drop the entry - it replaces the file with a 0-byte
+  dummy, so the build succeeds, the APK looks normal, and the image silently
+  renders as nothing. Only release builds are affected; in debug, Metro serves
+  assets over HTTP and never involves the shrinker at all.
 
-  Uses tools:keep only (default "safe" shrink mode) — this force-keeps just
-  these three sounds while every other resource still shrinks normally. We do
-  NOT set shrinkMode="strict" on purpose: strict mode would additionally drop
-  resources this React Native app looks up dynamically elsewhere.
+  That is exactly what happened to the UPI QR code on the collector payment
+  sheet:
+
+      @com.mohideen:drawable/assests_upi_qr : reachable=false
+      Skipped unused resource .../assests_upi_qr.jpg:
+        782986 bytes (replaced with small dummy file of size 0 bytes)
+
+  Keeping every drawable rather than an explicit list is deliberate. A prefix
+  list (assests_*, src_*, ...) silently stops covering any asset added under a
+  new folder later, and the failure mode is a blank image in production with no
+  build error. Measured cost of keeping them all here is about 60 KB beyond the
+  QR itself - the shrinker's drawable savings were almost entirely that one
+  file. Correctness is worth 60 KB.
 -->
 <resources xmlns:tools="http://schemas.android.com/tools"
-    tools:keep="@raw/adhan,@raw/start_prayer,@raw/notification" />
+    tools:keep="@drawable/*,@raw/*" />
