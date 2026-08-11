@@ -373,3 +373,31 @@ def test_old_month_grid_import_still_works_unchanged(env):
     assert len(payments) == 1
     assert payments[0].amount == 300.0
     assert payments[0].covered_months == ["2026-08"]
+
+
+# ── street filter: /chanda/members must carry street ─────────────────────────
+
+def test_head_out_schema_includes_street(env):
+    """MemberWithCollection.member (HeadOut) used to omit `street` entirely,
+    so GET /chanda/members - which serializes through this exact schema -
+    always sent street: undefined to the client. The collector app's street
+    filter reads m.member.street to decide who matches the selected street,
+    so with the field always undefined, no member could ever match: picking
+    any street from the dropdown (correctly populated by a separate
+    /admin/streets query) silently filtered out everyone.
+
+    get_members() itself uses a Postgres-only DISTINCT ON / = ANY() raw
+    query that SQLite cannot run, so this is verified at the schema layer
+    directly rather than through the endpoint."""
+    from app import schemas
+
+    client, db, current = env
+    head = db.query(models.ApprovedHead).filter_by(id=10).first()
+    head.street = "Gandhi Street"
+    db.commit()
+    db.refresh(head)
+
+    out = schemas.HeadOut.model_validate(head)
+    assert out.street == "Gandhi Street", (
+        f"HeadOut dropped street entirely: {out.model_dump()}"
+    )

@@ -477,6 +477,14 @@ class HeadBase(BaseModel):
     phone: Optional[str] = None
     address: Optional[str] = None
     zone: Optional[str] = None
+    # Missing here meant GET /chanda/members (which serializes through this
+    # schema) never returned street at all, even though ApprovedHead.street
+    # is populated. The collector app's street filter reads m.member.street
+    # to decide who matches the selected street - with the field always
+    # undefined, no member could ever match, so picking any street from the
+    # dropdown (itself correctly populated by a separate /admin/streets
+    # query) silently filtered out everyone.
+    street: Optional[str] = None
     monthly_amount: float
 
 
