@@ -35,6 +35,11 @@ router = APIRouter(prefix="/finance", tags=["Finance"])
 _dashboard_cache: dict = {"data": None, "at": 0.0}
 DASHBOARD_CACHE_TTL = 30  # seconds
 
+# Collector Payout: 15% of live Chanda actually received in the month, from
+# any source (collector, admin, self pay). Not per-collector — the mosque
+# currently has two collectors from the same family and does not split this.
+COLLECTOR_PAYOUT_RATE = 0.15
+
 
 def invalidate_dashboard_cache() -> None:
     """Call this whenever a donation, expense, fund, or setting changes."""
@@ -143,19 +148,22 @@ def finance_dashboard(
         # amount_due would report a token "Expected" (one payer's ₹1,200 for the
         # whole masjid). Expected is instead the full projection at today's
         # rates — what generation will charge, and it moves only when a family's
-        # monthly amount is changed. Nothing is owed yet, so nothing is pending
-        # or outstanding; `collected` still reflects real advance payments.
+        # monthly amount is changed. No family is individually "pending" yet,
+        # since none of them has an actual bill for this month — but that is a
+        # different question from the projected shortfall, which used to be
+        # hardcoded to 0 here regardless of `due`/`collected`. That made a month
+        # with real advance collections (say ₹1,200 of a projected ₹60,700) show
+        # "Outstanding: 0" right next to two large nonzero numbers, which reads
+        # as broken rather than "nothing owed yet".
         due_month = float(
             db.query(func.coalesce(func.sum(models.ApprovedHead.monthly_amount), 0.0))
             .filter(models.ApprovedHead.is_active.is_(True))
             .scalar() or 0
         )
         pending_count = 0
-        outstanding = 0.0
-    else:
-        # Generated: amount_due already holds each family's rate at generation
-        # time, so the sum is the real expected for that month.
-        outstanding = max(due_month - collected_month, 0)
+    # Same formula either way: what generation would currently charge, minus
+    # what has already been collected against it (including advance payments).
+    outstanding = max(due_month - collected_month, 0)
     collection_pct = round((collected_month / due_month * 100) if due_month else 0, 1)
 
     # ── All-time outstanding (SQL aggregation) ─────────────────
@@ -222,8 +230,24 @@ def finance_dashboard(
     year_start = datetime(today.year, 1, 1)
 
     PE = models.PaymentEntry
+    # Historical/migration rows are real coverage but not a live cash event —
+    # see payment_source docs on the model. Every one of these period totals is
+    # "actual money received," so migration rows are excluded here the same way
+    # for all of them, not just the one that happened to be reported broken.
+    _is_live = func.coalesce(PE.payment_source, "app") != "import"
 
-    def _cash_flow(since: datetime, until: datetime | None = None) -> dict:
+    def _cash_flow(since: datetime, until: datetime) -> dict:
+        """`until` is required, not optional. It used to default to "no upper
+        bound" when omitted, which meant "today", "this week", "this year" and
+        the default (no ?month=) "this month" all silently summed every
+        verified payment from `since` to the END OF THE TABLE — including
+        every future-dated row the historical importer creates (each stamped
+        with the month it covers, so an import of Aug-Dec rows sits ahead of
+        "today" in August). That is the exact mechanism that turned a real
+        ₹1,800 August collection into ₹5,100 on the overview dashboard, which
+        has no ?month= and hit this exact default. Requiring `until` here
+        means a future call site cannot reintroduce the same bug by omission.
+        """
         amt = PE.amount
         meth = func.lower(func.coalesce(PE.method, "other"))
         q = db.query(
@@ -234,9 +258,12 @@ def finance_dashboard(
             func.coalesce(func.sum(case((meth == "cheque", amt), else_=0)), 0.0).label("cheque"),
             func.coalesce(func.sum(case((PE.created_by == "user", amt), else_=0)), 0.0).label("online"),
             func.coalesce(func.sum(case((PE.created_by != "user", amt), else_=0)), 0.0).label("collector"),
-        ).filter(PE.status == "verified", PE.created_at >= since)
-        if until:
-            q = q.filter(PE.created_at < until)
+        ).filter(
+            PE.status == "verified",
+            _is_live,
+            PE.created_at >= since,
+            PE.created_at < until,
+        )
         r = q.one()
         return {
             "total": round(float(r.total), 2),
@@ -250,28 +277,32 @@ def finance_dashboard(
         }
 
     today_start     = datetime.combine(today, datetime.min.time())
+    tomorrow_start  = today_start + timedelta(days=1)
     yesterday_start = today_start - timedelta(days=1)
     week_start_dt   = datetime.combine(week_start, datetime.min.time())
+    next_week_start = week_start_dt + timedelta(days=7)
     month_start_dt  = datetime(today.year, today.month, 1)
+    next_month_start_dt = datetime(today.year + (today.month == 12), today.month % 12 + 1, 1)
+    year_end_dt     = datetime(today.year + 1, 1, 1)
 
     # When viewing a specific month, show that month's cash flow instead of the current calendar month.
     if month:
         try:
             sel_y, sel_m = map(int, month.split("-"))
             sel_month_start = datetime(sel_y, sel_m, 1)
-            sel_month_end   = datetime(sel_y, sel_m, calendar.monthrange(sel_y, sel_m)[1], 23, 59, 59)
+            sel_month_end   = datetime(sel_y + (sel_m == 12), sel_m % 12 + 1, 1)
             this_month_flow = _cash_flow(sel_month_start, sel_month_end)
         except Exception:
-            this_month_flow = _cash_flow(month_start_dt)
+            this_month_flow = _cash_flow(month_start_dt, next_month_start_dt)
     else:
-        this_month_flow = _cash_flow(month_start_dt)
+        this_month_flow = _cash_flow(month_start_dt, next_month_start_dt)
 
     collection_periods = {
-        "today":      _cash_flow(today_start),
+        "today":      _cash_flow(today_start, tomorrow_start),
         "yesterday":  _cash_flow(yesterday_start, today_start),
-        "this_week":  _cash_flow(week_start_dt),
+        "this_week":  _cash_flow(week_start_dt, next_week_start),
         "this_month": this_month_flow,
-        "this_year":  _cash_flow(year_start),
+        "this_year":  _cash_flow(year_start, year_end_dt),
     }
 
     # ── Recent activity (last 10 of each) ─────────────────────
@@ -284,7 +315,14 @@ def finance_dashboard(
     recent_payments = (
         db.query(models.PaymentEntry)
         .options(_jl(models.PaymentEntry.head))
-        .filter(models.PaymentEntry.status == "verified")
+        .filter(
+            models.PaymentEntry.status == "verified",
+            # A "Recent Payments" feed means live activity. Without this, a
+            # database that is mostly historical-import rows (as this one is)
+            # fills all 10 slots with import noise instead of what an admin
+            # actually collected recently.
+            func.coalesce(models.PaymentEntry.payment_source, "app") != "import",
+        )
         .order_by(
             (models.PaymentEntry.created_at <= _now).desc(),
             models.PaymentEntry.created_at.desc(),
@@ -324,6 +362,18 @@ def finance_dashboard(
             "collection_pct": collection_pct,
             "total_outstanding_all_months": round(total_outstanding, 2),
             "defaulters_3m": defaulters,
+        },
+        # Live Chanda only — PaymentEntry never holds donation/fund amounts
+        # (those live in the Donation table), historical/import rows are
+        # already excluded from this_month_flow, and rejected/rolled-back
+        # payments are already excluded by the status='verified' filter every
+        # _cash_flow call carries. So this_month_flow.total is already exactly
+        # "eligible live Chanda received this month" with no further filtering.
+        "collector_payout": {
+            "month": target_month,
+            "eligible_live_chanda": this_month_flow["total"],
+            "rate": COLLECTOR_PAYOUT_RATE,
+            "amount": round(this_month_flow["total"] * COLLECTOR_PAYOUT_RATE, 2),
         },
         "donations": {
             "count": donations_count,
@@ -417,16 +467,26 @@ def weekly_collections(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_admin),
 ):
-    """Rolling last-7-calendar-days collection total, grouped by the actual
-    date money was received (not record-creation date), so it crosses month
-    boundaries naturally — it's real date arithmetic, not a month-key string."""
-    paid_date = func.coalesce(models.PaymentEntry.collected_at, models.PaymentEntry.created_at)
+    """Rolling last-7-calendar-days collection total.
+
+    Grouped by `created_at` — the real, server-stamped transaction moment —
+    not `collected_at`, which an operator can backdate. This used to coalesce
+    to `collected_at` first, so a payment actually taken today but entered
+    with an earlier collection date would land on the wrong day here while
+    every other "actual money received" figure (cash-flow panel, Finance
+    Timeline, receipts) already used `created_at`. Excludes historical/import
+    rows the same way: they represent coverage established on migration, not
+    money received this week."""
+    paid_date = models.PaymentEntry.created_at
     end = to_india(utc_now()).date()
     start = end - timedelta(days=6)
 
     rows = (
         db.query(func.date(paid_date).label("d"), func.sum(models.PaymentEntry.amount))
-        .filter(models.PaymentEntry.status == "verified")
+        .filter(
+            models.PaymentEntry.status == "verified",
+            func.coalesce(models.PaymentEntry.payment_source, "app") != "import",
+        )
         .filter(func.date(paid_date) >= start, func.date(paid_date) <= end)
         .group_by("d")
         .all()
@@ -446,13 +506,21 @@ def yearly_collections(
 ):
     """12 monthly totals (Jan-Dec) for the given year, defaulting to the
     current year. Always returns all 12 slots, zero-filled for months with
-    no payments — never omits an empty month."""
-    paid_date = func.coalesce(models.PaymentEntry.collected_at, models.PaymentEntry.created_at)
+    no payments — never omits an empty month.
+
+    Grouped by `created_at`, same reasoning as weekly_collections above: the
+    real transaction moment, not the operator-editable collected_at, and
+    excluding historical/import rows so a multi-month migration import does
+    not appear as revenue landing in whichever months it happens to cover."""
+    paid_date = models.PaymentEntry.created_at
     target_year = year or to_india(utc_now()).year
 
     rows = (
         db.query(func.extract("month", paid_date).label("m"), func.sum(models.PaymentEntry.amount))
-        .filter(models.PaymentEntry.status == "verified")
+        .filter(
+            models.PaymentEntry.status == "verified",
+            func.coalesce(models.PaymentEntry.payment_source, "app") != "import",
+        )
         .filter(func.extract("year", paid_date) == target_year)
         .group_by("m")
         .all()

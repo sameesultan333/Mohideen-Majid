@@ -457,6 +457,7 @@ export default function DashboardPage() {
   const balance = dash?.balance ?? 0;
   const pendingVerification = dash?.pending_verification ?? 0;
   const pendingRollbacks = dash?.pending_rollbacks ?? 0;
+  const payout = dash?.collector_payout;
 
   // Responsive breakpoints
   const cols2 = mob ? "1fr" : "1fr 1fr";
@@ -604,6 +605,42 @@ export default function DashboardPage() {
               </button>
             </div>
           </div>
+
+          {/* ── Collector Payout: 15% of live Chanda actually received this
+              month. Historical migration, donations/funds and rejected/
+              rolled-back payments are already excluded server-side, so this
+              figure needs no further filtering here. ── */}
+          {payout && (
+            <div style={{ marginBottom: MB }}>
+              <div style={{
+                background: COLORS.surface, borderRadius: 16, padding: mob ? "18px 18px" : "20px 24px",
+                border: `1px solid ${COLORS.cardBorder}`,
+                boxShadow: `0 2px 12px ${COLORS.primary}0A`,
+              }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div style={{
+                      width: 40, height: 40, borderRadius: 10, background: `${COLORS.primary}14`,
+                      display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                    }}>
+                      <HandCoins size={19} color={COLORS.primary} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: COLORS.textMuted, textTransform: "uppercase" }}>
+                        Collector Payout — {payout.month}
+                      </div>
+                      <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
+                        {Math.round(payout.rate * 100)}% of {fmt(payout.eligible_live_chanda)} live Chanda received
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ fontFamily: TYPOGRAPHY.fontMono, fontSize: 24, fontWeight: 800, color: COLORS.primary }}>
+                    {fmt(payout.amount)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* ── Weekly / Yearly collection trends ── */}
           <div style={{ display: "grid", gridTemplateColumns: cols2, gap: GAP, marginBottom: MB }}>

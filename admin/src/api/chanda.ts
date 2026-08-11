@@ -122,6 +122,15 @@ export interface FinanceDashboard {
     total_outstanding_all_months: number;
     defaulters_3m: number;
   };
+  collector_payout: {
+    month: string;
+    /** Live Chanda actually received this month — historical imports,
+     * donations/funds, and rejected/rolled-back payments are already
+     * excluded on the backend. */
+    eligible_live_chanda: number;
+    rate: number;
+    amount: number;
+  };
   donations: { count: number; total: number };
   expenses: { count: number; total: number; pending_count: number; pending_total: number };
   balance: number;

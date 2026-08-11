@@ -17,7 +17,12 @@ from app.services.registration_service import RegistrationApprovalService
 from app.services.chanda_number_service import generate_next_chanda_no
 from app.utils.chanda_months import current_month_key, visible_month_filter
 from app.utils.fcm import notify_user
-from app.utils.payment_ledger import apply_rate_to_open_months, generate_receipt_id
+from app.utils.payment_ledger import (
+    apply_coverage_to_existing_collections,
+    apply_rate_to_open_months,
+    build_coverage_map,
+    generate_receipt_id,
+)
 from app.utils.search import search_filter
 from app.websocket_manager import manager
 from app.routes.finance import write_audit, write_ledger
@@ -141,6 +146,114 @@ def _create_historical_records(
             )
 
 
+def _valid_month_key(value: str) -> bool:
+    try:
+        y, m = value.split("-")
+        return len(y) == 4 and y.isdigit() and 1 <= int(m) <= 12
+    except (ValueError, AttributeError):
+        return False
+
+
+def _create_migration_record(
+    db: Session,
+    head: models.ApprovedHead,
+    *,
+    total_paid: float,
+    coverage_start: str,
+    coverage_end: str,
+    collection_date: datetime | None,
+    note: str | None,
+    receipt_seq_cache: dict[str, int],
+) -> str | None:
+    """
+    One lump-sum historical payment covering a month range (e.g. a family that
+    already paid a full year outside the system before joining it).
+
+    Deliberately creates exactly ONE PaymentEntry for the whole range, not one
+    per covered month. The old month-grid importer (_create_historical_records
+    above) creates a row per month because it is fed pre-split per-month
+    amounts; this path is fed a single amount and a range, and a single
+    payment must stay a single financial record — the whole point being that
+    an import of "₹12,000 covering Jun 2026 - Jun 2027" must never be able to
+    look like twelve or thirteen separate ₹1,000 collections scattered across
+    a year of dashboards, defaulter reports and the finance timeline.
+
+    Returns an error string if the row is invalid, else None.
+    """
+    if not (_valid_month_key(coverage_start) and _valid_month_key(coverage_end)):
+        return "coverage_start/coverage_end must be YYYY-MM"
+    if coverage_start > coverage_end:
+        return "coverage_start must not be after coverage_end"
+    if total_paid <= 0:
+        return None  # nothing paid — not an error, simply nothing to record
+
+    # Make sure every month in the range has a ChandaCollection row to
+    # allocate against, same helper the existing importer already uses for
+    # its own Jan-to-current-month backfill — just given a different range.
+    _create_missing_import_months(
+        db, head, start_month=coverage_start, end_month=coverage_end,
+    )
+
+    coverage_map, _remaining = build_coverage_map(
+        db, head, total_paid, start_month=coverage_start,
+    )
+    if not coverage_map:
+        return "could not allocate total_paid across coverage_start..coverage_end"
+    apply_coverage_to_existing_collections(db, head.id, coverage_map)
+
+    allocated = round(sum(coverage_map.values()), 2)
+    covered_keys = sorted(coverage_map.keys())
+    fully_paid_count = (
+        db.query(models.ChandaCollection)
+        .filter(
+            models.ChandaCollection.head_id == head.id,
+            models.ChandaCollection.month.in_(covered_keys),
+            models.ChandaCollection.status == "paid",
+        )
+        .count()
+    )
+
+    now = datetime.utcnow()
+    # collected_at is the mosque-supplied historical date if given, defaulting
+    # to the first day of the coverage range — never the import date. Section
+    # 11: historical collection dates are never silently replaced by import
+    # time. created_at stays the real import moment (now), which is what
+    # keeps this auditable as "when the migration was actually performed".
+    collected_at = collection_date or datetime.strptime(coverage_start + "-01", "%Y-%m-%d")
+
+    payment = models.PaymentEntry(
+        collection_id=None,
+        head_id=head.id,
+        amount=allocated,
+        method="cash",
+        created_at=now,
+        collected_by="migration",
+        collected_at=collected_at,
+        status="verified",
+        created_by="migration",
+        verified_by="migration",
+        verified_at=now,
+        receipt_id=generate_receipt_id(db, prefix="CH", created_at=now, seq_cache=receipt_seq_cache),
+        purpose="Monthly Chanda",
+        months_covered=fully_paid_count,
+        covered_months=covered_keys,
+        coverage_map=coverage_map,
+        payment_source="import",
+        receipt_status="historical_import",
+        rollback_status=None,
+        notes=note or f"Historical migration import: {coverage_start} to {coverage_end}",
+    )
+    db.add(payment)
+    db.flush()
+    write_ledger(
+        db, "chanda", "income", allocated,
+        family_id=head.id, payment_entry_id=payment.id,
+        month=coverage_start,
+        note=f"Historical migration ({coverage_start} to {coverage_end})",
+    )
+    return None
+
+
 def _create_missing_import_months(
     db: Session,
     head: models.ApprovedHead,
@@ -212,6 +325,15 @@ async def upload_heads(
         "street name":           "street",
         "street/area":           "street",
         "area":                  "street",
+        # Yearly-migration headers — a lump sum already paid outside the
+        # system, covering a month range rather than pre-split per month.
+        "total paid":            "total_paid",
+        "amount paid":           "total_paid",
+        "coverage start":        "coverage_start",
+        "coverage from":         "coverage_start",
+        "coverage end":          "coverage_end",
+        "coverage to":           "coverage_end",
+        "collection date":       "collection_date",
     })
     # phone is now optional — only chanda_no + name + monthly_amount are required
     missing = {"chanda_no", "name", "monthly_amount"} - set(df.columns)
@@ -397,6 +519,45 @@ async def upload_heads(
                 db, head, historical, year, receipt_seq_cache=receipt_seq_cache
             )
 
+        # Yearly-migration columns: a single lump sum covering a month range,
+        # e.g. "already paid ₹12,000 for June 2026 - June 2027". Independent of
+        # the month-grid columns above — a sheet can use either shape, and in
+        # practice will only ever use one, but nothing stops both being present.
+        if {"total_paid", "coverage_start", "coverage_end"}.issubset(df.columns):
+            raw_total = row.get("total_paid")
+            try:
+                total_paid = float(raw_total) if raw_total is not None else 0.0
+                if _math.isnan(total_paid) or _math.isinf(total_paid):
+                    total_paid = 0.0
+            except (ValueError, TypeError):
+                total_paid = 0.0
+
+            cov_start = str(row.get("coverage_start", "")).strip()
+            cov_end   = str(row.get("coverage_end", "")).strip()
+
+            raw_cdate = row.get("collection_date")
+            collection_date = None
+            if raw_cdate is not None and str(raw_cdate).strip().lower() not in ("", "nan", "none", "nat"):
+                parsed_cdate = pd.to_datetime(raw_cdate, errors="coerce")
+                if pd.notna(parsed_cdate):
+                    collection_date = parsed_cdate.to_pydatetime()
+
+            raw_note = row.get("notes")
+            note = str(raw_note).strip() if raw_note is not None and str(raw_note).strip().lower() not in ("", "nan", "none") else None
+
+            if total_paid > 0 or cov_start or cov_end:
+                mig_err = _create_migration_record(
+                    db, head,
+                    total_paid=total_paid,
+                    coverage_start=cov_start,
+                    coverage_end=cov_end,
+                    collection_date=collection_date,
+                    note=note,
+                    receipt_seq_cache=receipt_seq_cache,
+                )
+                if mig_err:
+                    errors.append(f"Row {row_num}: migration import skipped — {mig_err}")
+
         # Imported families should behave like the other family-creation flows,
         # but without the per-month existence query cost of the generic helper.
         _create_missing_import_months(
@@ -511,7 +672,11 @@ def add_family(
     db.flush()
 
     if data.historical_payments:
-        _create_historical_records(db, head, data.historical_payments, year)
+        # receipt_seq_cache is required and was missing here — every call from
+        # this single-family flow would raise TypeError before this fix,
+        # unrelated to the migration-import work above but found while editing
+        # this function's other call site.
+        _create_historical_records(db, head, data.historical_payments, year, receipt_seq_cache={})
 
     write_audit(db, "approved_heads", head.id, "create",
                 new_values={"chanda_no": chanda_no, "name": head.name},
