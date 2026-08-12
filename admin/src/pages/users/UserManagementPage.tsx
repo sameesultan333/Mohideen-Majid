@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { COLORS, TYPOGRAPHY } from "../../theme/colors";
-import { getUsers, assignFamily, resetUserPassword, deleteUser, toggleUserStatus } from "../../api/users";
+import { getUsers, assignFamily, resetUserPassword, deleteUser, toggleUserStatus, dismissFamilyFlag } from "../../api/users";
 import api from "../../api/axios";
-import { getFamilies, getFamilyMembers, activateFamily, getZones } from "../../api/families";
+import { getFamilies, getFamilyMembers, activateFamily, getZones, createFamily } from "../../api/families";
 import { getCurrentUser } from "../../api/auth";
 import DeleteStaffDialog from "../../components/DeleteStaffDialog";
 import type { User, UserRole } from "../../types/users";
@@ -754,6 +754,10 @@ const UserManagementPage: React.FC = () => {
   const [fixHeadId, setFixHeadId] = useState<string>("");
   const [fixName, setFixName] = useState<string>("");
   const [fixBusy, setFixBusy] = useState(false);
+  const [fixMode, setFixMode] = useState<"existing" | "new">("existing");
+  const [fixNewFamilyPhone, setFixNewFamilyPhone] = useState("");
+  const [fixNewFamilyAmount, setFixNewFamilyAmount] = useState("300");
+  const [fixError, setFixError] = useState<string | null>(null);
 
   const [editingFamily, setEditingFamily] = useState<Family | null>(null);
   const [deactivatingFamily, setDeactivatingFamily] = useState<Family | null>(null);
@@ -1556,9 +1560,31 @@ const UserManagementPage: React.FC = () => {
             maxWidth: "calc(100vw - 32px)", boxShadow: COLORS.shadowLg,
           }}>
             <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>Assign to Family Head</div>
-            <div style={{ fontSize: 13, color: COLORS.textMuted, marginBottom: 16 }}>
+            <div style={{ fontSize: 13, color: COLORS.textMuted, marginBottom: 12 }}>
               Member: {fixingMember.phone}
             </div>
+
+            <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+              <button onClick={() => setFixMode("existing")}
+                style={{
+                  flex: 1, padding: "6px 0", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer",
+                  border: `1px solid ${fixMode === "existing" ? COLORS.primaryBorder : COLORS.border}`,
+                  background: fixMode === "existing" ? COLORS.primaryLight : "#fff",
+                  color: fixMode === "existing" ? COLORS.primary : COLORS.textMuted,
+                }}>
+                Existing family
+              </button>
+              <button onClick={() => setFixMode("new")}
+                style={{
+                  flex: 1, padding: "6px 0", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer",
+                  border: `1px solid ${fixMode === "new" ? COLORS.primaryBorder : COLORS.border}`,
+                  background: fixMode === "new" ? COLORS.primaryLight : "#fff",
+                  color: fixMode === "new" ? COLORS.primary : COLORS.textMuted,
+                }}>
+                New family
+              </button>
+            </div>
+
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: COLORS.textSecondary, display: "block", marginBottom: 4 }}>
                 Member Name
@@ -1568,47 +1594,124 @@ const UserManagementPage: React.FC = () => {
                 style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
                   fontSize: 13, boxSizing: "border-box" }} />
             </div>
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: COLORS.textSecondary, display: "block", marginBottom: 4 }}>
-                Family Head
-              </label>
-              <select value={fixHeadId} onChange={e => setFixHeadId(e.target.value)}
-                style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
-                  fontSize: 13, background: "#fff" }}>
-                <option value="">— Select head —</option>
-                {families.map(f => (
-                  <option key={f.id} value={String(f.id)}>{f.name} ({f.phone})</option>
-                ))}
-              </select>
-            </div>
+
+            {fixMode === "existing" ? (
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: COLORS.textSecondary, display: "block", marginBottom: 4 }}>
+                  Family Head
+                </label>
+                <select value={fixHeadId} onChange={e => setFixHeadId(e.target.value)}
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
+                    fontSize: 13, background: "#fff" }}>
+                  <option value="">— Select head —</option>
+                  {families.map(f => (
+                    <option key={f.id} value={String(f.id)}>{f.name} ({f.phone})</option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <>
+                <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 10 }}>
+                  This creates a brand-new family/Chanda record for {fixingMember.name || fixingMember.phone} and links this login to it.
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: COLORS.textSecondary, display: "block", marginBottom: 4 }}>
+                    Family Phone
+                  </label>
+                  <input value={fixNewFamilyPhone} onChange={e => setFixNewFamilyPhone(e.target.value)}
+                    placeholder={fixingMember.phone}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
+                      fontSize: 13, boxSizing: "border-box" }} />
+                </div>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: COLORS.textSecondary, display: "block", marginBottom: 4 }}>
+                    Monthly Amount
+                  </label>
+                  <input type="number" value={fixNewFamilyAmount} onChange={e => setFixNewFamilyAmount(e.target.value)}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
+                      fontSize: 13, boxSizing: "border-box" }} />
+                </div>
+              </>
+            )}
+
+            {fixError && (
+              <div style={{ fontSize: 12, color: COLORS.danger, marginBottom: 12 }}>{fixError}</div>
+            )}
+
             <div style={{ display: "flex", gap: 8 }}>
-              <button disabled={fixBusy || !fixHeadId}
+              <button disabled={fixBusy || (fixMode === "existing" ? !fixHeadId : !fixName.trim())}
                 onClick={async () => {
-                  if (!fixHeadId || !fixingMember) return;
+                  if (!fixingMember) return;
                   setFixBusy(true);
+                  setFixError(null);
                   try {
-                    await assignFamily(fixingMember.id, parseInt(fixHeadId), fixName || undefined);
+                    if (fixMode === "existing") {
+                      if (!fixHeadId) return;
+                      await assignFamily(fixingMember.id, parseInt(fixHeadId), fixName || undefined);
+                    } else {
+                      const newFamily = await createFamily({
+                        name: fixName.trim() || fixingMember.name || fixingMember.phone,
+                        phone: fixNewFamilyPhone.trim() || fixingMember.phone,
+                        monthly_amount: parseFloat(fixNewFamilyAmount) || 0,
+                      });
+                      await assignFamily(fixingMember.id, newFamily.id, fixName || undefined);
+                    }
                     setFixingMember(null);
                     fetchData();
                   } catch (e: any) {
-                    alert(e?.response?.data?.detail || "Failed to assign");
+                    setFixError(e?.response?.data?.detail || "Failed to save");
                   } finally { setFixBusy(false); }
                 }}
                 style={{
                   flex: 1, padding: "9px 0", background: COLORS.primaryLight,
                   border: `1px solid ${COLORS.primaryBorder}`, borderRadius: 10,
                   fontWeight: 700, fontSize: 13, color: COLORS.primary, cursor: "pointer",
-                  opacity: fixBusy || !fixHeadId ? 0.5 : 1,
+                  opacity: fixBusy || (fixMode === "existing" ? !fixHeadId : !fixName.trim()) ? 0.5 : 1,
                 }}>
                 {fixBusy ? "Saving…" : "Save"}
               </button>
-              <button onClick={() => setFixingMember(null)}
+              <button onClick={() => { setFixingMember(null); setFixError(null); }}
                 style={{
                   flex: 1, padding: "9px 0", background: COLORS.tableHeader,
                   border: `1px solid ${COLORS.border}`, borderRadius: 10,
                   fontWeight: 600, fontSize: 13, color: COLORS.textMuted, cursor: "pointer",
                 }}>
                 Cancel
+              </button>
+            </div>
+
+            <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${COLORS.border}`, display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ fontSize: 11, color: COLORS.textMuted }}>Not a family member?</div>
+              <button disabled={fixBusy}
+                onClick={async () => {
+                  if (!fixingMember) return;
+                  setFixBusy(true);
+                  setFixError(null);
+                  try {
+                    await dismissFamilyFlag(fixingMember.id);
+                    setUsers(prev => prev.map(u => u.id === fixingMember.id ? { ...u, head_phone: null } as User : u));
+                    setFixingMember(null);
+                  } catch (e: any) {
+                    setFixError(e?.response?.data?.detail || "Failed to dismiss");
+                  } finally { setFixBusy(false); }
+                }}
+                style={{
+                  padding: "7px 0", background: "none", border: `1px solid ${COLORS.border}`, borderRadius: 8,
+                  fontSize: 12, fontWeight: 600, color: COLORS.textSecondary, cursor: "pointer",
+                }}>
+                Dismiss — this account has no family
+              </button>
+              <button disabled={fixBusy}
+                onClick={() => {
+                  const target = fixingMember;
+                  setFixingMember(null);
+                  if (target) { setDeletingUser(target); setDeleteUserError(null); }
+                }}
+                style={{
+                  padding: "7px 0", background: "none", border: `1px solid ${COLORS.danger}`, borderRadius: 8,
+                  fontSize: 12, fontWeight: 600, color: COLORS.danger, cursor: "pointer",
+                }}>
+                🗑 Remove this account entirely
               </button>
             </div>
           </div>

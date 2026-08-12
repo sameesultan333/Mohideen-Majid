@@ -56,6 +56,16 @@ export const assignFamily = async (
   return data;
 };
 
+/** Not every "not linked to a family" flag is a real family - some are just
+ * staff who left the committee and were never meant to be a Chanda payer.
+ * Clears the flag without creating a false family link. */
+export const dismissFamilyFlag = async (
+  userId: number
+): Promise<{ ok: boolean; user_id: number }> => {
+  const { data } = await api.patch(`/users/${userId}/dismiss-family-flag`);
+  return data;
+};
+
 export const repairMemberLinks = async () => {
   const { data } = await api.post("/users/repair-member-links");
   return data;

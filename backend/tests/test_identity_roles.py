@@ -111,6 +111,25 @@ def test_assign_family_links_both_directions(env):
     assert "head" in role_rows
 
 
+def test_dismiss_family_flag_clears_head_phone_without_touching_family_id(env):
+    """Some 'not linked to a family' flags are just staff who left the
+    committee and were never meant to be a Chanda payer - forcing a pick
+    from the existing-heads dropdown would create a false link. Dismissing
+    must only clear head_phone, leaving role/family_id/everything else."""
+    client, db, current = env
+    db.add(models.User(id=5, name="Ex Staff No Family", phone="9000000005",
+                       password="x", role="member", head_phone="9000000005", is_active=True))
+    db.commit()
+
+    resp = client.patch("/users/5/dismiss-family-flag")
+    assert resp.status_code == 200, resp.text
+
+    u = db.query(models.User).filter_by(id=5).first()
+    assert u.head_phone is None
+    assert u.family_id is None
+    assert u.role == "member"
+
+
 def test_assign_family_promotes_plain_member_to_head(env):
     """A staff member removed from the committee with no other relationship
     falls back to the neutral "member" placeholder. Linking them to a Chanda

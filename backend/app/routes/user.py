@@ -109,6 +109,30 @@ def repair_member_links(
     return {"broken_count": len(fixed), "records": fixed}
 
 
+# ── DISMISS a "not linked to a family" flag ──────────────────────────────────────
+@router.patch("/{user_id}/dismiss-family-flag")
+def dismiss_family_flag(
+    user_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_superadmin),
+):
+    """
+    Not every account with `head_phone == phone` and no `family_id` is a
+    broken self-registration - some are simply staff who left the committee
+    and were never meant to be a Chanda payer at all. Forcing an admin to
+    pick *some* family for them just to clear the warning would create a
+    false Chanda Head link. This clears `head_phone` so the account no
+    longer matches the broken-registration heuristic, without touching
+    family_id, role, or any payment/Chanda data.
+    """
+    u = db.query(models.User).filter_by(id=user_id).first()
+    if not u:
+        raise HTTPException(404, "User not found")
+    u.head_phone = None
+    db.commit()
+    return {"ok": True, "user_id": u.id}
+
+
 # ── ASSIGN member to a head ─────────────────────────────────────────────────────
 @router.patch("/{user_id}/assign-family")
 def assign_family(
