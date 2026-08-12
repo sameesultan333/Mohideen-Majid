@@ -45,19 +45,54 @@ def list_staff(
     current_user: dict = Depends(require_superadmin),
 ):
     """
-    Returns every user whose role is superadmin / admin / imam / collector.
-    Ordered: superadmin → admin → imam → collector, then alphabetically by name.
+    Returns every user whose (primary) role is superadmin / admin / imam /
+    collector.
+
+    Used to also require `family_id IS NULL` - meaning the moment a staff
+    member was linked to a Chanda Head, they vanished from this page
+    entirely, despite still holding full admin/imam/collector permissions.
+    That is the direct cause of "the same person ends up as two identities":
+    the admin managing staff could no longer see or manage that person as
+    staff at all, so the only visible way to give them staff access again
+    looked like creating a second account. A person is staff because of
+    their role, not because of whether they also happen to be a Chanda payer.
     """
     staff = (
         db.query(models.User)
-        .filter(
-            models.User.role.in_(["superadmin", "admin", "imam", "collector"]),
-            models.User.family_id.is_(None),
-        )
+        .filter(models.User.role.in_(["superadmin", "admin", "imam", "collector"]))
         .all()
     )
     staff.sort(key=lambda u: (ROLE_ORDER.get(u.role, 99), u.name.lower()))
-    return staff
+
+    roles_by_user = {}
+    if staff:
+        for row in db.query(models.UserRoleEntry).filter(
+            models.UserRoleEntry.user_id.in_([u.id for u in staff])
+        ).all():
+            roles_by_user.setdefault(row.user_id, []).append(row.role)
+
+    heads_by_id = {
+        h.id: h for h in db.query(models.ApprovedHead).filter(
+            models.ApprovedHead.id.in_([u.family_id for u in staff if u.family_id])
+        ).all()
+    } if any(u.family_id for u in staff) else {}
+
+    return [
+        {
+            "id": u.id, "name": u.name, "phone": u.phone, "role": u.role,
+            "is_active": u.is_active, "phone_verified": u.phone_verified,
+            "last_login": u.last_login, "created_at": u.created_at,
+            # Primary `role` column is always authoritative and must always
+            # appear here even if user_roles never got a matching row for it
+            # (e.g. assign_family only inserts a "head" row, not one for
+            # whatever staff role the account already had) - otherwise a
+            # staff member's own role can silently vanish from this list.
+            "roles": sorted(set(roles_by_user.get(u.id, [])) | {u.role}),
+            "family_id": u.family_id,
+            "chanda_no": heads_by_id[u.family_id].chanda_no if u.family_id in heads_by_id else None,
+        }
+        for u in staff
+    ]
 
 
 # ─────────────────────────────────────────────────────────────
@@ -266,3 +301,80 @@ def delete_staff(
     })
 
     return {"message": f"{role.capitalize()} {name} deleted successfully"}
+
+
+# ─────────────────────────────────────────────────────────────
+# PATCH /admin/staff/{id}/remove-role — leave the committee, keep the person
+# ─────────────────────────────────────────────────────────────
+@router.patch("/{staff_id}/remove-role", summary="Remove committee/staff role, keep the account")
+def remove_staff_role(
+    staff_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_superadmin),
+):
+    """
+    Someone leaving the mosque committee stops being staff - it does not stop
+    them being a person the mosque has a record of. Delete/Disable were the
+    only two actions available, and both are wrong for this: Delete removes
+    the account outright (blocked anyway once they have any payment/family
+    history), and Disable locks them out of the app entirely, including their
+    own Chanda payment history if they are also a Chanda Head.
+
+    This removes only the staff role (admin/imam/collector) from `user_roles`
+    and recomputes the account's primary `role` from whatever remains -
+    "head" if they have a family/Chanda relationship, otherwise the next
+    highest-priority role still on the account. Login, family_id,
+    ApprovedHead link and every payment record are untouched.
+    """
+    staff = db.query(models.User).filter_by(id=staff_id).first()
+    if not staff:
+        raise HTTPException(404, "Staff member not found")
+    if staff.role == "superadmin":
+        raise HTTPException(403, "Cannot remove a superadmin's role this way")
+    if staff_id == _actor_id(current_user):
+        raise HTTPException(400, "You cannot remove your own staff role")
+
+    removed_role = staff.role
+    db.query(models.UserRoleEntry).filter_by(user_id=staff_id, role=removed_role).delete()
+
+    remaining = [r.role for r in db.query(models.UserRoleEntry).filter_by(user_id=staff_id).all()]
+
+    if staff.family_id and "head" not in remaining:
+        # Bidirectional link is the source of truth even if user_roles
+        # somehow never had a "head" row for a pre-existing link.
+        remaining.append("head")
+        if not db.query(models.UserRoleEntry).filter_by(user_id=staff_id, role="head").first():
+            db.add(models.UserRoleEntry(user_id=staff_id, role="head"))
+
+    if not remaining:
+        db.rollback()
+        raise HTTPException(
+            400,
+            f"{staff.name} has no other role or Chanda Head relationship. "
+            "Removing their staff role would leave the account with no "
+            "purpose - use Disable or Delete instead, or link them to a "
+            "Chanda Head first if they should remain a payer.",
+        )
+
+    new_primary = min(remaining, key=lambda r: ROLE_ORDER.get(r, 99))
+    old_role = staff.role
+    staff.role = new_primary
+    db.commit()
+    db.refresh(staff)
+
+    write_audit(
+        db, "users", staff.id, "update",
+        old_values={"role": old_role},
+        new_values={"role": new_primary, "removed_role": removed_role},
+        performed_by_id=_actor_id(current_user),
+        note=f"Removed {removed_role} role from {staff.name}; now {new_primary}",
+    )
+
+    manager.publish_sync("admin", "staff_role_removed", {
+        "staff_id": staff.id,
+        "name": staff.name,
+        "removed_role": removed_role,
+        "new_role": new_primary,
+    })
+
+    return {"ok": True, "staff_id": staff.id, "removed_role": removed_role, "new_role": new_primary}

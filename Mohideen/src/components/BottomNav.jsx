@@ -89,15 +89,24 @@ function buildTabs(rawRole, rawRoles, t) {
 
   // Admin: religious management + member-facing Deen/Donation screens.
   if (isAdmin) {
-    return [
+    const tabs = [
       { screen: "Home",         type: "home",       label: t("nav.home") },
       { screen: "Prayer",       type: "prayerTime", label: t("nav.prayerTime") },
       { screen: "Deen",         type: "deen",       label: t("nav.deen") },
       { screen: "Announcement", type: "news",       label: t("nav.news") },
       { screen: "Donation",     type: "donate",     label: t("nav.donate") },
-      { screen: "Editable",     type: "editable",   label: t("nav.edit") },
       { screen: "Profile",      type: "profile",    label: t("nav.profile") },
     ];
+    // EditableOptionsScreen's own access check (canAccessEditable) only
+    // admits imam/modhin/watchman/superadmin - a plain admin has never been
+    // allowed past it. This tab used to show for every admin regardless,
+    // which meant tapping it led nowhere for anyone who wasn't also one of
+    // those roles. Multi-role aware: an admin who is ALSO imam (a real,
+    // supported combination) still sees it.
+    if (hasRole("imam", "modhin", "watchman")) {
+      tabs.splice(5, 0, { screen: "Editable", type: "editable", label: t("nav.edit") });
+    }
+    return tabs;
   }
 
   // Imam

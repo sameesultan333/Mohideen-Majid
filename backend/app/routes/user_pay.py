@@ -334,7 +334,7 @@ async def user_pay(
 
             collected_by=db_user.name,
 
-            collected_at=None,
+            collected_at=created_at,
 
             proof_image=filepath,
 

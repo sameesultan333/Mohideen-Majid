@@ -229,18 +229,20 @@ async def collect_payment(
     db_user = db.query(models.User).filter_by(id=int(user.get("sub"))).first()
     collector_name = db_user.name if db_user else "Collector"
     created_at = utc_now_naive()
-    # collected_at = the actual wall-clock time the collector submits.
-    # collected_date (YYYY-MM-DD) is used only to derive the start_month for coverage;
-    # it must NOT become the collected_at timestamp or the admin log shows midnight.
+    # collected_at = when the money was actually collected. Defaults to the
+    # server-stamped submission time, but a collector recording an old family's
+    # historical payment can supply an earlier collected_date (the "Collection
+    # Date" field) — that date must drive which financial period this payment
+    # counts toward, not just which coverage months it fills. created_at keeps
+    # recording the real "entered into the system" moment regardless.
     collected_at = created_at
-
-    # Parse collected_date only for start_month derivation (now mostly superseded by months_list)
     _visit_date_for_month: str | None = None
     if data.collected_date:
         try:
             cd = data.collected_date.strip()
-            d_only = datetime.strptime(cd[:10], "%Y-%m-%d")
-            _visit_date_for_month = india_month_key(d_only)
+            parsed = datetime.fromisoformat(cd.replace("Z", "+00:00"))
+            collected_at = parse_frontend_datetime(parsed) or created_at
+            _visit_date_for_month = india_month_key(datetime.strptime(cd[:10], "%Y-%m-%d"))
         except Exception:
             pass
     coverage_map = {}

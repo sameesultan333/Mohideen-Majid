@@ -235,6 +235,14 @@ def finance_dashboard(
     # "actual money received," so migration rows are excluded here the same way
     # for all of them, not just the one that happened to be reported broken.
     _is_live = func.coalesce(PE.payment_source, "app") != "import"
+    # collected_at = when the money was actually received (operator-editable,
+    # defaults to submission time). created_at = when the row was inserted.
+    # A collector/admin entering an old family's historical payment today sets
+    # collected_at to the real past date; that date, not today's created_at,
+    # must decide which financial period (and Collector Payout) this money
+    # belongs to. Falls back to created_at only for older rows/self-pay where
+    # collected_at was never set.
+    _collection_moment = func.coalesce(PE.collected_at, PE.created_at)
 
     def _cash_flow(since: datetime, until: datetime) -> dict:
         """`until` is required, not optional. It used to default to "no upper
@@ -261,8 +269,8 @@ def finance_dashboard(
         ).filter(
             PE.status == "verified",
             _is_live,
-            PE.created_at >= since,
-            PE.created_at < until,
+            _collection_moment >= since,
+            _collection_moment < until,
         )
         r = q.one()
         return {
@@ -469,15 +477,14 @@ def weekly_collections(
 ):
     """Rolling last-7-calendar-days collection total.
 
-    Grouped by `created_at` — the real, server-stamped transaction moment —
-    not `collected_at`, which an operator can backdate. This used to coalesce
-    to `collected_at` first, so a payment actually taken today but entered
-    with an earlier collection date would land on the wrong day here while
-    every other "actual money received" figure (cash-flow panel, Finance
-    Timeline, receipts) already used `created_at`. Excludes historical/import
-    rows the same way: they represent coverage established on migration, not
-    money received this week."""
-    paid_date = models.PaymentEntry.created_at
+    Grouped by `collected_at` (falling back to `created_at` when unset) — the
+    date the money was actually received, not when the row was inserted. A
+    collector/admin backdating an old family's payment must have it land on
+    the day it was really collected, matching the cash-flow panel and
+    Collector Payout. Excludes historical/import rows the same way: they
+    represent coverage established on migration, not money received this
+    week."""
+    paid_date = func.coalesce(models.PaymentEntry.collected_at, models.PaymentEntry.created_at)
     end = to_india(utc_now()).date()
     start = end - timedelta(days=6)
 
@@ -508,11 +515,11 @@ def yearly_collections(
     current year. Always returns all 12 slots, zero-filled for months with
     no payments — never omits an empty month.
 
-    Grouped by `created_at`, same reasoning as weekly_collections above: the
-    real transaction moment, not the operator-editable collected_at, and
-    excluding historical/import rows so a multi-month migration import does
-    not appear as revenue landing in whichever months it happens to cover."""
-    paid_date = models.PaymentEntry.created_at
+    Grouped by `collected_at` (falling back to `created_at`), same reasoning
+    as weekly_collections above, and excluding historical/import rows so a
+    multi-month migration import does not appear as revenue landing in
+    whichever months it happens to cover."""
+    paid_date = func.coalesce(models.PaymentEntry.collected_at, models.PaymentEntry.created_at)
     target_year = year or to_india(utc_now()).year
 
     rows = (
@@ -1800,8 +1807,9 @@ def analytics_report(
     all_payments = db.query(models.PaymentEntry).filter_by(status="verified").all()
     yearly_chanda: dict[int, float] = defaultdict(float)
     for p in all_payments:
-        if p.created_at:
-            yearly_chanda[p.created_at.year] += p.amount
+        _moment = p.collected_at or p.created_at
+        if _moment:
+            yearly_chanda[_moment.year] += p.amount
     all_expense_records = db.query(models.Expense).all()
     yearly_expense: dict[int, float] = defaultdict(float)
     for e in all_expense_records:
@@ -2233,8 +2241,15 @@ def get_collections(
     current_user: dict = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """Collection history — all verified payments with full details."""
+    """Collection history / Finance Timeline — all verified payments with full details.
+
+    Filtered and sorted by `collected_at` (falling back to `created_at`) —
+    the date the money was actually received — so a historical payment
+    entered today under an earlier collection date is classified under the
+    period it was really collected in, not today.
+    """
     from sqlalchemy.orm import joinedload
+    _moment = func.coalesce(models.PaymentEntry.collected_at, models.PaymentEntry.created_at)
     q = (
         db.query(models.PaymentEntry)
         .options(joinedload(models.PaymentEntry.head))
@@ -2246,16 +2261,16 @@ def get_collections(
         q = q.filter(models.PaymentEntry.method == method)
     if from_date:
         try:
-            q = q.filter(models.PaymentEntry.created_at >= datetime.fromisoformat(from_date))
+            q = q.filter(_moment >= datetime.fromisoformat(from_date))
         except ValueError:
             pass
     if to_date:
         try:
-            q = q.filter(models.PaymentEntry.created_at <= datetime.fromisoformat(to_date))
+            q = q.filter(_moment <= datetime.fromisoformat(to_date))
         except ValueError:
             pass
     total = q.count()
-    entries = q.order_by(models.PaymentEntry.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
+    entries = q.order_by(_moment.desc()).offset((page - 1) * per_page).limit(per_page).all()
     return {
         "total": total,
         "page": page,
@@ -2342,8 +2357,8 @@ def get_finance_timeline(
             .filter(models.PaymentEntry.status == "verified")
         )
         if method:     q = q.filter(models.PaymentEntry.method == method)
-        if from_dt:    q = q.filter(models.PaymentEntry.created_at >= from_dt)
-        if to_dt:      q = q.filter(models.PaymentEntry.created_at <= to_dt)
+        if from_dt:    q = q.filter(func.coalesce(models.PaymentEntry.collected_at, models.PaymentEntry.created_at) >= from_dt)
+        if to_dt:      q = q.filter(func.coalesce(models.PaymentEntry.collected_at, models.PaymentEntry.created_at) <= to_dt)
         if created_by: q = q.filter(models.PaymentEntry.created_by == created_by)
         for p in q.all():
             name = p.head.name if p.head else (p.collected_by or "Unknown")

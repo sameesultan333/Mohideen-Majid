@@ -1,19 +1,22 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import {
   Plus, Search, RefreshCw, MoreVertical, Pencil, Ban, CheckCircle2,
-  Trash2, AlertTriangle, Users, X,
+  Trash2, AlertTriangle, Users, X, Link2, UserMinus,
 } from "lucide-react";
-import type { Staff, CreateStaffPayload, UpdateStaffPayload } from "../../api/staff";
+import type { Staff, CreateStaffPayload, UpdateStaffPayload, UserRole } from "../../api/staff";
 import {
   getStaff,
   createStaff,
   updateStaff,
   toggleStaffStatus,
   deleteStaff,
+  removeStaffRole,
 } from "../../api/staff";
+import { assignFamily } from "../../api/users";
 import { COLORS, TYPOGRAPHY } from "../../theme/colors";
 import AddEditStaffDialog from "../../components/AddEditStaffDialog";
 import DeleteStaffDialog from "../../components/DeleteStaffDialog";
+import LinkChandaHeadDialog from "../../components/LinkChandaHeadDialog";
 import { makeSearchMatcher } from "../../utils/search";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -462,6 +465,8 @@ const StaffManagementPage: React.FC = () => {
   const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
   const [showDelete, setShowDelete] = useState(false);
   const [deletingStaff, setDeletingStaff] = useState<Staff | null>(null);
+  const [showLinkHead, setShowLinkHead] = useState(false);
+  const [linkingStaff, setLinkingStaff] = useState<Staff | null>(null);
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -583,6 +588,50 @@ const StaffManagementPage: React.FC = () => {
     }
   };
 
+  const handleOpenLinkHead = (staffMember: Staff) => {
+    setLinkingStaff(staffMember);
+    setShowLinkHead(true);
+    setOpenMenuId(null);
+  };
+
+  const handleConfirmLinkHead = async (headId: number) => {
+    if (!linkingStaff) return;
+    const result = await assignFamily(linkingStaff.id, headId);
+    setStaff((prev) => prev.map((s) =>
+      s.id === linkingStaff.id
+        ? { ...s, family_id: headId, roles: s.roles.includes("head") ? s.roles : [...s.roles, "head"] }
+        : s
+    ));
+    setShowLinkHead(false);
+    setLinkingStaff(null);
+    void result;
+  };
+
+  // Leaving the committee removes only the staff role - the account, login,
+  // Chanda Head link and payment history all stay. Distinct from Delete
+  // (removes the account) and Disable (locks out the whole account).
+  const handleRemoveStaffRole = async (staffMember: Staff) => {
+    if (staffMember.role === "superadmin") return;
+    if (!window.confirm(
+      `Remove ${staffMember.name} from the committee?\n\n` +
+      `Their staff/${staffMember.role} role will be removed. Their login and ` +
+      `Chanda Head relationship (if any) are kept - they are not deleted or disabled.`
+    )) return;
+    try {
+      const result = await removeStaffRole(staffMember.id);
+      if (["admin", "imam", "collector", "superadmin"].includes(result.new_role)) {
+        setStaff((prev) => prev.map((s) => (s.id === staffMember.id ? { ...s, role: result.new_role as UserRole } : s)));
+      } else {
+        // No longer staff by role - drops off this list, same as any
+        // ordinary Chanda Head/member would.
+        setStaff((prev) => prev.filter((s) => s.id !== staffMember.id));
+      }
+      setOpenMenuId(null);
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || err.message || "Failed to remove staff role");
+    }
+  };
+
   const renderRoleChip = (role: string) => {
     let bg: string = COLORS.primaryLight;
     let color: string = COLORS.primary;
@@ -635,6 +684,8 @@ const StaffManagementPage: React.FC = () => {
     const canDelete = !isSuperAdmin;
     const canDisable = !isSuperAdmin && staffMember.is_active;
     const canEnable = !isSuperAdmin && !staffMember.is_active;
+    const canRemoveRole = !isSuperAdmin;
+    const canLinkHead = !staffMember.family_id;
     const isOpen = openMenuId === staffMember.id;
 
     const handleButtonClick = (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -665,6 +716,24 @@ const StaffManagementPage: React.FC = () => {
         >
           <Pencil size={isDesktop ? 15 : 17} /> Edit
         </button>
+        {canLinkHead && (
+          <button
+            type="button"
+            style={isDesktop ? styles.actionItem : styles.sheetItem}
+            onClick={() => handleOpenLinkHead(staffMember)}
+          >
+            <Link2 size={isDesktop ? 15 : 17} /> Link to Chanda Head
+          </button>
+        )}
+        {canRemoveRole && (
+          <button
+            type="button"
+            style={isDesktop ? styles.actionItem : styles.sheetItem}
+            onClick={() => handleRemoveStaffRole(staffMember)}
+          >
+            <UserMinus size={isDesktop ? 15 : 17} /> Remove from committee
+          </button>
+        )}
         {canDisable && (
           <button
             type="button"
@@ -975,7 +1044,14 @@ const StaffManagementPage: React.FC = () => {
                     </div>
                   </td>
                   <td style={styles.td}>{staffMember.phone || "—"}</td>
-                  <td style={styles.td}>{renderRoleChips(staffMember)}</td>
+                  <td style={styles.td}>
+                    {renderRoleChips(staffMember)}
+                    {staffMember.family_id && (
+                      <div style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 3 }}>
+                        Chanda No. {staffMember.chanda_no}
+                      </div>
+                    )}
+                  </td>
                   <td style={styles.td}>{renderStatusChip(staffMember.is_active)}</td>
                   <td style={styles.td}>{formatDate(staffMember.created_at)}</td>
                   <td style={styles.td}>{renderActions(staffMember)}</td>
@@ -1045,6 +1121,18 @@ const StaffManagementPage: React.FC = () => {
           onConfirm={handleConfirmDelete}
           staffName={deletingStaff.name || "Unnamed"}
           staffRole={deletingStaff.role}
+        />
+      )}
+
+      {showLinkHead && linkingStaff && (
+        <LinkChandaHeadDialog
+          open={showLinkHead}
+          onClose={() => {
+            setShowLinkHead(false);
+            setLinkingStaff(null);
+          }}
+          onConfirm={handleConfirmLinkHead}
+          staffName={linkingStaff.name || "Unnamed"}
         />
       )}
     </div>

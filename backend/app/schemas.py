@@ -139,6 +139,16 @@ class StaffOut(BaseModel):
     phone_verified: bool
     last_login: Optional[UTCDateTime] = None
     created_at: Optional[UTCDateTime] = None
+    # All roles this account actually holds, not just the primary `role` -
+    # a staff member who is also a Chanda Head has both "admin" and "head"
+    # here, so the admin UI can show that rather than only ever the one
+    # primary role.
+    roles: list[str] = []
+    # Whether this staff account is also linked to a Chanda Head/family, and
+    # which one - lets the Staff page show "Chanda Head" and offer the right
+    # action (unlink vs link) instead of guessing from role alone.
+    family_id: Optional[int] = None
+    chanda_no: Optional[str] = None
 
     class Config:
         from_attributes = True

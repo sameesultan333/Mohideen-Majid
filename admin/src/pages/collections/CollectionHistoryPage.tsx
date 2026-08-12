@@ -36,6 +36,27 @@ function RollbackPendingTag() {
 const fmt = (n: number | null | undefined) =>
   `₹${Math.abs(n ?? 0).toLocaleString("en-IN")}`;
 
+/**
+ * The actual actor, straight from `created_by` — set once at transaction
+ * creation time by whichever route recorded the payment (collector, admin,
+ * self-pay, or historical import), never guessed here.
+ *
+ * This used to be `created_by !== "user" ? "Collector" : "Self (mobile app)"`,
+ * which mislabeled every non-self-pay source as "Collector" — an admin
+ * recording a payment, and a historical migration import, both showed as a
+ * collector transaction despite `created_by` already holding the correct
+ * value ("admin" / "migration") the whole time.
+ */
+function sourceLabel(createdBy: string | null | undefined): string {
+  switch (createdBy) {
+    case "user":      return "Self (mobile app)";
+    case "collector": return "Collector";
+    case "admin":     return "Admin";
+    case "migration": return "Historical Migration";
+    default:          return createdBy || "—";
+  }
+}
+
 function fmtDT(iso: string | null | undefined) {
   if (!iso) return "—";
   const s = /[Zz]|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : iso + "Z";
@@ -217,7 +238,7 @@ function DetailPanel({ entry, onClose, onRequested }: { entry: TimelineEntry | n
   };
 
   const detailRows = [
-    entry.entry_type === "chanda" && { label: "Source",            value: entry.created_by !== "user" ? "Collector" : "Self (mobile app)" },
+    entry.entry_type === "chanda" && { label: "Source",            value: sourceLabel(entry.created_by) },
     entry.entry_type === "chanda" && { label: "Collected by",      value: entry.collected_by || "—" },
     entry.entry_type === "donation" && { label: "Donor",           value: entry.head_name },
     entry.entry_type === "donation" && { label: "Purpose",         value: entry.purpose || "—" },
@@ -672,6 +693,7 @@ export default function CollectionHistoryPage() {
               <option value="collector">Collector</option>
               <option value="user">Self (app)</option>
               <option value="admin">Admin</option>
+              <option value="migration">Historical Migration</option>
             </select>
           </div>
           <div style={{ minWidth: 0 }}>
@@ -810,7 +832,7 @@ export default function CollectionHistoryPage() {
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.text }}>{e.head_name}</div>
                     <div style={{ fontSize: 11, color: COLORS.textMuted }}>
-                      {e.entry_type === "chanda" ? (e.created_by !== "user" ? "Collector" : "App self-pay") : meta.label}
+                      {e.entry_type === "chanda" ? sourceLabel(e.created_by) : meta.label}
                       {e.entry_type === "chanda" && e.proof_image && <ImageIcon size={11} color={COLORS.primary} style={{ marginLeft: 4 }} />}
                     </div>
                     {e.rollback_status === "pending" && (

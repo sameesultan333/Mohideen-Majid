@@ -10,11 +10,17 @@ export interface Staff {
   name: string;
   phone: string | null;
   role: UserRole;
-  roles: UserRole[];
+  // Not narrowed to UserRole: a staff account that is also a Chanda Head
+  // legitimately carries "head" here alongside their staff role(s).
+  roles: string[];
   is_active: boolean;
   phone_verified: boolean;
   last_login: string | null;
   created_at: string;
+  /** Set once this staff account is also linked to a Chanda Head/family -
+   * the same person, not a second identity. */
+  family_id: number | null;
+  chanda_no: string | null;
 }
 
 /** Flow A: assign a staff role to a mosque member (existing user). */
@@ -74,6 +80,15 @@ export const updateStaff = async (staffId: number, payload: UpdateStaffPayload):
 
 export const toggleStaffStatus = async (staffId: number): Promise<Staff> => {
   const response = await api.patch<Staff>(`/admin/staff/${staffId}/status`);
+  return response.data;
+};
+
+/** Leave the committee, keep the account: removes only the staff/committee
+ * role. Login, Chanda Head link and payment history are untouched. */
+export const removeStaffRole = async (
+  staffId: number
+): Promise<{ ok: boolean; removed_role: string; new_role: string }> => {
+  const response = await api.patch(`/admin/staff/${staffId}/remove-role`);
   return response.data;
 };
 

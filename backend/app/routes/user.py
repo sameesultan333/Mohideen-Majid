@@ -117,19 +117,62 @@ def assign_family(
     db: Session = Depends(get_db),
     user: dict = Depends(require_superadmin),
 ):
-    """Assign a member to a family head by head_id."""
+    """
+    Link an existing login (member OR staff/admin) to a Chanda Head/family
+    record, as one person rather than two disconnected identities.
+
+    This used to only set `u.family_id` — the reverse link (`head.user_id`)
+    was never written, so `ApprovedHead.is_registered`/`.user_id` kept
+    reporting the family as unclaimed even after a user was pointed at it,
+    and the person's roles never gained "head": anything that checked
+    `head.user_id` or the role list independently of `family_id` (occupancy
+    counts, registration status, role-gated screens) still disagreed with
+    what `family_id` said. A staff account linked this way also silently lost
+    nothing - their existing admin/imam/collector role(s) are untouched;
+    "head" is added alongside them, never replacing them.
+
+    Refuses instead of silently merging when either side is already linked to
+    someone else - a mismatch there means the wrong two records were picked,
+    and guessing which one to overwrite is exactly the kind of unverified
+    identity merge this must never do.
+    """
     u = db.query(models.User).filter_by(id=user_id).first()
     if not u:
         raise HTTPException(404, "User not found")
     head = db.query(models.ApprovedHead).filter_by(id=data.head_id).first()
     if not head:
         raise HTTPException(404, "Head not found")
+
+    if u.family_id and u.family_id != head.id:
+        raise HTTPException(
+            400,
+            f"{u.name} is already linked to a different family (id {u.family_id}). "
+            "Unlink first if this is really the same person.",
+        )
+    if head.user_id and head.user_id != u.id:
+        other = db.query(models.User).filter_by(id=head.user_id).first()
+        raise HTTPException(
+            400,
+            f"This family is already claimed by {other.name if other else 'another user'}. "
+            "Unlink that account first if this is really the same person.",
+        )
+
     u.family_id = head.id
     u.head_phone = head.phone
     if data.name:
         u.name = data.name
     elif u.name == u.phone:
         u.name = head.name  # fallback: use head name if member name is still phone number
+
+    head.user_id = u.id
+    head.is_registered = True
+
+    # Adds "head" alongside whatever roles the account already has (staff,
+    # admin, ...) - never replaces u.role, which is why an admin who is also
+    # a Chanda Head keeps full admin access after this call.
+    if not db.query(models.UserRoleEntry).filter_by(user_id=u.id, role="head").first():
+        db.add(models.UserRoleEntry(user_id=u.id, role="head", assigned_by_id=int(user["sub"])))
+
     db.commit()
     return {"ok": True, "user_id": u.id, "family_id": head.id, "head_name": head.name}
 
