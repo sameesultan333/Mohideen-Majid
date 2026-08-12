@@ -356,9 +356,14 @@ def test_migration_import_rejects_invalid_range(env):
     ).count() == 0
 
 
-def test_old_month_grid_import_still_works_unchanged(env):
-    """Backward compatibility: a sheet using the old per-month columns must
-    behave exactly as before."""
+def test_bare_month_name_columns_are_no_longer_accepted(env):
+    """The old month-grid columns (a bare "august" meaning "August of
+    whatever `year` was passed") are removed entirely, not kept as a second
+    option. That ambiguity is exactly what silently dropped every 2027 month
+    for a family imported as "June 2026 - June 2027". A sheet using the old
+    header now creates the family (chanda_no/name/monthly_amount still work)
+    but produces no payment at all, rather than a payment that might land in
+    the wrong year with no way to tell."""
     client, db, current = env
     current["user"] = SUPERADMIN
     csv = "chanda_no,name,monthly_amount,august\nCH-902,Old Style,300,300\n"
@@ -369,10 +374,42 @@ def test_old_month_grid_import_still_works_unchanged(env):
     )
     assert resp.status_code == 200, resp.text
     head = db.query(models.ApprovedHead).filter_by(chanda_no="CH-902").first()
+    assert head is not None
+    payments = db.query(models.PaymentEntry).filter_by(head_id=head.id).all()
+    assert len(payments) == 0, f"bare month-name column should be inert now: {payments}"
+
+
+def test_year_boundary_coverage_range(env):
+    """The exact scenario reported: December 2026 -> June 2027 must create
+    ALL months as one financial transaction, correctly split across the
+    calendar-year boundary with no special-casing."""
+    client, db, current = env
+    current["user"] = SUPERADMIN
+    csv = (
+        "chanda_no,name,monthly_amount,total_paid,coverage_start,coverage_end\n"
+        "CH-903,Year Crosser,200,1400,2026-12,2027-06\n"  # Dec..Jun = 7 months x 200
+    )
+    resp = client.post(
+        "/admin/upload-heads",
+        files={"file": ("cross.csv", csv, "text/csv")},
+        params={"year": 2026},
+    )
+    assert resp.status_code == 200, resp.text
+    head = db.query(models.ApprovedHead).filter_by(chanda_no="CH-903").first()
     payments = db.query(models.PaymentEntry).filter_by(head_id=head.id).all()
     assert len(payments) == 1
-    assert payments[0].amount == 300.0
-    assert payments[0].covered_months == ["2026-08"]
+    assert payments[0].covered_months == [
+        "2026-12", "2027-01", "2027-02", "2027-03", "2027-04", "2027-05", "2027-06",
+    ]
+    cols = {c.month: c.status for c in db.query(models.ChandaCollection).filter_by(head_id=head.id).all()}
+    for m in payments[0].covered_months:
+        assert cols[m] == "paid", f"{m} not marked paid: {cols}"
+
+    # And none of it is live cash in any of those months.
+    for m in ("2026-12", "2027-01", "2027-06"):
+        cf = client.get("/finance/dashboard", params={"month": m}).json()
+        assert cf["collection_periods"]["this_month"]["cash"] == 0.0
+        assert cf["collector_payout"]["amount"] == 0.0
 
 
 # ── street filter: /chanda/members must carry street ─────────────────────────

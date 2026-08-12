@@ -509,20 +509,16 @@ async def upload_heads(
         db.add(head)
         db.flush()
 
-        historical = {
-            label: row.get(label)
-            for label in HISTORICAL_MONTHS
-            if label in df.columns
-        }
-        if historical:
-            _create_historical_records(
-                db, head, historical, year, receipt_seq_cache=receipt_seq_cache
-            )
-
         # Yearly-migration columns: a single lump sum covering a month range,
-        # e.g. "already paid ₹12,000 for June 2026 - June 2027". Independent of
-        # the month-grid columns above — a sheet can use either shape, and in
-        # practice will only ever use one, but nothing stops both being present.
+        # e.g. "already paid ₹12,000 for June 2026 - June 2027".
+        #
+        # The bare month-name columns (january..december against one `year`
+        # query param) used to be accepted here too, and that is exactly what
+        # broke: "june" only ever meant "June of `year`" - there was no way to
+        # write December 2026 and June 2027 in the same file, so anything past
+        # December silently never got created. Removed entirely rather than
+        # kept as a second option, so there is only one way to express
+        # coverage in a sheet and it can never be year-ambiguous again.
         if {"total_paid", "coverage_start", "coverage_end"}.issubset(df.columns):
             raw_total = row.get("total_paid")
             try:
