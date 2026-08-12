@@ -146,6 +146,37 @@ def _create_historical_records(
             )
 
 
+_MONTH_NAMES = {
+    "january": 1, "jan": 1, "february": 2, "feb": 2, "march": 3, "mar": 3,
+    "april": 4, "apr": 4, "may": 5, "june": 6, "jun": 6, "july": 7, "jul": 7,
+    "august": 8, "aug": 8, "september": 9, "sep": 9, "sept": 9,
+    "october": 10, "oct": 10, "november": 11, "nov": 11, "december": 12, "dec": 12,
+}
+
+
+def parse_month_header(label: str) -> str | None:
+    """
+    "January 2026" -> "2026-01". Returns None if `label` is not a
+    "<Month name> <4-digit year>" header.
+
+    The year comes only from the text of the header itself — nothing here
+    ever falls back to a `year` parameter or any other assumption, which is
+    what let the old importer conflate "January" 2026 with "January" 2027
+    once a sheet needed to express more than one calendar year. Whatever year
+    is written in the header is the year that gets used, for any month, any
+    year, indefinitely — no code change is needed for the next migration to
+    cover 2028, 2029, or beyond.
+    """
+    import re as _re
+    m = _re.match(r"^([A-Za-z]+)\s+(\d{4})$", label.strip())
+    if not m:
+        return None
+    month_num = _MONTH_NAMES.get(m.group(1).strip().lower())
+    if month_num is None:
+        return None
+    return f"{m.group(2)}-{month_num:02d}"
+
+
 def _valid_month_key(value: str) -> bool:
     try:
         y, m = value.split("-")
@@ -252,6 +283,115 @@ def _create_migration_record(
         note=f"Historical migration ({coverage_start} to {coverage_end})",
     )
     return None
+
+
+def _create_year_qualified_migration_record(
+    db: Session,
+    head: models.ApprovedHead,
+    *,
+    month_amounts: dict[str, float],   # "2026-01" -> 200.0, already year-qualified
+    collection_date: datetime | None,
+    note: str | None,
+    receipt_seq_cache: dict[str, int],
+) -> dict:
+    """
+    Historical import driven by the Excel's own per-month amounts (headers
+    like "January 2026" .. "June 2027"), not an even split of a lump sum.
+
+    Every non-zero cell keeps the exact amount it was entered with — there is
+    no `monthly_amount x months` calculation and no redistribution, so a
+    sheet where March was ₹0 and April was ₹1,000 comes through exactly that
+    way. Still exactly ONE PaymentEntry per family regardless of how many
+    months it covers, for the same reason as _create_migration_record above:
+    a single deposit of historical information must not turn into a dozen
+    separate rows across the Finance Timeline, defaulter reports and payout
+    accounting.
+
+    Idempotent: any month whose ChandaCollection is already `status == "paid"`
+    is dropped before allocating, so re-running the same file a second time
+    adds nothing to months already covered by the first run — no double
+    payment, no inflated total_paid.
+
+    Returns {"created": [...], "skipped_already_paid": [...], "error": str|None}.
+    """
+    if not month_amounts:
+        return {"created": [], "skipped_already_paid": [], "error": None}
+
+    months = sorted(month_amounts.keys())
+
+    existing_status = {
+        c.month: c.status
+        for c in db.query(models.ChandaCollection)
+        .filter(models.ChandaCollection.head_id == head.id,
+                models.ChandaCollection.month.in_(months))
+        .all()
+    }
+
+    already_paid = [m for m in months if existing_status.get(m) == "paid"]
+    to_allocate = {m: amt for m, amt in month_amounts.items() if m not in already_paid}
+
+    if not to_allocate:
+        return {"created": [], "skipped_already_paid": already_paid, "error": None}
+
+    monthly_amount = round(float(head.monthly_amount or 0), 2)
+    for m in to_allocate:
+        if m not in existing_status:
+            col = models.ChandaCollection(
+                head_id=head.id, month=m,
+                amount_due=monthly_amount, total_paid=0, status="pending",
+                rate_snapshot=monthly_amount,
+            )
+            db.add(col)
+    db.flush()
+
+    apply_coverage_to_existing_collections(db, head.id, to_allocate)
+
+    allocated = round(sum(to_allocate.values()), 2)
+    covered_keys = sorted(to_allocate.keys())
+    fully_paid_count = (
+        db.query(models.ChandaCollection)
+        .filter(
+            models.ChandaCollection.head_id == head.id,
+            models.ChandaCollection.month.in_(covered_keys),
+            models.ChandaCollection.status == "paid",
+        )
+        .count()
+    )
+
+    now = datetime.utcnow()
+    collected_at = collection_date or datetime.strptime(covered_keys[0] + "-01", "%Y-%m-%d")
+
+    payment = models.PaymentEntry(
+        collection_id=None,
+        head_id=head.id,
+        amount=allocated,
+        method="cash",
+        created_at=now,
+        collected_by="migration",
+        collected_at=collected_at,
+        status="verified",
+        created_by="migration",
+        verified_by="migration",
+        verified_at=now,
+        receipt_id=generate_receipt_id(db, prefix="CH", created_at=now, seq_cache=receipt_seq_cache),
+        purpose="Monthly Chanda",
+        months_covered=fully_paid_count,
+        covered_months=covered_keys,
+        coverage_map=to_allocate,
+        payment_source="import",
+        receipt_status="historical_import",
+        rollback_status=None,
+        notes=note or f"Historical migration import: {covered_keys[0]} to {covered_keys[-1]}",
+    )
+    db.add(payment)
+    db.flush()
+    write_ledger(
+        db, "chanda", "income", allocated,
+        family_id=head.id, payment_entry_id=payment.id,
+        month=covered_keys[0],
+        note=f"Historical migration ({covered_keys[0]} to {covered_keys[-1]})",
+    )
+    return {"created": covered_keys, "skipped_already_paid": already_paid, "error": None}
 
 
 def _create_missing_import_months(
@@ -378,8 +518,35 @@ async def upload_heads(
 
     receipt_seq_cache: dict[str, int] = {}
 
+    # Year-qualified month columns, e.g. "January 2026" -> "2026-01". Detected
+    # once up front rather than per row, since the header row doesn't change.
+    # A column that merely looks month-shaped but doesn't parse (a bare
+    # "January" with no year, "Jan-27", stray text) is deliberately NOT
+    # guessed at - it's reported back so the admin can see it was ignored,
+    # rather than silently assumed to belong to `year`, which is the exact
+    # ambiguity this format exists to eliminate.
+    month_columns: dict[str, str] = {}       # column name -> "YYYY-MM"
+    unparsed_month_like_columns: list[str] = []
+    _bare_month_names = set(_MONTH_NAMES.keys())
+    for col in df.columns:
+        parsed = parse_month_header(col)
+        if parsed:
+            month_columns[col] = parsed
+        elif col.strip().lower() in _bare_month_names:
+            unparsed_month_like_columns.append(col)
+
+    coverage_created_count = 0
+    coverage_by_month: dict[str, int] = {}
+    coverage_skipped_already_paid = 0
+    coverage_families = 0
+
     inserted = updated = skipped = 0
     errors: list[str] = []
+    if unparsed_month_like_columns:
+        errors.append(
+            "Ignored bare month-name column(s) with no year — rename to "
+            f"e.g. 'January 2026': {', '.join(unparsed_month_like_columns)}"
+        )
 
     # Detailed duplicate phone report
     phone_duplicates: list[dict] = []
@@ -483,43 +650,92 @@ async def upload_heads(
             skipped += 1
             continue
 
-        # ── Update pre-existing family (existed before this import) ──────────
-        if chanda_no in preexisting_chanda:
+        # ── Update pre-existing family, OR insert new ─────────────────────────
+        # Coverage/migration columns are read below for BOTH cases, not just
+        # new families. Restricting it to new-family inserts only (as the old
+        # code did) meant re-importing the same file for a family that
+        # already existed never even reached the idempotency check — there
+        # was nothing there to protect against double-counting because the
+        # coverage logic simply never ran a second time. A real migration
+        # workflow needs exactly the opposite: run the same or an updated
+        # sheet again and have already-paid months skipped, new months added.
+        is_new_family = chanda_no not in preexisting_chanda
+        if not is_new_family:
             existing_head = existing_heads_by_chanda.get(chanda_no)
-            if existing_head:
-                # Only fill in phone if the family has none and the number is free
-                if phone and not existing_head.phone:
-                    existing_head.phone = phone
-                    existing_phones[phone] = {"chanda_no": chanda_no, "name": name}
-                if monthly_amount > 0:
-                    existing_head.monthly_amount = monthly_amount
-                if zone and not existing_head.zone:
-                    existing_head.zone = zone
-                if street and not existing_head.street:
-                    existing_head.street = street
-                updated += 1
-            continue
+            if not existing_head:
+                continue
+            # Only fill in phone if the family has none and the number is free
+            if phone and not existing_head.phone:
+                existing_head.phone = phone
+                existing_phones[phone] = {"chanda_no": chanda_no, "name": name}
+            if monthly_amount > 0:
+                existing_head.monthly_amount = monthly_amount
+            if zone and not existing_head.zone:
+                existing_head.zone = zone
+            if street and not existing_head.street:
+                existing_head.street = street
+            updated += 1
+            head = existing_head
+        else:
+            head = models.ApprovedHead(
+                chanda_no=chanda_no, name=name, phone=phone,
+                address=address, zone=zone, street=street, monthly_amount=monthly_amount,
+                registration_date=_import_start_date(year),
+            )
+            db.add(head)
+            db.flush()
 
-        # ── Insert new family ─────────────────────────────────────────────────
-        head = models.ApprovedHead(
-            chanda_no=chanda_no, name=name, phone=phone,
-            address=address, zone=zone, street=street, monthly_amount=monthly_amount,
-            registration_date=_import_start_date(year),
-        )
-        db.add(head)
-        db.flush()
+        # Year-qualified per-month columns ("January 2026" .. "June 2027") —
+        # the primary historical-migration format. Each cell's amount is kept
+        # exactly as entered; nothing here averages, redistributes, or infers
+        # a year from `year`. A blank cell or an explicit 0 means "not paid
+        # this month" and creates no allocation for it.
+        raw_cdate = row.get("collection_date")
+        collection_date = None
+        if raw_cdate is not None and str(raw_cdate).strip().lower() not in ("", "nan", "none", "nat"):
+            parsed_cdate = pd.to_datetime(raw_cdate, errors="coerce")
+            if pd.notna(parsed_cdate):
+                collection_date = parsed_cdate.to_pydatetime()
+        raw_note = row.get("notes")
+        note = (str(raw_note).strip()
+                if raw_note is not None and str(raw_note).strip().lower() not in ("", "nan", "none")
+                else None)
 
-        # Yearly-migration columns: a single lump sum covering a month range,
-        # e.g. "already paid ₹12,000 for June 2026 - June 2027".
-        #
-        # The bare month-name columns (january..december against one `year`
-        # query param) used to be accepted here too, and that is exactly what
-        # broke: "june" only ever meant "June of `year`" - there was no way to
-        # write December 2026 and June 2027 in the same file, so anything past
-        # December silently never got created. Removed entirely rather than
-        # kept as a second option, so there is only one way to express
-        # coverage in a sheet and it can never be year-ambiguous again.
-        if {"total_paid", "coverage_start", "coverage_end"}.issubset(df.columns):
+        if month_columns:
+            month_amounts: dict[str, float] = {}
+            for col, month_key in month_columns.items():
+                raw_amt = row.get(col)
+                if raw_amt is None:
+                    continue
+                try:
+                    amt = float(raw_amt)
+                except (ValueError, TypeError):
+                    errors.append(f"Row {row_num}: non-numeric amount in '{col}' — treated as unpaid")
+                    continue
+                if _math.isnan(amt) or _math.isinf(amt) or amt <= 0:
+                    continue  # blank or explicit 0 -> not paid, per confirmed business rule
+                month_amounts[month_key] = amt
+
+            result = _create_year_qualified_migration_record(
+                db, head,
+                month_amounts=month_amounts,
+                collection_date=collection_date,
+                note=note,
+                receipt_seq_cache=receipt_seq_cache,
+            )
+            if result["created"]:
+                coverage_families += 1
+                coverage_created_count += len(result["created"])
+                for m in result["created"]:
+                    coverage_by_month[m] = coverage_by_month.get(m, 0) + 1
+            coverage_skipped_already_paid += len(result["skipped_already_paid"])
+
+        # Yearly-migration columns (legacy, lump-sum shape): a single total
+        # covering a month range, e.g. "already paid ₹12,000 for June 2026 -
+        # June 2027" with no per-month breakdown available. Only used when the
+        # sheet has no year-qualified month columns at all — a file should
+        # use one shape or the other, not both.
+        elif {"total_paid", "coverage_start", "coverage_end"}.issubset(df.columns):
             raw_total = row.get("total_paid")
             try:
                 total_paid = float(raw_total) if raw_total is not None else 0.0
@@ -530,16 +746,8 @@ async def upload_heads(
 
             cov_start = str(row.get("coverage_start", "")).strip()
             cov_end   = str(row.get("coverage_end", "")).strip()
-
-            raw_cdate = row.get("collection_date")
-            collection_date = None
-            if raw_cdate is not None and str(raw_cdate).strip().lower() not in ("", "nan", "none", "nat"):
-                parsed_cdate = pd.to_datetime(raw_cdate, errors="coerce")
-                if pd.notna(parsed_cdate):
-                    collection_date = parsed_cdate.to_pydatetime()
-
-            raw_note = row.get("notes")
-            note = str(raw_note).strip() if raw_note is not None and str(raw_note).strip().lower() not in ("", "nan", "none") else None
+            # collection_date / note already parsed above, shared with the
+            # year-qualified-columns branch.
 
             if total_paid > 0 or cov_start or cov_end:
                 mig_err = _create_migration_record(
@@ -554,19 +762,20 @@ async def upload_heads(
                 if mig_err:
                     errors.append(f"Row {row_num}: migration import skipped — {mig_err}")
 
-        # Imported families should behave like the other family-creation flows,
-        # but without the per-month existence query cost of the generic helper.
-        _create_missing_import_months(
-            db,
-            head,
-            start_month=import_start_month,
-            end_month=current_month,
-        )
-
-        if phone:
-            seen_in_batch[phone] = {"chanda_no": chanda_no, "name": name}
-        imported_chanda.add(chanda_no)
-        inserted += 1
+        if is_new_family:
+            # Imported families should behave like the other family-creation
+            # flows, but without the per-month existence query cost of the
+            # generic helper.
+            _create_missing_import_months(
+                db,
+                head,
+                start_month=import_start_month,
+                end_month=current_month,
+            )
+            if phone:
+                seen_in_batch[phone] = {"chanda_no": chanda_no, "name": name}
+            imported_chanda.add(chanda_no)
+            inserted += 1
 
     db.commit()
 
@@ -606,6 +815,16 @@ async def upload_heads(
         },
         "phone_duplicates":  phone_duplicates,
         "chanda_duplicates": chanda_duplicates,
+        # Historical migration coverage — lets the admin confirm the far end
+        # of a multi-year import (e.g. "did June 2027 actually get created?")
+        # without opening the database.
+        "coverage_import": {
+            "families_with_coverage": coverage_families,
+            "coverage_records_created": coverage_created_count,
+            "by_month": dict(sorted(coverage_by_month.items())),
+            "skipped_already_paid": coverage_skipped_already_paid,
+            "ignored_month_columns_no_year": unparsed_month_like_columns,
+        },
     }
 
 

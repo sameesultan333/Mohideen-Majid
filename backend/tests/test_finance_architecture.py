@@ -438,3 +438,135 @@ def test_head_out_schema_includes_street(env):
     assert out.street == "Gandhi Street", (
         f"HeadOut dropped street entirely: {out.model_dump()}"
     )
+
+
+# ── Year-qualified month-header importer ──────────────────────────────────────
+
+def test_year_qualified_headers_create_exact_per_month_amounts(env):
+    """The critical case: Chanda No. 1017-style family, January 2026 through
+    June 2027, each month with its own amount from the sheet — not an even
+    split, not derived from monthly_amount x months."""
+    client, db, current = env
+    current["user"] = SUPERADMIN
+
+    cols = ["chanda_no", "name", "monthly_amount",
+            "January 2026", "February 2026", "March 2026", "April 2026",
+            "May 2026", "June 2026", "July 2026", "August 2026",
+            "September 2026", "October 2026", "November 2026", "December 2026",
+            "January 2027", "February 2027", "March 2027", "April 2027",
+            "May 2027", "June 2027"]
+    # March 2026 deliberately 0, everything else 200 — proves amounts are
+    # preserved exactly, not assumed uniform.
+    vals = ["T-1017", "S. Seyad Naseer", "200",
+            "200", "200", "0", "200", "200", "200", "200", "200",
+            "200", "200", "200", "200",
+            "200", "200", "200", "200", "200", "200"]
+    csv = ",".join(cols) + "\n" + ",".join(vals) + "\n"
+
+    resp = client.post("/admin/upload-heads", files={"file": ("y.csv", csv, "text/csv")},
+                        params={"year": 2026})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+
+    head = db.query(models.ApprovedHead).filter_by(chanda_no="T-1017").first()
+    assert head is not None
+
+    payments = db.query(models.PaymentEntry).filter_by(head_id=head.id).all()
+    assert len(payments) == 1, f"expected exactly 1 PaymentEntry, got {len(payments)}"
+    p = payments[0]
+
+    expected_months = [f"2026-{m:02d}" for m in range(1, 13) if m != 3] + [f"2027-{m:02d}" for m in range(1, 7)]
+    assert sorted(p.covered_months) == sorted(expected_months), p.covered_months
+    assert "2026-03" not in p.covered_months, "0-amount month must not be covered"
+    assert p.amount == 200.0 * 17  # 18 months minus the one ₹0 month
+    assert p.coverage_map["2026-01"] == 200.0
+    assert p.coverage_map.get("2026-03") is None
+
+    # January-June 2027 specifically present and paid.
+    cols27 = {c.month: c.status for c in db.query(models.ChandaCollection)
+              .filter(models.ChandaCollection.head_id == head.id,
+                      models.ChandaCollection.month.like("2027-%")).all()}
+    for m in ("2027-01", "2027-02", "2027-03", "2027-04", "2027-05", "2027-06"):
+        assert cols27.get(m) == "paid", f"{m} missing or not paid: {cols27}"
+
+    # March 2026 stays pending — 0 must not fabricate a paid month.
+    mar = db.query(models.ChandaCollection).filter_by(head_id=head.id, month="2026-03").first()
+    assert mar is not None and mar.status == "pending"
+
+    # Report reflects it.
+    cov = body["coverage_import"]
+    assert cov["families_with_coverage"] == 1
+    assert cov["coverage_records_created"] == 17
+    assert cov["by_month"]["2027-06"] == 1
+
+
+def test_reimporting_same_file_does_not_double_count(env):
+    """Idempotency: running the identical file twice must not add a second
+    PaymentEntry or double the total_paid on any month."""
+    client, db, current = env
+    current["user"] = SUPERADMIN
+    csv = ("chanda_no,name,monthly_amount,January 2026,February 2026\n"
+           "T-500,Repeat Family,300,300,300\n")
+
+    r1 = client.post("/admin/upload-heads", files={"file": ("a.csv", csv, "text/csv")}, params={"year": 2026})
+    assert r1.status_code == 200, r1.text
+    head = db.query(models.ApprovedHead).filter_by(chanda_no="T-500").first()
+
+    r2 = client.post("/admin/upload-heads", files={"file": ("b.csv", csv, "text/csv")}, params={"year": 2026})
+    assert r2.status_code == 200, r2.text
+
+    payments = db.query(models.PaymentEntry).filter_by(head_id=head.id).all()
+    assert len(payments) == 1, f"re-import created a duplicate payment: {len(payments)}"
+
+    col = db.query(models.ChandaCollection).filter_by(head_id=head.id, month="2026-01").first()
+    assert col.total_paid == 300.0, f"total_paid doubled on re-import: {col.total_paid}"
+
+    assert r2.json()["coverage_import"]["skipped_already_paid"] == 2
+
+
+def test_partial_reimport_only_adds_new_months(env):
+    """A file re-imported after a month was already paid, with a NEW month
+    added, must only create the new month - not touch the old one again."""
+    client, db, current = env
+    current["user"] = SUPERADMIN
+    csv1 = "chanda_no,name,monthly_amount,January 2026\nT-600,Grower,100,100\n"
+    r1 = client.post("/admin/upload-heads", files={"file": ("a.csv", csv1, "text/csv")}, params={"year": 2026})
+    assert r1.status_code == 200, r1.text
+    head = db.query(models.ApprovedHead).filter_by(chanda_no="T-600").first()
+
+    csv2 = "chanda_no,name,monthly_amount,January 2026,February 2026\nT-600,Grower,100,100,100\n"
+    r2 = client.post("/admin/upload-heads", files={"file": ("b.csv", csv2, "text/csv")}, params={"year": 2026})
+    assert r2.status_code == 200, r2.text
+
+    payments = db.query(models.PaymentEntry).filter_by(head_id=head.id).order_by(models.PaymentEntry.id).all()
+    assert len(payments) == 2, "the new month should create a second, separate payment entry"
+    assert payments[1].covered_months == ["2026-02"]
+    assert payments[1].amount == 100.0
+
+    jan = db.query(models.ChandaCollection).filter_by(head_id=head.id, month="2026-01").first()
+    assert jan.total_paid == 100.0, "January must not be double-counted on the second import"
+
+
+def test_bare_month_name_without_year_is_reported_not_guessed(env):
+    client, db, current = env
+    current["user"] = SUPERADMIN
+    csv = "chanda_no,name,monthly_amount,January\nT-700,No Year,100,100\n"
+    resp = client.post("/admin/upload-heads", files={"file": ("c.csv", csv, "text/csv")}, params={"year": 2026})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["coverage_import"]["ignored_month_columns_no_year"] == ["january"]
+    assert any("January" in e for e in body["errors"])
+    head = db.query(models.ApprovedHead).filter_by(chanda_no="T-700").first()
+    assert db.query(models.PaymentEntry).filter_by(head_id=head.id).count() == 0
+
+
+def test_year_qualified_does_not_leak_into_live_cash_or_payout(env):
+    client, db, current = env
+    current["user"] = SUPERADMIN
+    csv = "chanda_no,name,monthly_amount,August 2026\nT-800,Historical,500,5000\n"
+    resp = client.post("/admin/upload-heads", files={"file": ("d.csv", csv, "text/csv")}, params={"year": 2026})
+    assert resp.status_code == 200, resp.text
+
+    d = client.get("/finance/dashboard", params={"month": "2026-08"}).json()
+    assert d["collection_periods"]["this_month"]["cash"] == 0.0
+    assert d["collector_payout"]["amount"] == 0.0

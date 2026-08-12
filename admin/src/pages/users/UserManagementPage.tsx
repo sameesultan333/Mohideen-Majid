@@ -762,6 +762,13 @@ const UserManagementPage: React.FC = () => {
       families_without_phone_na: number;
     };
     skipped_breakdown?: { duplicate_chanda_numbers: number; invalid_rows: number };
+    coverage_import?: {
+      families_with_coverage: number;
+      coverage_records_created: number;
+      by_month: Record<string, number>;
+      skipped_already_paid: number;
+      ignored_month_columns_no_year: string[];
+    };
     chanda_duplicates?: {
       chanda_no: string;
       first_row: number;
@@ -1348,6 +1355,33 @@ const UserManagementPage: React.FC = () => {
             <div style={{ marginTop: 8, fontSize: 12, color: "inherit", opacity: 0.85 }}>
               Skipped breakdown: <b>{importResult.skipped_breakdown.duplicate_chanda_numbers}</b> duplicate Chanda Numbers
               {" · "}<b>{importResult.skipped_breakdown.invalid_rows}</b> invalid rows
+            </div>
+          )}
+
+          {importResult.coverage_import && importResult.coverage_import.coverage_records_created > 0 && (
+            <details style={{ marginTop: 10 }} open>
+              <summary style={{ cursor: "pointer", fontWeight: 700 }}>
+                📅 Historical coverage: {importResult.coverage_import.coverage_records_created} month(s) imported
+                across {importResult.coverage_import.families_with_coverage} famil{importResult.coverage_import.families_with_coverage === 1 ? "y" : "ies"}
+                {importResult.coverage_import.skipped_already_paid > 0 && (
+                  <> · {importResult.coverage_import.skipped_already_paid} already-paid month(s) skipped (re-import, no double-count)</>
+                )}
+              </summary>
+              {/* The whole point of this panel: confirm the far end of a
+                  multi-year import (e.g. "did June 2027 actually get
+                  created?") without opening the database. */}
+              <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: "4px 12px", fontSize: 12 }}>
+                {Object.entries(importResult.coverage_import.by_month).map(([month, count]) => (
+                  <span key={month}><b>{month}</b>: {count}</span>
+                ))}
+              </div>
+            </details>
+          )}
+
+          {importResult.coverage_import && importResult.coverage_import.ignored_month_columns_no_year.length > 0 && (
+            <div style={{ marginTop: 10, background: "#FFF3E0", border: "1px solid #FFB74D", borderRadius: 8, padding: "8px 10px", fontSize: 12, color: "#7A4A00" }}>
+              ⚠ Ignored column(s) with no year — rename to e.g. "January 2026" and re-import if this data matters:{" "}
+              <b>{importResult.coverage_import.ignored_month_columns_no_year.join(", ")}</b>
             </div>
           )}
 
