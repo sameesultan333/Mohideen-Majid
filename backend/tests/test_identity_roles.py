@@ -171,15 +171,18 @@ def test_remove_staff_role_keeps_account_and_head_link(env):
     assert not any(s["id"] == 2 for s in staff_list)
 
 
-def test_remove_staff_role_refuses_when_nothing_would_remain(env):
-    """A staff member with no family_id and no other role has nowhere to
-    land - must be refused rather than silently orphaned."""
+def test_remove_staff_role_falls_back_to_member_when_nothing_else_remains(env):
+    """A staff member with no family_id and no other role simply becomes an
+    ordinary mosque-app member - not refused, not deleted, not disabled."""
     client, db, current = env
     resp = client.patch("/admin/staff/2/remove-role")
-    assert resp.status_code == 400, resp.text
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["new_role"] == "member"
 
     u = db.query(models.User).filter_by(id=2).first()
-    assert u.role == "admin", "role must be unchanged after the refusal"
+    assert u.role == "member"
+    assert u.is_active is True
+    assert u.password == "x", "login must still work"
 
 
 def test_remove_staff_role_picks_next_highest_role_when_multiple_remain(env):

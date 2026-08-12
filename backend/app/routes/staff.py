@@ -347,14 +347,14 @@ def remove_staff_role(
             db.add(models.UserRoleEntry(user_id=staff_id, role="head"))
 
     if not remaining:
-        db.rollback()
-        raise HTTPException(
-            400,
-            f"{staff.name} has no other role or Chanda Head relationship. "
-            "Removing their staff role would leave the account with no "
-            "purpose - use Disable or Delete instead, or link them to a "
-            "Chanda Head first if they should remain a payer.",
-        )
+        # No other staff role and no Chanda Head link - they simply stop
+        # being staff and become an ordinary mosque-app member, the same
+        # role a self-registered user gets (auth.py register()). This is
+        # not "no purpose": the account, login, and any future Chanda Head
+        # link they may get later all still work under "member". Disable/
+        # Delete stay available separately for someone who should lose
+        # access entirely.
+        remaining = ["member"]
 
     new_primary = min(remaining, key=lambda r: ROLE_ORDER.get(r, 99))
     old_role = staff.role
