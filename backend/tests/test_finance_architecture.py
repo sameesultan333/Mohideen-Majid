@@ -570,3 +570,58 @@ def test_year_qualified_does_not_leak_into_live_cash_or_payout(env):
     d = client.get("/finance/dashboard", params={"month": "2026-08"}).json()
     assert d["collection_periods"]["this_month"]["cash"] == 0.0
     assert d["collector_payout"]["amount"] == 0.0
+
+
+# ── Excel-reformatted / date-typed month headers ──────────────────────────────
+
+def test_hyphenated_short_month_headers_parsed(env):
+    """Excel silently rewrites a typed "January 2026" header into "Jan-2026"
+    display text. That must parse identically to the full spelled-out form."""
+    client, db, current = env
+    current["user"] = SUPERADMIN
+    csv = "chanda_no,name,monthly_amount,Jan-2026,Feb-2026\nT-9001,Short Header,100,100,100\n"
+    resp = client.post("/admin/upload-heads", files={"file": ("s.csv", csv, "text/csv")}, params={"year": 2026})
+    assert resp.status_code == 200, resp.text
+    head = db.query(models.ApprovedHead).filter_by(chanda_no="T-9001").first()
+    payments = db.query(models.PaymentEntry).filter_by(head_id=head.id).all()
+    assert len(payments) == 1
+    assert sorted(payments[0].covered_months) == ["2026-01", "2026-02"]
+    assert resp.json()["coverage_import"]["coverage_records_created"] == 2
+
+
+def test_excel_date_typed_headers_parsed(env):
+    """When the header CELL itself is Excel-date-formatted (not just styled
+    text), openpyxl/pandas hands the column back as a real datetime object,
+    not a string. This must resolve directly from year/month, not break the
+    "strip/lower" step every other column goes through."""
+    import io as _io
+    import datetime as _dt
+    import pandas as _pd
+
+    client, db, current = env
+    current["user"] = SUPERADMIN
+
+    df = _pd.DataFrame({
+        "chanda_no": ["T-9002"],
+        "name": ["Date Header"],
+        "monthly_amount": [150],
+        _dt.datetime(2026, 6, 1): [150],
+        _dt.datetime(2026, 7, 1): [150],
+        "August 2026": [150],   # mixed with an ordinary text header in the same file
+    })
+    buf = _io.BytesIO()
+    df.to_excel(buf, index=False)
+    buf.seek(0)
+
+    resp = client.post(
+        "/admin/upload-heads",
+        files={"file": ("dates.xlsx", buf.read(),
+                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        params={"year": 2026},
+    )
+    assert resp.status_code == 200, resp.text
+    head = db.query(models.ApprovedHead).filter_by(chanda_no="T-9002").first()
+    assert head is not None, resp.text
+    payments = db.query(models.PaymentEntry).filter_by(head_id=head.id).all()
+    assert len(payments) == 1, resp.json()
+    assert sorted(payments[0].covered_months) == ["2026-06", "2026-07", "2026-08"]

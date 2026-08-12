@@ -154,21 +154,46 @@ _MONTH_NAMES = {
 }
 
 
+def _normalize_column_label(col) -> str:
+    """
+    A header Excel stores as an actual date value comes back from pandas as a
+    real Timestamp/datetime, not text — resolved directly from its year/month
+    here, which sidesteps text parsing (and any of its ambiguity) entirely.
+    Every other header is stripped and lowercased, as before.
+    """
+    import datetime as _dt
+    if isinstance(col, (pd.Timestamp, _dt.datetime, _dt.date)):
+        return f"{col.year}-{col.month:02d}"
+    return str(col).strip().lower()
+
+
 def parse_month_header(label: str) -> str | None:
     """
-    "January 2026" -> "2026-01". Returns None if `label` is not a
-    "<Month name> <4-digit year>" header.
+    "January 2026", "Jan 2026", and "Jan-2026" all -> "2026-01". Returns None
+    if `label` is not a recognizable "<month> <4-digit year>" header.
 
-    The year comes only from the text of the header itself — nothing here
-    ever falls back to a `year` parameter or any other assumption, which is
-    what let the old importer conflate "January" 2026 with "January" 2027
-    once a sheet needed to express more than one calendar year. Whatever year
-    is written in the header is the year that gets used, for any month, any
-    year, indefinitely — no code change is needed for the next migration to
-    cover 2028, 2029, or beyond.
+    Handles Excel's habit of silently reformatting a typed header like
+    "January 2026" into short display text such as "Jan-2026" — the parser
+    accepts full or abbreviated month names with either a space or a hyphen
+    before the year, so the sheet doesn't break just because Excel redrew the
+    column label. A column already resolved to "YYYY-MM" by
+    _normalize_column_label (a true date-typed header) also matches here
+    unchanged, since "2026" doesn't parse as a month name and falls through
+    to the plain YYYY-MM check.
+
+    The year always comes from the header itself — nothing here ever falls
+    back to a `year` parameter or any other assumption, which is what let the
+    old importer conflate "January" 2026 with "January" 2027 once a sheet
+    needed to express more than one calendar year. Works for any month, any
+    year, indefinitely — no code change needed for 2028, 2029, or beyond.
     """
     import re as _re
-    m = _re.match(r"^([A-Za-z]+)\s+(\d{4})$", label.strip())
+    text = label.strip()
+
+    if _valid_month_key(text):
+        return text
+
+    m = _re.match(r"^([A-Za-z]+)[\s\-]+(\d{4})$", text)
     if not m:
         return None
     month_num = _MONTH_NAMES.get(m.group(1).strip().lower())
@@ -453,7 +478,16 @@ async def upload_heads(
 ):
     try:
         df = pd.read_csv(file.file) if file.filename.endswith(".csv") else pd.read_excel(file.file)
-        df.columns = df.columns.str.strip().str.lower()
+        # Excel auto-converts a typed header like "January 2026" into either
+        # display text such as "Jan-2026" or, if the cell is formatted as a
+        # date, an actual date/datetime VALUE rather than a string at all -
+        # pandas then hands that column back as a real Timestamp, not text.
+        # `.str.strip()` on the raw Index breaks the moment one column isn't
+        # a string, so every column is normalized through one place first:
+        # a real date/Timestamp header is resolved directly from its
+        # year/month (skips text parsing entirely, so it can't be misread),
+        # anything else is stripped and lowercased as before.
+        df.columns = [_normalize_column_label(c) for c in df.columns]
     except Exception as e:
         raise HTTPException(400, f"Invalid file: {e}")
 
