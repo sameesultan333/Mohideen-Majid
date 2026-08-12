@@ -28,6 +28,41 @@ const fmt = (n: number | null | undefined) =>
   `₹${(n ?? 0).toLocaleString("en-IN")}`;
 
 const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+/** One tile in the member history grid. Shared by the fixed 12-month grid and
+ * the extra tiles appended for months paid ahead of the current year. */
+function renderHistoryTile(key: string, label: string, c: any, isFuture: boolean) {
+  let bg = "#F7F5EF", borderC = "#E7E2D3", textC = "#93998F";
+  if (c?.status === "paid")    { bg = "#E9F5F0"; borderC = "#BFE0D4"; textC = "#0F5C4C"; }
+  if (c?.status === "pending") { bg = "#F8E9E9"; borderC = "#E8BBBB"; textC = "#A13A3A"; }
+
+  const balance = c ? Math.max((c.amount_due ?? 0) - (c.total_paid ?? 0), 0) : 0;
+
+  return (
+    <div key={key} style={{
+      background: bg, border: `1.5px solid ${borderC}`,
+      borderRadius: 12, padding: "12px 12px",
+    }}>
+      <div style={{ fontSize: 12, fontWeight: 800, color: textC,
+        textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: textC, marginTop: 3 }}>
+        {c
+          ? (c.status === "paid" ? "Paid" : "Pending")
+          : isFuture ? "Upcoming" : "—"}
+      </div>
+      {c && (
+        <div style={{ fontFamily: TYPOGRAPHY.fontMono, fontSize: 12, marginTop: 2, color: textC }}>
+          {fmt(c.total_paid)}
+          {balance > 0 && (
+            <div style={{ color: "#A13A3A", fontWeight: 700 }}>
+              bal {fmt(balance)}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 type StatusFilter = "all" | "paid" | "pending";
 
 function useIsMobile() {
@@ -190,38 +225,27 @@ function FamilyDetail({ memberId, memberName, memberNo, memberPhone, monthlyAmou
                   // advance; an unpaid one is not generated yet, so it is never
                   // pending no matter what the API sends back.
                   const c = isFuture && !((row?.total_paid ?? 0) > 0) ? undefined : row;
-
-                  let bg = "#F7F5EF", borderC = "#E7E2D3", textC = "#93998F";
-                  if (c?.status === "paid")    { bg = "#E9F5F0"; borderC = "#BFE0D4"; textC = "#0F5C4C"; }
-                  if (c?.status === "pending") { bg = "#F8E9E9"; borderC = "#E8BBBB"; textC = "#A13A3A"; }
-
-                  const balance = c ? Math.max((c.amount_due ?? 0) - (c.total_paid ?? 0), 0) : 0;
-
-                  return (
-                    <div key={key} style={{
-                      background: bg, border: `1.5px solid ${borderC}`,
-                      borderRadius: 12, padding: "12px 12px",
-                    }}>
-                      <div style={{ fontSize: 12, fontWeight: 800, color: textC,
-                        textTransform: "uppercase", letterSpacing: "0.05em" }}>{name}</div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: textC, marginTop: 3 }}>
-                        {c
-                          ? (c.status === "paid" ? "Paid" : "Pending")
-                          : isFuture ? "Upcoming" : "—"}
-                      </div>
-                      {c && (
-                        <div style={{ fontFamily: TYPOGRAPHY.fontMono, fontSize: 12, marginTop: 2, color: textC }}>
-                          {fmt(c.total_paid)}
-                          {balance > 0 && (
-                            <div style={{ color: "#A13A3A", fontWeight: 700 }}>
-                              bal {fmt(balance)}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
+                  return renderHistoryTile(key, name, c, isFuture);
                 })}
+
+                {/* Advance-paid months beyond this year's December — e.g. a
+                    family that paid through Feb 2027 while it's still 2026.
+                    Appended after the fixed 12 rather than waiting for the
+                    calendar to reach next year, so a lump-sum advance payment
+                    is actually visible where it was paid, not hidden until
+                    real time catches up to it. Once the system clock reaches
+                    that year, `year` above becomes it and these become the
+                    ordinary Jan-Dec tiles — 2026's tiles simply stop being
+                    "this year"; nothing about the underlying data changes or
+                    is ever removed. */}
+                {Object.keys(colMap)
+                  .filter(k => k > `${year}-12` && colMap[k]?.status === "paid")
+                  .sort()
+                  .map(key => {
+                    const [ky, km] = key.split("-");
+                    const label = `${MONTH_NAMES[parseInt(km, 10) - 1]} '${ky.slice(2)}`;
+                    return renderHistoryTile(key, label, colMap[key], false);
+                  })}
               </div>
 
               {/* Pending months list */}
