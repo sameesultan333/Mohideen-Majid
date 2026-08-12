@@ -173,6 +173,15 @@ def assign_family(
     if not db.query(models.UserRoleEntry).filter_by(user_id=u.id, role="head").first():
         db.add(models.UserRoleEntry(user_id=u.id, role="head", assigned_by_id=int(user["sub"])))
 
+    # "member" is a neutral placeholder, not a real privilege - it's what an
+    # account gets by default or after leaving the committee with no other
+    # relationship. Once that account is linked to a Chanda Head, "head" is
+    # the meaningful primary role, so promote it here. Any actual privileged
+    # role (admin/imam/collector/superadmin) is left exactly as-is, matching
+    # the admin+head example above - it must never be demoted by this call.
+    if u.role == "member":
+        u.role = "head"
+
     db.commit()
     return {"ok": True, "user_id": u.id, "family_id": head.id, "head_name": head.name}
 

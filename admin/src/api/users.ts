@@ -76,6 +76,21 @@ export const deleteUser = async (
   return data;
 };
 
+/* ============================================================================
+ * Enable / disable a user account. Reuses the staff status-toggle endpoint —
+ * it only requires superadmin and an existing user id, no staff-role check —
+ * so any account (including one that just left the committee and has no
+ * Chanda Head link) can be locked out without needing to delete it or link
+ * it to a family first.
+ * ========================================================================== */
+
+export const toggleUserStatus = async (
+  userId: number
+): Promise<{ id: number; is_active: boolean }> => {
+  const { data } = await api.patch(`/admin/staff/${userId}/status`);
+  return data;
+};
+
 export const resetUserPassword = async (
   userId: number,
   newPassword: string = "12345678"

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { COLORS, TYPOGRAPHY } from "../../theme/colors";
-import { getUsers, assignFamily, resetUserPassword, deleteUser } from "../../api/users";
+import { getUsers, assignFamily, resetUserPassword, deleteUser, toggleUserStatus } from "../../api/users";
 import api from "../../api/axios";
 import { getFamilies, getFamilyMembers, activateFamily, getZones } from "../../api/families";
 import { getCurrentUser } from "../../api/auth";
@@ -500,10 +500,11 @@ interface DetailPanelProps {
   onDeactivateFamily?: (f: Family) => void;
   onRestoreFamily?: (f: Family) => void;
   onDeleteUser?: (u: User) => void;
+  onToggleUserStatus?: (u: User) => void;
   canManageFamily?: boolean;
 }
 
-const DetailPanel: React.FC<DetailPanelProps> = ({ entry, familyMap, onClose, onSelectMember, isMobile, onResetPassword, onEditFamily, onDeactivateFamily, onRestoreFamily, onDeleteUser, canManageFamily }) => {
+const DetailPanel: React.FC<DetailPanelProps> = ({ entry, familyMap, onClose, onSelectMember, isMobile, onResetPassword, onEditFamily, onDeactivateFamily, onRestoreFamily, onDeleteUser, onToggleUserStatus, canManageFamily }) => {
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
 
@@ -581,6 +582,19 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ entry, familyMap, onClose, on
                   🔑 Reset Password
                 </button>
               )}
+              {onToggleUserStatus && (
+                <button
+                  onClick={() => onToggleUserStatus(user)}
+                  style={{ marginTop: 14, width: "100%", padding: "10px", borderRadius: 10,
+                            border: `1px solid ${COLORS.border}`, background: "none",
+                            color: COLORS.textSecondary, fontWeight: 700, fontSize: 13, cursor: "pointer",
+                            transition: "background 0.2s" }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#F3F4F6"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "none"; }}
+                >
+                  {user.is_active ? "🚫 Disable Account" : "✅ Enable Account"}
+                </button>
+              )}
               {onDeleteUser && (
                 <button
                   onClick={() => onDeleteUser(user)}
@@ -593,6 +607,12 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ entry, familyMap, onClose, on
                 >
                   🗑 Delete Account
                 </button>
+              )}
+              {onDeleteUser && (
+                <div style={{ marginTop: 6, fontSize: 11, color: COLORS.textMuted }}>
+                  Delete only works if this account has no payments, questions, or other
+                  linked records — use Disable instead if it fails.
+                </div>
               )}
             </div>
           )}
@@ -742,6 +762,20 @@ const UserManagementPage: React.FC = () => {
   const [resetTarget, setResetTarget] = useState<User | null>(null);
   const [deletingUser, setDeletingUser] = useState<User | null>(null);
   const [deleteUserError, setDeleteUserError] = useState<string | null>(null);
+  const [toggleStatusError, setToggleStatusError] = useState<string | null>(null);
+
+  const handleToggleUserStatus = useCallback(async (u: User) => {
+    setToggleStatusError(null);
+    try {
+      const result = await toggleUserStatus(u.id);
+      setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, is_active: result.is_active } : x)));
+      setDetail((prev) =>
+        prev && prev.user?.id === u.id ? { ...prev, user: { ...prev.user, is_active: result.is_active } } : prev
+      );
+    } catch (err: any) {
+      setToggleStatusError(err?.response?.data?.detail || "Failed to update account status.");
+    }
+  }, []);
   const [resetPassword, setResetPassword] = useState("12345678");
   const [resetBusy, setResetBusy] = useState(false);
   const [resetMsg, setResetMsg] = useState<string | null>(null);
@@ -1653,6 +1687,7 @@ const UserManagementPage: React.FC = () => {
           isMobile={isMobile}
           onResetPassword={detail?.user?.role !== "superadmin" ? (u) => { setResetTarget(u); setResetPassword("12345678"); setResetMsg(null); } : undefined}
           onDeleteUser={detail?.user?.role !== "superadmin" ? (u) => { setDeletingUser(u); setDeleteUserError(null); } : undefined}
+          onToggleUserStatus={detail?.user?.role !== "superadmin" ? handleToggleUserStatus : undefined}
           onEditFamily={(f) => setEditingFamily(f)}
           onDeactivateFamily={(f) => setDeactivatingFamily(f)}
           onRestoreFamily={async (f) => {
@@ -1809,6 +1844,15 @@ const UserManagementPage: React.FC = () => {
                       borderRadius: 10, fontSize: 13, fontWeight: 600, zIndex: 9200,
                       boxShadow: COLORS.shadowLg }}>
           {deleteUserError}
+        </div>
+      )}
+      {toggleStatusError && (
+        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
+                      background: COLORS.dangerLight, color: COLORS.danger, padding: "10px 18px",
+                      borderRadius: 10, fontSize: 13, fontWeight: 600, zIndex: 9200,
+                      boxShadow: COLORS.shadowLg }}
+             onClick={() => setToggleStatusError(null)}>
+          {toggleStatusError}
         </div>
       )}
     </div>

@@ -111,6 +111,28 @@ def test_assign_family_links_both_directions(env):
     assert "head" in role_rows
 
 
+def test_assign_family_promotes_plain_member_to_head(env):
+    """A staff member removed from the committee with no other relationship
+    falls back to the neutral "member" placeholder. Linking them to a Chanda
+    Head afterward (the "Fix" flow on the Users page) must promote the
+    primary role to "head" - "member" carries no real privilege, so leaving
+    it in place after the link is what made the account look like it was
+    still "just a member" everywhere except the detail view."""
+    client, db, current = env
+    db.add(models.User(id=4, name="Ex Staff", phone="9000000004",
+                       password="x", role="member", is_active=True))
+    db.commit()
+
+    resp = client.patch("/users/4/assign-family", json={"head_id": 10})
+    assert resp.status_code == 200, resp.text
+
+    u = db.query(models.User).filter_by(id=4).first()
+    assert u.role == "head"
+
+    listing = client.get("/admin/staff/").json()
+    assert not any(s["id"] == 4 for s in listing)
+
+
 def test_assign_family_refuses_to_relink_a_claimed_head(env):
     client, db, current = env
     db.add(models.User(id=3, name="Other Person", phone="9000000003",
