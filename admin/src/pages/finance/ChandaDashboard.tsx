@@ -291,6 +291,7 @@ function FamilyDetail({ memberId, memberName, memberNo, memberPhone, monthlyAmou
                   {[...(history.payments)].sort((a: any, b: any) =>
                     new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
                   ).map((p: any) => {
+                    const isMigration = p.payment_source === "import";
                     const isAdvance = (p.covered_months?.length ?? 0) > 1;
                     const covLabel = p.covered_months?.length > 0
                       ? p.covered_months.map(fmtYM).join(", ")
@@ -299,11 +300,20 @@ function FamilyDetail({ memberId, memberName, memberNo, memberPhone, monthlyAmou
                       ? new Date((/[Zz]|[+-]\d{2}:?\d{2}$/.test(p.created_at) ? p.created_at : p.created_at + "Z"))
                           .toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
                       : "—";
+                    // A migration import is never a cash advance a collector
+                    // took — it's bookkeeping for money that changed hands
+                    // outside the system before this family joined it. Same
+                    // multi-month shape as a real advance payment, so it needs
+                    // its own badge or it reads as "the collector floated
+                    // seven months of cash", which never happened.
+                    const badgeBg = isMigration ? "#EEF0E8" : "#B07A1E";
+                    const badgeFg = isMigration ? "#5B6650" : "#fff";
+                    const accent  = isMigration ? "#5B6650" : "#B07A1E";
                     return (
                       <div key={p.id} style={{
                         padding: "12px 14px",
-                        background: isAdvance ? "#FAF0DD" : "#F7F5EF",
-                        border: `1.5px solid ${isAdvance ? "#E8D6A5" : "#E7E2D3"}`,
+                        background: isMigration ? "#F3F4EE" : isAdvance ? "#FAF0DD" : "#F7F5EF",
+                        border: `1.5px solid ${isMigration ? "#DCE0D2" : isAdvance ? "#E8D6A5" : "#E7E2D3"}`,
                         borderRadius: 12, marginBottom: 8,
                       }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -312,10 +322,19 @@ function FamilyDetail({ memberId, memberName, memberNo, memberPhone, monthlyAmou
                               fontWeight: 800, color: "#1C231F" }}>
                               {fmt(p.amount)}
                             </span>
-                            {isAdvance && (
+                            {isMigration ? (
                               <span style={{
                                 marginLeft: 8, fontSize: 10, fontWeight: 800,
-                                background: "#B07A1E", color: "#fff",
+                                background: badgeBg, color: badgeFg,
+                                borderRadius: 6, padding: "2px 7px",
+                                letterSpacing: "0.06em",
+                              }}>
+                                MIGRATION{isAdvance ? ` · ${p.covered_months.length} MONTHS` : ""}
+                              </span>
+                            ) : isAdvance && (
+                              <span style={{
+                                marginLeft: 8, fontSize: 10, fontWeight: 800,
+                                background: badgeBg, color: badgeFg,
                                 borderRadius: 6, padding: "2px 7px",
                                 letterSpacing: "0.06em",
                               }}>
@@ -326,13 +345,19 @@ function FamilyDetail({ memberId, memberName, memberNo, memberPhone, monthlyAmou
                           <span style={{ fontSize: 12, color: "#93998F" }}>{paidAt}</span>
                         </div>
                         {covLabel && (
-                          <div style={{ fontSize: 12, color: isAdvance ? "#B07A1E" : "#5B6660",
+                          <div style={{ fontSize: 12, color: (isAdvance || isMigration) ? accent : "#5B6660",
                             marginTop: 5, fontWeight: 600 }}>
-                            {isAdvance ? "Covers: " : "Month: "}{covLabel}
+                            {(isAdvance || isMigration) ? "Covers: " : "Month: "}{covLabel}
                           </div>
                         )}
                         <div style={{ fontSize: 11, color: "#93998F", marginTop: 3 }}>
-                          {p.method ?? "—"} · {p.created_by === "user" ? "Self-paid" : p.created_by === "collector" ? "Collector" : p.created_by}
+                          {p.method ?? "—"} · {
+                            p.created_by === "user" ? "Self-paid"
+                            : p.created_by === "collector" ? "Collector"
+                            : p.created_by === "migration" ? "Historical migration"
+                            : p.created_by === "admin" ? "Admin"
+                            : p.created_by ?? "—"
+                          }
                           {p.status === "verified" ? " · Verified" : " · Pending"}
                         </div>
                       </div>

@@ -1162,6 +1162,15 @@ def family_statement(
                     p.collected_at and p.covered_months and
                     sorted(p.covered_months)[-1] > india_month_key(p.collected_at)
                 ),
+                # Missing here meant the admin UI's family-statement view had
+                # no way to distinguish a multi-month historical migration
+                # import from a genuine live advance payment - both showed the
+                # same "ADVANCE · N MONTHS" badge, which reads as a collector
+                # having taken a real cash advance. created_by was already
+                # referenced by that same UI (Self-paid / Collector) but was
+                # never actually sent either.
+                "payment_source": p.payment_source or "app",
+                "created_by":     p.created_by,
             }
             for p in payments
         ],
