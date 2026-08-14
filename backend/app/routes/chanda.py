@@ -174,6 +174,7 @@ def generate_month(
     if not heads:
         raise HTTPException(400, "No active family heads found")
 
+    generated_count = 0
     for head in heads:
         amount = head.monthly_amount or 0
         collection = (
@@ -181,6 +182,18 @@ def generate_month(
             .filter_by(head_id=head.id, month=month)
             .first()
         )
+
+        # Never CREATE a month before the family's admin-set Chanda start
+        # (registration_date) - same rule as the automatic monthly job
+        # (scheduler.py::job_generate_chanda_month). An already-existing row
+        # (e.g. from before the start month was set) is left untouched here -
+        # correcting existing rows is PATCH /admin/families/{id}/chanda-start-month's job.
+        if not collection:
+            start_dt = head.registration_date or head.created_at
+            if start_dt and month < india_month_key(start_dt):
+                continue
+
+        generated_count += 1
         if collection:
             # Only update amount_due if not yet paid — preserve history
             if collection.status == "pending":
@@ -201,7 +214,7 @@ def generate_month(
         set_collection_status(collection)
 
     db.commit()
-    return {"message": f"Month {month} generated for {len(heads)} families"}
+    return {"message": f"Month {month} generated for {generated_count} families"}
 
 
 @router.post("/collect", response_model=schemas.PaymentOut)
@@ -799,6 +812,9 @@ def get_report(
         .filter(
             models.ChandaCollection.month == month,
             visible_month_filter(),
+            # Before a family's admin-set Chanda start month - never due,
+            # never pending, never part of this report's totals.
+            models.ChandaCollection.status != "not_applicable",
         )
         .all()
     )

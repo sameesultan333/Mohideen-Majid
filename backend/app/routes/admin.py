@@ -6,6 +6,7 @@ from typing import Optional
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import models, schemas
@@ -16,7 +17,7 @@ from app.services.audit_service import AuditAction, log_action
 from app.services.registration_service import RegistrationApprovalService
 from app.services.chanda_number_service import generate_next_chanda_no
 from app.utils.chanda_months import current_month_key, visible_month_filter
-from app.utils.fcm import notify_user
+from app.utils.fcm import notify_user, notify_role
 from app.utils.payment_ledger import (
     apply_coverage_to_existing_collections,
     apply_rate_to_open_months,
@@ -937,10 +938,83 @@ def add_family(
     # Auto-generate pending month records from registration_date to current month
     # so the collector immediately sees the correct pending months for new families.
     _auto_generate_months_for_head(db, head)
+    _create_admin_activity(db, "family_added", current_user, head=head, role_label="admin")
     db.commit()
 
     manager.publish_sync("finance", "family_created", {"family_id": head.id, "name": head.name})
     return head
+
+
+def _create_admin_activity(
+    db: Session,
+    activity_type: str,  # "family_added" | "user_deactivated"
+    actor: dict,
+    *,
+    head: models.ApprovedHead | None = None,
+    user: models.User | None = None,
+    reason: str | None = None,
+    role_label: str | None = None,
+) -> models.AdminActivity:
+    """
+    Persistent "an admin should know this happened" log entry, separate from
+    the self-registration approval flow (User.status == PENDING_APPROVAL),
+    which is untouched and never stored here (see AdminActivity docstring).
+
+    Idempotent per (activity_type, head/user): refuses to create a second
+    un-acknowledged row for the same subject and event type (e.g. a retried
+    request), so a duplicate never appears in the activity list.
+    """
+    q = db.query(models.AdminActivity).filter_by(activity_type=activity_type, acknowledged=False)
+    q = q.filter_by(head_id=head.id) if head else q.filter_by(user_id=user.id if user else None)
+    existing = q.first()
+    if existing:
+        return existing
+
+    actor_id = None
+    try:
+        actor_id = int(actor.get("sub")) if actor.get("sub") is not None else None
+    except (TypeError, ValueError):
+        actor_id = None
+    actor_name = actor.get("name") or "Staff"
+    actor_role = role_label or actor.get("role")
+
+    subject_name = head.name if head else (user.name if user else None)
+    subject_phone = head.phone if head else (user.phone if user else None)
+    subject_chanda_no = head.chanda_no if head else None
+
+    activity = models.AdminActivity(
+        activity_type=activity_type,
+        head_id=head.id if head else None,
+        user_id=user.id if user else None,
+        subject_name=subject_name,
+        subject_phone=subject_phone,
+        subject_chanda_no=subject_chanda_no,
+        reason=reason,
+        performed_by_id=actor_id,
+        performed_by_name=actor_name,
+        performed_by_role=actor_role,
+        acknowledged=False,
+    )
+    db.add(activity)
+    db.flush()
+
+    if activity_type == "family_added":
+        title = "New family added"
+        body = f"New family added by {actor_name} — acknowledgement required."
+    else:
+        title = "User removed / deactivated"
+        body = f"{subject_name or 'A user'} was deactivated by {actor_name}."
+
+    notify_role(
+        db, ["admin", "superadmin"],
+        title=title, body=body,
+        data={"type": "admin_activity", "activity_id": str(activity.id), "activity_type": activity_type},
+    )
+    manager.publish_sync("admin", "admin_activity_created", {
+        "activity_id": activity.id, "activity_type": activity_type,
+        "subject_name": subject_name, "performed_by": actor_name,
+    })
+    return activity
 
 
 def _auto_generate_months_for_head(db: Session, head: models.ApprovedHead) -> None:
@@ -988,7 +1062,11 @@ def edit_family(
     if data.address         is not None: head.address        = data.address
     if data.zone            is not None: head.zone           = data.zone.strip().title() or None
     if data.street          is not None: head.street         = data.street.strip().title() or None
-    if data.registration_date is not None: head.registration_date = data.registration_date
+    # registration_date (the effective Chanda start month) is intentionally
+    # NOT editable here - it drives which months count as pending/outstanding
+    # (see chanda_months.py), so changing it needs the validated, audited
+    # path that blocks the change when pre-start payments already exist:
+    # PATCH /admin/families/{id}/chanda-start-month.
     if data.monthly_amount  is not None:
         if data.monthly_amount <= 0:
             raise HTTPException(400, "Monthly amount must be > 0")
@@ -1036,6 +1114,140 @@ def edit_family(
     db.refresh(head)
     manager.publish_sync("finance", "family_updated", {"family_id": head.id})
     return head
+
+
+class ChandaStartMonthUpdate(BaseModel):
+    start_month: str  # "YYYY-MM"
+
+
+@router.patch("/families/{family_id}/chanda-start-month")
+def update_chanda_start_month(
+    family_id: int,
+    data: ChandaStartMonthUpdate,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    """
+    The only safe way to change a family's effective Chanda start month
+    (stored in the existing ApprovedHead.registration_date field - already
+    used for this exact purpose by _auto_generate_months_for_head,
+    registration_service.py and chanda_validation.py; no new column).
+
+    Moving the start LATER (e.g. January -> July) would make Jan-Jun
+    obligations "not applicable" - refused outright if any verified,
+    non-rolled-back payment already covers one of those months, or if any of
+    those months' ChandaCollection rows already show money collected. The
+    admin must reverse those payments through the existing rollback workflow
+    first; nothing here ever deletes or edits a PaymentEntry.
+
+    Moving the start EARLIER (or first-time setting it) is always safe - it
+    only reopens excluded months, never invalidates money already collected.
+    """
+    from app.utils.timezones import india_month_key, utc_now, add_months
+    from app.utils.chanda_months import current_month_key
+    from app.utils.payment_ledger import set_collection_status, sync_generated_month
+
+    head = db.query(models.ApprovedHead).filter_by(id=family_id).first()
+    if not head:
+        raise HTTPException(404, "Family not found")
+
+    try:
+        new_start_dt = datetime.strptime(data.start_month.strip() + "-01", "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(400, "start_month must be in YYYY-MM format")
+    new_start = india_month_key(new_start_dt)
+
+    old_start_dt = head.registration_date or head.created_at
+    old_start = india_month_key(old_start_dt) if old_start_dt else new_start
+
+    if new_start == old_start:
+        return {"message": "No change", "start_month": new_start}
+
+    if new_start > old_start:
+        # Narrowing forward: [old_start, new_start) would become not_applicable.
+        excluded_months = []
+        cursor = old_start
+        while cursor < new_start:
+            excluded_months.append(cursor)
+            cursor = add_months(cursor, 1)
+
+        conflicting_payments = [
+            p for p in db.query(models.PaymentEntry).filter(
+                models.PaymentEntry.head_id == family_id,
+                models.PaymentEntry.status == "verified",
+                func.coalesce(models.PaymentEntry.rollback_status, "") != "approved",
+            ).all()
+            if any(m in excluded_months for m in (p.covered_months or []))
+        ]
+        cols_with_money = (
+            db.query(models.ChandaCollection)
+            .filter(
+                models.ChandaCollection.head_id == family_id,
+                models.ChandaCollection.month.in_(excluded_months),
+                models.ChandaCollection.total_paid > 0,
+            )
+            .all()
+        )
+        if conflicting_payments or cols_with_money:
+            month_labels = ", ".join(excluded_months)
+            raise HTTPException(
+                400,
+                f"Payments exist for {month_labels}. Rollback/reverse those "
+                f"transactions before changing the Chanda start month to {new_start}.",
+            )
+
+        existing_cols = (
+            db.query(models.ChandaCollection)
+            .filter(
+                models.ChandaCollection.head_id == family_id,
+                models.ChandaCollection.month.in_(excluded_months),
+            )
+            .all()
+        )
+        for col in existing_cols:
+            col.status = "not_applicable"
+    else:
+        # Widening earlier (or first-time set): reopen any previously
+        # not_applicable rows now back inside the family's Chanda period,
+        # then backfill any genuinely missing months in the newly-included range.
+        reopened_months = []
+        cursor = new_start
+        while cursor < old_start:
+            reopened_months.append(cursor)
+            cursor = add_months(cursor, 1)
+
+        cols_to_reopen = (
+            db.query(models.ChandaCollection)
+            .filter(
+                models.ChandaCollection.head_id == family_id,
+                models.ChandaCollection.month.in_(reopened_months),
+                models.ChandaCollection.status == "not_applicable",
+            )
+            .all()
+        )
+        for col in cols_to_reopen:
+            set_collection_status(col)  # recomputes pending/paid from amount_due vs total_paid
+
+    old_head_values = {"registration_date": head.registration_date.isoformat() + "Z" if head.registration_date else None}
+    head.registration_date = new_start_dt
+
+    # Backfill missing months from the (possibly new, earlier) start up to
+    # the current month - same generator _auto_generate_months_for_head
+    # already uses at family creation, safe to re-run (skips existing rows).
+    _auto_generate_months_for_head(db, head)
+
+    write_audit(
+        db, "approved_heads", head.id, "update",
+        old_values=old_head_values,
+        new_values={"registration_date": new_start_dt.isoformat() + "Z"},
+        performed_by_id=_actor_id(current_user),
+        note=f"Chanda start month changed to {new_start} for {head.name} ({head.chanda_no})",
+    )
+    db.commit()
+    db.refresh(head)
+    manager.publish_sync("finance", "family_updated", {"family_id": head.id})
+    manager.publish_sync("finance", "chanda_start_month_updated", {"family_id": head.id, "start_month": new_start})
+    return {"message": f"Chanda start month set to {new_start}", "start_month": new_start, "family_id": head.id}
 
 
 @router.patch("/families/{family_id}/activate")
@@ -1092,6 +1304,10 @@ def deactivate_family(
                 performed_by_id=actor.id,
                 note=f"Deactivated {head.name} ({head.chanda_no}) by {actor.name}"
                      + (f" — reason: {payload.reason}" if payload.reason else ""))
+    _create_admin_activity(
+        db, "user_deactivated", current_user, head=head,
+        reason=payload.reason, role_label=current_user.get("role"),
+    )
     db.commit()
     manager.publish_sync("finance", "family_updated", {"family_id": head.id, "is_active": False})
     return {"message": f"Family {head.chanda_no} deactivated"}
@@ -1559,9 +1775,12 @@ def dashboard_stats(
     # current_month is by definition generated, so no extra filter is needed here;
     # families with no row for it are simply not pending (see utils/chanda_months).
     month_cols          = db.query(models.ChandaCollection).filter_by(month=current_month).all()
-    pending_collections = sum(1 for c in month_cols if c.status != "paid")
-    collected_month     = sum(c.total_paid   for c in month_cols)
-    due_month           = sum(c.amount_due   for c in month_cols)
+    # not_applicable rows (before a family's admin-set Chanda start month)
+    # must never count as pending or contribute to due/collected money.
+    _counting_cols       = [c for c in month_cols if c.status != "not_applicable"]
+    pending_collections = sum(1 for c in _counting_cols if c.status != "paid")
+    collected_month     = sum(c.total_paid   for c in _counting_cols)
+    due_month           = sum(c.amount_due   for c in _counting_cols)
 
     donations_amt = sum(d.amount for d in db.query(models.Donation).all())
     expenses_amt  = sum(
@@ -1707,6 +1926,84 @@ class ApproveRegistrationRequest(BaseModel):
 
 class RejectRegistrationRequest(BaseModel):
     reason: str
+
+
+# ─────────────────────────────────────────────────────────────
+# ADMIN ACTIVITY — persistent "an admin should know this happened" log.
+# Deliberately separate from PENDING_APPROVAL above: activities recorded
+# here (family_added, user_deactivated) are already-final events, nothing
+# here gates or re-approves anything. Registration stays queried live from
+# User.status == PENDING_APPROVAL, unchanged, not duplicated into this table.
+# ─────────────────────────────────────────────────────────────
+
+def _serialize_activity(a: models.AdminActivity) -> dict:
+    head = a.head
+    return {
+        "id": a.id,
+        "activity_type": a.activity_type,
+        "head_id": a.head_id,
+        "user_id": a.user_id,
+        "name": a.subject_name,
+        "phone": a.subject_phone,
+        "chanda_no": a.subject_chanda_no,
+        "monthly_amount": head.monthly_amount if head else None,
+        "zone": head.zone if head else None,
+        "street": head.street if head else None,
+        "address": head.address if head else None,
+        "reason": a.reason,
+        "performed_by_name": a.performed_by_name,
+        "performed_by_role": a.performed_by_role,
+        "created_at": a.created_at.isoformat() + "Z" if a.created_at else None,
+        "acknowledged": a.acknowledged,
+        "acknowledged_by_name": a.acknowledged_by_name,
+        "acknowledged_at": a.acknowledged_at.isoformat() + "Z" if a.acknowledged_at else None,
+        "status": "acknowledged" if a.acknowledged else "needs_acknowledgement",
+    }
+
+
+@router.get("/activity")
+def list_admin_activity(
+    status: Optional[str] = None,       # "pending" (default) | "acknowledged" | "all"
+    activity_type: Optional[str] = None,  # "family_added" | "user_deactivated"
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    from sqlalchemy.orm import joinedload
+    q = db.query(models.AdminActivity).options(joinedload(models.AdminActivity.head))
+    if status == "acknowledged":
+        q = q.filter_by(acknowledged=True)
+    elif status != "all":
+        q = q.filter_by(acknowledged=False)  # default: pending
+    if activity_type:
+        q = q.filter_by(activity_type=activity_type)
+    rows = q.order_by(models.AdminActivity.created_at.desc()).all()
+    return [_serialize_activity(a) for a in rows]
+
+
+@router.post("/activity/{activity_id}/acknowledge")
+def acknowledge_admin_activity(
+    activity_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    """Acknowledgement only records who/when - it never changes the family,
+    the user, Chanda, or payments. The underlying event already happened
+    through its own real workflow before this row was even created."""
+    activity = db.query(models.AdminActivity).filter_by(id=activity_id).first()
+    if not activity:
+        raise HTTPException(404, "Activity not found")
+    if activity.acknowledged:
+        return _serialize_activity(activity)  # already done - not an error, any admin may click it
+
+    activity.acknowledged = True
+    activity.acknowledged_by_id = int(current_user["sub"])
+    activity.acknowledged_by_name = current_user.get("name") or "Admin"
+    activity.acknowledged_at = datetime.utcnow()
+    db.commit()
+    db.refresh(activity)
+
+    manager.publish_sync("admin", "admin_activity_acknowledged", {"activity_id": activity.id})
+    return _serialize_activity(activity)
 
 
 @router.get("/pending-registrations")

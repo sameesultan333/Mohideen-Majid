@@ -402,6 +402,58 @@ class PaymentRollbackRequest(Base):
     approved_by   = relationship("User", foreign_keys=[approved_by_id])
 
 
+class AdminActivity(Base):
+    """
+    Persistent "an admin should know this happened" log - deliberately
+    separate from the self-registration approval flow (User.status ==
+    PENDING_APPROVAL / RegistrationApprovalService), which is unchanged and
+    NOT stored here. Two activity_type values today:
+
+      "family_added"      - a Collector/Admin created a family directly.
+        The family is already fully active the moment it's created; this is
+        only awareness, never a gate. See admin.py/collector.py create_family.
+      "user_deactivated"  - an Admin deactivated a family or disabled a user
+        account. The deactivation already happened through its own existing
+        flow (deactivate_family / staff remove-role / status toggle); this
+        is only a record that it happened, never a second copy of that state.
+
+    Acknowledging a row is NEVER an approval and NEVER reverses or alters the
+    underlying family/user - it only records acknowledged_by/acknowledged_at
+    and drops off the unacknowledged list. Superseded FamilyAcknowledgement
+    table (single-purpose predecessor of this one) was never deployed to
+    production, so this replaces it outright rather than migrating it.
+    """
+    __tablename__ = "admin_activities"
+
+    id               = Column(Integer, primary_key=True, index=True)
+    activity_type    = Column(String, nullable=False, index=True)  # "family_added" | "user_deactivated"
+
+    # Subject of the activity - whichever of these applies is set, the other left null.
+    head_id          = Column(Integer, ForeignKey("approved_heads.id"), nullable=True, index=True)
+    user_id          = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    # Denormalized display fields so this row is still readable even if the
+    # subject is later hard-deleted (family/staff hard-delete both exist).
+    subject_name     = Column(String, nullable=True)
+    subject_phone    = Column(String, nullable=True)
+    subject_chanda_no = Column(String, nullable=True)
+    reason           = Column(Text, nullable=True)  # e.g. deactivation reason
+
+    performed_by_id   = Column(Integer, ForeignKey("users.id"), nullable=True)
+    performed_by_name = Column(String, nullable=True)
+    performed_by_role = Column(String, nullable=True)  # "collector" | "admin" | "superadmin"
+    created_at        = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    acknowledged         = Column(Boolean, default=False, nullable=False, index=True)
+    acknowledged_by_id   = Column(Integer, ForeignKey("users.id"), nullable=True)
+    acknowledged_by_name = Column(String, nullable=True)
+    acknowledged_at      = Column(DateTime, nullable=True)
+
+    head            = relationship("ApprovedHead", foreign_keys=[head_id])
+    subject_user    = relationship("User", foreign_keys=[user_id])
+    performed_by    = relationship("User", foreign_keys=[performed_by_id])
+    acknowledged_by = relationship("User", foreign_keys=[acknowledged_by_id])
+
+
 class Receipt(Base):
     """
     Unified receipt table — one row per issued receipt.

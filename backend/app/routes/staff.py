@@ -247,6 +247,14 @@ def toggle_status(
         "is_active": staff.is_active,
     })
 
+    if old_status and not staff.is_active:
+        # Only on the disabling transition - re-enabling isn't a "removed"
+        # event. Family deactivation has its own hook (admin.py::deactivate_family);
+        # this covers disabling any User account (staff or a plain member).
+        from app.routes.admin import _create_admin_activity
+        _create_admin_activity(db, "user_deactivated", current_user, user=staff, role_label=current_user.get("role"))
+        db.commit()
+
     return staff
 
 

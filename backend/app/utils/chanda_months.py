@@ -26,7 +26,7 @@ Use ``pending_month_filter()`` for counts/defaulters/outstanding and
 derive either from the calendar.
 """
 
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.sql.elements import ColumnElement
 
 from app import models
@@ -40,6 +40,18 @@ def current_month_key() -> str:
 
 def _paid_anything() -> ColumnElement:
     return func.coalesce(models.ChandaCollection.total_paid, 0.0) > 0
+
+
+def _not_before_start() -> ColumnElement:
+    """
+    A row an admin has marked "not applicable" (month before the family's
+    admin-set Chanda start month - see PATCH /admin/families/{id}/chanda-
+    start-month) must never count as pending/outstanding/a defaulter month,
+    no matter how it was generated. It is still a real row (never deleted -
+    financial history stays auditable) and still shows in statements/history
+    via visible_month_filter(), just excluded from every "money owed" figure.
+    """
+    return models.ChandaCollection.status != "not_applicable"
 
 
 def is_generated_month(month: str, *, current_month: str | None = None) -> bool:
@@ -64,7 +76,7 @@ def generated_month_filter(current_month: str | None = None) -> ColumnElement:
 
 def pending_month_filter(current_month: str | None = None) -> ColumnElement:
     """Criterion for rows that may legitimately be counted as pending."""
-    return generated_month_filter(current_month)
+    return and_(generated_month_filter(current_month), _not_before_start())
 
 
 def visible_month_filter(current_month: str | None = None) -> ColumnElement:

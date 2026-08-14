@@ -5,7 +5,7 @@ import { getToken, saveToken, saveRefreshToken, getRefreshToken, deleteToken, de
 import { resetToLogin } from "../navigation/navigationRef";
 
 const WORKING_SERVER_KEY = "working_server_url";
-const DEFAULT_BASE_URL = "https://mohideen-majid.onrender.com";
+const DEFAULT_BASE_URL = "http://172.20.10.2:8000";
 // 3s used to be the default here and it failed routinely. The backend runs on a
 // Render instance that sleeps when idle: the first request after a quiet period
 // waits for a cold start, which regularly takes far longer than 3s, and a mobile

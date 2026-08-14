@@ -324,6 +324,9 @@ async def create_family(
     except Exception:
         pass
 
+    from app.routes.admin import _create_admin_activity
+    _create_admin_activity(db, "family_added", current_user, head=head, role_label="collector")
+
     await log_action(
         db, AuditAction.FAMILY_EDITED, "approved_heads", head.id,
         actor=current_user, request=request,

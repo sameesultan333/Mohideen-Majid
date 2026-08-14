@@ -10,6 +10,7 @@ import {
 import api from "../api/axios";
 import { getAccessToken } from "../api/auth";
 import { verifyPayment, rejectPayment, approvePaymentRollback, rejectPaymentRollback } from "../api/chanda";
+import { acknowledgeAdminActivity } from "../api/registrations";
 
 const UNREAD_KEY = "notif_unread_ids";
 // Separate from UNREAD_KEY on purpose: "seen" tracks every item id this
@@ -24,7 +25,7 @@ const SEEN_KEY = "notif_seen_ids";
 
 export interface NotifItem {
   id: string;                 // "pay_123" | "exp_45" | "col_67"
-  kind: "pending_verification" | "expense_approval" | "rollback_approval" | "recent_collection" | "recent_donation" | "account_deletion";
+  kind: "pending_verification" | "expense_approval" | "rollback_approval" | "family_added" | "user_deactivated" | "recent_collection" | "recent_donation" | "account_deletion";
   ref_id: number;
   title: string;
   subtitle: string;
@@ -47,6 +48,7 @@ export interface NotifItem {
   payment_source?: string | null;
   requested_by?: string | null;
   reason?: string | null;
+  activity_id?: number;
 }
 
 function getStoredUnread(): Set<string> {
@@ -81,6 +83,7 @@ interface NotifCtx {
   approveExpense: (expenseId: number) => Promise<void>;
   approveRollback: (requestId: number) => Promise<void>;
   rejectRollback: (requestId: number) => Promise<void>;
+  acknowledgeActivity: (activityId: number) => Promise<void>;
   // legacy compat — ChandaDashboard still calls these
   verify: (id: number) => Promise<void>;
   reject: (id: number) => Promise<void>;
@@ -88,6 +91,7 @@ interface NotifCtx {
   pendingPayments: NotifItem[];
   // sidebar badge counts
   pendingRegCount: number;
+  adminActivityCount: number;
   cashSubCount: number;
 }
 
@@ -110,6 +114,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading]     = useState(false);
   const [actioning, setActioning] = useState<string | null>(null);
   const [pendingRegCount, setPendingRegCount] = useState(0);
+  const [adminActivityCount, setAdminActivityCount] = useState(0);
   const [cashSubCount, setCashSubCount]       = useState(0);
 
   // Track IDs already seen so we can detect genuinely new items across refreshes.
@@ -125,12 +130,14 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
   const fetchBadgeCounts = useCallback(async () => {
     try {
-      const [regs, subs] = await Promise.all([
+      const [regs, subs, activity] = await Promise.all([
         api.get<any[]>("/admin/pending-registrations").then(r => r.data),
         api.get<any[]>("/collector/admin/cash-submissions").then(r => r.data),
+        api.get<any[]>("/admin/activity").then(r => r.data),  // default status=pending
       ]);
       setPendingRegCount(Array.isArray(regs) ? regs.length : 0);
       setCashSubCount(Array.isArray(subs) ? subs.filter((s: any) => s.status === "pending").length : 0);
+      setAdminActivityCount(Array.isArray(activity) ? activity.length : 0);
     } catch { /* non-critical — ignore errors */ }
   }, []);
 
@@ -223,6 +230,16 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     } finally { setActioning(null); }
   }, []);
 
+  const acknowledgeActivity = useCallback(async (activityId: number) => {
+    const key = `actv_${activityId}`;
+    setActioning(key);
+    try {
+      await acknowledgeAdminActivity(activityId);
+      setItems(prev => prev.filter(n => n.id !== key));
+      setUnreadIds(prev => { const n = new Set(prev); n.delete(key); saveUnread(n); return n; });
+    } finally { setActioning(null); }
+  }, []);
+
   // Initial load
   useEffect(() => { refresh(); fetchBadgeCounts(); }, [refresh, fetchBadgeCounts]);
 
@@ -267,12 +284,17 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
             } else if (msg.type === "donation_created") {
               await refreshRef.current();
               if (msg.data?.donation_id) markUnread([`don_${msg.data.donation_id}`]);
+            } else if (msg.type === "admin_activity_created") {
+              await refreshRef.current();
+              fetchBadgeCountsRef.current();
+              if (msg.data?.activity_id) markUnread([`actv_${msg.data.activity_id}`]);
             } else if (
               ["payment_verified", "payment_rejected", "expense_approved",
                "payment_collected", "dashboard_updated", "rollback_requested",
-               "rollback_approved", "rollback_rejected"].includes(msg.type)
+               "rollback_approved", "rollback_rejected", "admin_activity_acknowledged"].includes(msg.type)
             ) {
               refreshRef.current();
+              fetchBadgeCountsRef.current();
             } else if (
               ["registration_pending", "registration_approved", "registration_rejected"].includes(msg.type)
             ) {
@@ -300,11 +322,11 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={{
       items, unreadIds, unreadCount, loading, actioning,
-      markAllRead, refresh, verifyPay, rejectPay, approveExpense, approveRollback, rejectRollback,
+      markAllRead, refresh, verifyPay, rejectPay, approveExpense, approveRollback, rejectRollback, acknowledgeActivity,
       // legacy compat aliases used by ChandaDashboard PendingVerificationPanel
       verify: verifyPay, reject: rejectPay,
       pendingPayments,
-      pendingRegCount, cashSubCount,
+      pendingRegCount, adminActivityCount, cashSubCount,
     }}>
       {children}
     </Ctx.Provider>

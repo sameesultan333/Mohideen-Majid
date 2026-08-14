@@ -11,7 +11,7 @@ import AddFamilyModal from "../../components/AddFamilyModal";
 import EditAmountModal from "../../components/EditAmountModal";
 import {
   getDashboard, getMembers, getDefaulters, generateMonth,
-  addFamily, updateFamily, getFamilyHistory,
+  addFamily, updateFamily, getFamilyHistory, updateChandaStartMonth,
   downloadMonthlyExcel, downloadMonthlyPDF, downloadFamilyStatementPDF,
   currentMonthKey, triggerDownload, notifyDefaulters,
   type FinanceDashboard, type MemberWithCollection, type DefaulterItem,
@@ -33,8 +33,9 @@ const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct"
  * the extra tiles appended for months paid ahead of the current year. */
 function renderHistoryTile(key: string, label: string, c: any, isFuture: boolean) {
   let bg = "#F7F5EF", borderC = "#E7E2D3", textC = "#93998F";
-  if (c?.status === "paid")    { bg = "#E9F5F0"; borderC = "#BFE0D4"; textC = "#0F5C4C"; }
-  if (c?.status === "pending") { bg = "#F8E9E9"; borderC = "#E8BBBB"; textC = "#A13A3A"; }
+  if (c?.status === "paid")          { bg = "#E9F5F0"; borderC = "#BFE0D4"; textC = "#0F5C4C"; }
+  if (c?.status === "pending")       { bg = "#F8E9E9"; borderC = "#E8BBBB"; textC = "#A13A3A"; }
+  if (c?.status === "not_applicable") { bg = "#F2F2EF"; borderC = "#E0DED6"; textC = "#9A9690"; }
 
   const balance = c ? Math.max((c.amount_due ?? 0) - (c.total_paid ?? 0), 0) : 0;
 
@@ -47,10 +48,10 @@ function renderHistoryTile(key: string, label: string, c: any, isFuture: boolean
         textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
       <div style={{ fontSize: 13, fontWeight: 700, color: textC, marginTop: 3 }}>
         {c
-          ? (c.status === "paid" ? "Paid" : "Pending")
+          ? (c.status === "paid" ? "Paid" : c.status === "not_applicable" ? "Not Applicable" : "Pending")
           : isFuture ? "Upcoming" : "—"}
       </div>
-      {c && (
+      {c && c.status !== "not_applicable" && (
         <div style={{ fontFamily: TYPOGRAPHY.fontMono, fontSize: 12, marginTop: 2, color: textC }}>
           {fmt(c.total_paid)}
           {balance > 0 && (
@@ -80,6 +81,7 @@ function useIsMobile() {
 const ST: Record<string, { bg: string; color: string; dot: string; label: string }> = {
   paid:    { bg: "#E9F5F0", color: "#0F5C4C", dot: "#0F5C4C", label: "Paid" },
   pending: { bg: "#F8E9E9", color: "#A13A3A", dot: "#A13A3A", label: "Pending" },
+  not_applicable: { bg: "#F2F2EF", color: "#9A9690", dot: "#9A9690", label: "Not Applicable" },
 };
 
 function Badge({ status }: { status: string }) {
@@ -118,12 +120,30 @@ function FamilyDetail({ memberId, memberName, memberNo, memberPhone, monthlyAmou
 }) {
   const [history, setHistory] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [editingStart, setEditingStart] = useState(false);
+  const [startMonthInput, setStartMonthInput] = useState("");
+  const [startMonthBusy, setStartMonthBusy] = useState(false);
+  const [startMonthError, setStartMonthError] = useState<string | null>(null);
 
-  useEffect(() => {
-    getFamilyHistory(memberId)
-      .then(d => { setHistory(d); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, [memberId]);
+  const reloadHistory = () =>
+    getFamilyHistory(memberId).then(d => { setHistory(d); setLoading(false); }).catch(() => setLoading(false));
+
+  useEffect(() => { setLoading(true); reloadHistory(); }, [memberId]);
+
+  const handleSaveStartMonth = async () => {
+    if (!startMonthInput) return;
+    setStartMonthBusy(true);
+    setStartMonthError(null);
+    try {
+      await updateChandaStartMonth(memberId, startMonthInput);
+      setEditingStart(false);
+      await reloadHistory();
+    } catch (e: any) {
+      setStartMonthError(e?.response?.data?.detail || "Failed to update Chanda start month");
+    } finally {
+      setStartMonthBusy(false);
+    }
+  };
 
   const year = new Date().getFullYear();
 
@@ -201,6 +221,81 @@ function FamilyDetail({ memberId, memberName, memberNo, memberPhone, monthlyAmou
               <div style={{ fontFamily: TYPOGRAPHY.fontMono, fontSize: 20, fontWeight: 800, color }}>{value}</div>
             </div>
           ))}
+        </div>
+
+        {/* Chanda Start Month */}
+        <div style={{ padding: "14px 20px", borderBottom: "1px solid #F0ECE0" }}>
+          {!editingStart ? (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#93998F", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 3 }}>
+                  Chanda Start Month
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#1C231F" }}>
+                  {history?.family?.chanda_start_month
+                    ? new Date(history.family.chanda_start_month + "-01").toLocaleDateString("en-IN", { month: "long", year: "numeric" })
+                    : "Not set"}
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setStartMonthInput(history?.family?.chanda_start_month || "");
+                  setStartMonthError(null);
+                  setEditingStart(true);
+                }}
+                style={{
+                  background: "none", border: `1px solid ${COLORS.border}`, borderRadius: 8,
+                  padding: "6px 14px", fontSize: 12.5, fontWeight: 700, color: COLORS.primary, cursor: "pointer",
+                }}
+              >
+                Change
+              </button>
+            </div>
+          ) : (
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#93998F", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>
+                Chanda Start Month
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  type="month"
+                  value={startMonthInput}
+                  onChange={(e) => setStartMonthInput(e.target.value)}
+                  style={{ flex: 1, height: 38, padding: "0 10px", borderRadius: 8, border: `1px solid ${COLORS.border}`, fontSize: 14 }}
+                />
+                <button
+                  disabled={startMonthBusy || !startMonthInput}
+                  onClick={handleSaveStartMonth}
+                  style={{
+                    height: 38, padding: "0 16px", borderRadius: 8, border: "none",
+                    background: COLORS.primary, color: "#fff", fontWeight: 700, fontSize: 13,
+                    cursor: startMonthBusy || !startMonthInput ? "not-allowed" : "pointer",
+                    opacity: startMonthBusy || !startMonthInput ? 0.6 : 1,
+                  }}
+                >
+                  {startMonthBusy ? "Saving…" : "Save"}
+                </button>
+                <button
+                  onClick={() => { setEditingStart(false); setStartMonthError(null); }}
+                  style={{
+                    height: 38, padding: "0 14px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
+                    background: "none", color: "#5B6660", fontWeight: 600, fontSize: 13, cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+              {startMonthError && (
+                <div style={{ marginTop: 8, fontSize: 12.5, color: "#A13A3A", background: "#FBEAEA", borderRadius: 8, padding: "8px 10px", lineHeight: 1.5 }}>
+                  {startMonthError}
+                </div>
+              )}
+              <div style={{ marginTop: 6, fontSize: 11.5, color: "#93998F" }}>
+                Months before this become "Not Applicable" — never pending or outstanding.
+                If payments already exist for those months, roll them back first through Finance Timeline.
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Year grid — ALL 12 months always visible */}

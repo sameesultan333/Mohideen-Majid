@@ -228,6 +228,15 @@ export async function updateFamily(id: number, family: EditFamilyRequest) {
   return data;
 }
 
+/** The only safe way to change a family's effective Chanda start month —
+ * backend refuses (400, with an explanatory message) if a verified,
+ * non-rolled-back payment already covers a month that would become
+ * "not applicable". Never deletes or edits payments. */
+export async function updateChandaStartMonth(id: number, startMonth: string) {
+  const { data } = await api.patch(`/admin/families/${id}/chanda-start-month`, { start_month: startMonth });
+  return data;
+}
+
 export async function activateFamily(id: number) {
   const { data } = await api.patch(`/admin/families/${id}/activate`);
   return data;

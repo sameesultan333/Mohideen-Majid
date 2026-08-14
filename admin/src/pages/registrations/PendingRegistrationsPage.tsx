@@ -5,9 +5,12 @@ import {
   getPendingRegistration,
   approveRegistration,
   rejectRegistration,
+  listAdminActivity,
+  acknowledgeAdminActivity,
   type PendingUser,
   type PendingDetail,
   type ApprovePayload,
+  type AdminActivity,
 } from "../../api/registrations";
 import { resetUserPassword } from "../../api/users";
 
@@ -384,7 +387,110 @@ function ApprovalModal({ userId, onClose, onDone }: ApprovalModalProps) {
   );
 }
 
+// ─── Admin Activity — families added / users deactivated, needs acknowledgement
+// Deliberately a separate list, own fetch, own state from the pending-
+// registration flow above: these are already-final events, never gated on
+// approval - this is only "an admin should notice this happened."
+
+const ACTIVITY_LABEL: Record<AdminActivity["activity_type"], string> = {
+  family_added: "NEW FAMILY ADDED",
+  user_deactivated: "USER REMOVED / DEACTIVATED",
+};
+
+const AdminActivitySection: React.FC<{ activityType?: "family_added" | "user_deactivated" }> = ({ activityType }) => {
+  const [items, setItems] = useState<AdminActivity[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      setItems(await listAdminActivity("pending", activityType));
+      setError(null);
+    } catch {
+      setError("Failed to load admin activity");
+    } finally {
+      setLoading(false);
+    }
+  }, [activityType]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const handleAcknowledge = async (id: number) => {
+    setBusyId(id);
+    try {
+      await acknowledgeAdminActivity(id);
+      setItems((prev) => prev.filter((a) => a.id !== id));
+    } catch {
+      setError("Failed to acknowledge — try again");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  if (!loading && items.length === 0) {
+    return (
+      <div style={{ ...S.emptyBox, padding: "40px 24px" }}>
+        <div style={S.emptyMsg}>Nothing to acknowledge</div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {error && <div style={S.errorBanner}>⚠ {error}</div>}
+      {items.map((a) => (
+        <div key={a.id} style={{ ...S.card, alignItems: "flex-start", cursor: "default" }}>
+          <div style={S.avatar}>{initials(a.name)}</div>
+          <div style={S.cardInfo}>
+            <div style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.06em", color: COLORS.textMuted, marginBottom: "3px" }}>
+              {ACTIVITY_LABEL[a.activity_type]}
+            </div>
+            <div style={S.cardName}>{a.name ?? "Unknown"}</div>
+            {a.activity_type === "family_added" ? (
+              <>
+                <div style={S.cardMeta}>
+                  {a.phone ?? "No phone"} · {a.chanda_no ?? "No Chanda No."} · ₹{a.monthly_amount ?? 0}/mo
+                </div>
+                <div style={S.cardMeta}>
+                  {a.zone ?? "No zone"} · {a.street ?? "No street"} · {a.address ?? "No address"}
+                </div>
+                <div style={S.cardMeta}>
+                  Added by {a.performed_by_name ?? "staff"} ({a.performed_by_role ?? "—"}) · {fmtDateTime(a.created_at)}
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={S.cardMeta}>
+                  {a.chanda_no ? `Chanda No. ${a.chanda_no}` : a.phone ?? "—"}
+                </div>
+                <div style={S.cardMeta}>
+                  Removed by {a.performed_by_name ?? "an admin"} · {fmtDateTime(a.created_at)}
+                </div>
+                {a.reason && <div style={S.cardMeta}>Reason: {a.reason}</div>}
+              </>
+            )}
+            <div style={{ marginTop: "6px" }}>
+              <span style={S.pendingBadge}>Needs Acknowledgement</span>
+            </div>
+          </div>
+          <button
+            style={{ ...S.reviewBtn, opacity: busyId === a.id ? 0.6 : 1 }}
+            disabled={busyId === a.id}
+            onClick={() => handleAcknowledge(a.id)}
+          >
+            {busyId === a.id ? "…" : "Seen / Acknowledge"}
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
+
+type ActivityTab = "all" | "registrations" | "family_added" | "user_deactivated";
 
 const PendingRegistrationsPage: React.FC = () => {
   const [users, setUsers] = useState<PendingUser[]>([]);
@@ -392,6 +498,7 @@ const PendingRegistrationsPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [reviewingId, setReviewingId] = useState<number | null>(null);
+  const [tab, setTab] = useState<ActivityTab>("all");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -414,16 +521,22 @@ const PendingRegistrationsPage: React.FC = () => {
     setTimeout(() => setSuccess(null), 4000);
   };
 
-  return (
-    <div style={S.page}>
-      <h1 style={S.title}>Pending Registrations</h1>
-      <p style={S.subtitle}>
-        {loading ? "Loading…" : `${users.length} registration${users.length !== 1 ? "s" : ""} awaiting review`}
-      </p>
+  const TABS: { key: ActivityTab; label: string }[] = [
+    { key: "all", label: "All" },
+    { key: "registrations", label: "New Registrations" },
+    { key: "family_added", label: "Families Added" },
+    { key: "user_deactivated", label: "Users Removed" },
+  ];
 
-      {error && <div style={S.errorBanner}>⚠ {error}</div>}
-      {success && <div style={S.successBanner}>✓ {success}</div>}
+  const tabBtn = (active: boolean): React.CSSProperties => ({
+    padding: "8px 16px", borderRadius: "10px", fontSize: "13px", fontWeight: 700,
+    cursor: "pointer", border: `1px solid ${active ? COLORS.primaryBorder : COLORS.border}`,
+    background: active ? COLORS.primaryLight : COLORS.surface,
+    color: active ? COLORS.primary : COLORS.textSecondary,
+  });
 
+  const registrationsSection = (
+    <>
       {!loading && users.length === 0 ? (
         <div style={S.emptyBox}>
           <div style={S.emptyIcon}>✓</div>
@@ -440,6 +553,9 @@ const PendingRegistrationsPage: React.FC = () => {
           >
             <div style={S.avatar}>{initials(u.name)}</div>
             <div style={S.cardInfo}>
+              <div style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.06em", color: COLORS.textMuted, marginBottom: "3px" }}>
+                NEW REGISTRATION
+              </div>
               <div style={S.cardName}>{u.name}</div>
               <div style={S.cardMeta}>
                 {u.phone ?? "No phone"} · Registered {fmtDateTime(u.registered_at)}
@@ -459,6 +575,31 @@ const PendingRegistrationsPage: React.FC = () => {
           </div>
         ))
       )}
+    </>
+  );
+
+  return (
+    <div style={S.page}>
+      <h1 style={S.title}>Admin Activity</h1>
+      <p style={S.subtitle}>
+        New registrations, families added directly by staff, and users/families removed — all in one place.
+      </p>
+
+      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "20px" }}>
+        {TABS.map(({ key, label }) => (
+          <button key={key} style={tabBtn(tab === key)} onClick={() => setTab(key)}>{label}</button>
+        ))}
+      </div>
+
+      {error && <div style={S.errorBanner}>⚠ {error}</div>}
+      {success && <div style={S.successBanner}>✓ {success}</div>}
+
+      {(tab === "all" || tab === "registrations") && (
+        <>
+          {tab === "all" && <div style={{ ...S.sectionLabel, marginTop: 0 }}>New Registrations</div>}
+          {registrationsSection}
+        </>
+      )}
 
       {reviewingId !== null && (
         <ApprovalModal
@@ -466,6 +607,20 @@ const PendingRegistrationsPage: React.FC = () => {
           onClose={() => setReviewingId(null)}
           onDone={() => handleDone("Registration processed successfully")}
         />
+      )}
+
+      {(tab === "all" || tab === "family_added") && (
+        <div style={{ marginTop: tab === "all" ? "28px" : 0 }}>
+          {tab === "all" && <div style={S.sectionLabel}>Families Added</div>}
+          <AdminActivitySection activityType="family_added" />
+        </div>
+      )}
+
+      {(tab === "all" || tab === "user_deactivated") && (
+        <div style={{ marginTop: tab === "all" ? "28px" : 0 }}>
+          {tab === "all" && <div style={S.sectionLabel}>Users Removed</div>}
+          <AdminActivitySection activityType="user_deactivated" />
+        </div>
       )}
     </div>
   );

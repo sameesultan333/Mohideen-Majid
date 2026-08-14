@@ -58,6 +58,48 @@ export const rejectRegistration = async (id: number, reason: string): Promise<{ 
   return data;
 };
 
+// ── Admin Activity ──────────────────────────────────────────────────────────
+// Persistent "an admin should know this happened" log — families added
+// directly by Collector/Admin, and users/families deactivated. Deliberately
+// separate from the pending-registration approval flow above: these are
+// already-final events, acknowledging one never changes the underlying
+// family/user/Chanda/payment state.
+
+export interface AdminActivity {
+  id: number;
+  activity_type: "family_added" | "user_deactivated";
+  head_id: number | null;
+  user_id: number | null;
+  name: string | null;
+  phone: string | null;
+  chanda_no: string | null;
+  monthly_amount: number | null;
+  zone: string | null;
+  street: string | null;
+  address: string | null;
+  reason: string | null;
+  performed_by_name: string | null;
+  performed_by_role: string | null;
+  created_at: string | null;
+  acknowledged: boolean;
+  acknowledged_by_name: string | null;
+  acknowledged_at: string | null;
+  status: "needs_acknowledgement" | "acknowledged";
+}
+
+export const listAdminActivity = async (
+  status: "pending" | "acknowledged" | "all" = "pending",
+  activityType?: "family_added" | "user_deactivated",
+): Promise<AdminActivity[]> => {
+  const { data } = await api.get("/admin/activity", { params: { status, activity_type: activityType } });
+  return data;
+};
+
+export const acknowledgeAdminActivity = async (id: number): Promise<AdminActivity> => {
+  const { data } = await api.post(`/admin/activity/${id}/acknowledge`);
+  return data;
+};
+
 // ── Cash Submissions ──────────────────────────────────────────────────────────
 
 export interface CashSubmission {

@@ -45,19 +45,29 @@ def job_generate_chanda_month():
         }
         created = 0
         for head in heads:
-            if head.id not in already_generated:
-                col = models.ChandaCollection(
-                    head_id=head.id,
-                    month=month,
-                    amount_due=head.monthly_amount or 0,
-                    total_paid=0,
-                    status="pending",
-                )
-                db.add(col)
-                db.flush()
-                sync_generated_month(db, col)
-                set_collection_status(col)
-                created += 1
+            if head.id in already_generated:
+                continue
+            # Never generate a month before the family's admin-set Chanda
+            # start (registration_date) - see chanda_months.py / PATCH
+            # /admin/families/{id}/chanda-start-month. This is the central
+            # enforcement point for the automatic monthly job; the manual
+            # "Generate Month" action (chanda.py::generate_month) has the
+            # same check.
+            start_dt = head.registration_date or head.created_at
+            if start_dt and month < india_month_key(start_dt):
+                continue
+            col = models.ChandaCollection(
+                head_id=head.id,
+                month=month,
+                amount_due=head.monthly_amount or 0,
+                total_paid=0,
+                status="pending",
+            )
+            db.add(col)
+            db.flush()
+            sync_generated_month(db, col)
+            set_collection_status(col)
+            created += 1
         db.commit()
         log.info(f"[scheduler] chanda month {month} generated for {created} families")
     except Exception as e:

@@ -50,7 +50,7 @@ const NAV_ITEMS = [
   { to: "/expenses",    label: "Expenses",          icon: Receipt         },
   { to: "/announcements", label: "Announcements",  icon: Megaphone       },
   { to: "/collections", label: "Finance Timeline", icon: History         },
-  { to: "/pending-registrations", label: "Pending Registrations", icon: UserCheck },
+  { to: "/pending-registrations", label: "Admin Activity", icon: UserCheck },
   { to: "/cash-submissions",      label: "Cash Submissions",      icon: Banknote  },
 ];
 interface SidebarProps {
@@ -60,7 +60,7 @@ interface SidebarProps {
 
 export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   const navigate = useNavigate();
-  const { pendingRegCount, cashSubCount } = useNotifications();
+  const { pendingRegCount, adminActivityCount, cashSubCount } = useNotifications();
   const unreadByKind = useUnreadByKind();
   const isSuperAdmin = getCurrentUser()?.role === "superadmin";
 
@@ -105,7 +105,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
             let badge = 0;
             if (to === "/chanda") badge = unreadByKind.chanda;
             if (to === "/expenses") badge = unreadByKind.expenses;
-            if (to === "/pending-registrations" && pendingRegCount > 0) badge = pendingRegCount;
+            if (to === "/pending-registrations") badge = pendingRegCount + adminActivityCount;
             if (to === "/cash-submissions" && cashSubCount > 0) badge = cashSubCount;
             return (
               <NavLink

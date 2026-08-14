@@ -129,6 +129,10 @@ def finance_dashboard(
         .filter(
             models.ChandaCollection.month == target_month,
             visible_month_filter(),
+            # A month before a family's admin-set Chanda start month is not
+            # applicable — never pending, never part of due/collected money,
+            # even though visible_month_filter() would otherwise include it.
+            models.ChandaCollection.status != "not_applicable",
         )
         .group_by(models.ChandaCollection.status)
         .all()
@@ -1090,8 +1094,10 @@ def family_statement(
 
     # Money owed is measured over generated months only — a month paid in
     # advance is shown in `cols` but is not yet due, so it must not move
-    # total_due or outstanding. Advance cash is reported separately.
-    due_cols        = [c for c in cols if c.month <= current_month]
+    # total_due or outstanding. Advance cash is reported separately. A
+    # not_applicable month (before the family's admin-set Chanda start
+    # month) stays in `cols` for display but must never count as owed.
+    due_cols        = [c for c in cols if c.month <= current_month and c.status != "not_applicable"]
     total_due       = sum(c.amount_due for c in due_cols)
     total_paid      = sum(c.total_paid for c in due_cols)
     advance_paid    = sum(c.total_paid for c in cols if c.month > current_month)
@@ -1124,6 +1130,7 @@ def family_statement(
             "address":        head.address,
             "monthly_amount": head.monthly_amount,
             "is_active":      head.is_active,
+            "chanda_start_month": india_month_key(head.registration_date) if head.registration_date else None,
         },
         "summary": {
             "total_months":           len(cols),
@@ -2163,6 +2170,41 @@ def get_notifications(
             "payment_id": payment.id if payment else None,
         })
 
+    # ── 5b. Admin Activity — families added / users deactivated, awaiting
+    # acknowledgement. Registration stays on its own existing badge/flow,
+    # not duplicated here (see AdminActivity model docstring).
+    pending_activities = (
+        db.query(models.AdminActivity)
+        .options(joinedload(models.AdminActivity.head))
+        .filter(models.AdminActivity.acknowledged == False)
+        .order_by(models.AdminActivity.created_at.desc())
+        .all()
+    )
+    for a in pending_activities:
+        if a.activity_type == "family_added":
+            subtitle = f"New family added by {a.performed_by_name or 'staff'} — acknowledgement required." + (f" · {a.subject_chanda_no}" if a.subject_chanda_no else "")
+        else:
+            subtitle = f"{a.subject_name or 'A user'} was deactivated by {a.performed_by_name or 'an admin'}." + (f" · {a.reason}" if a.reason else "")
+        results.append({
+            "id": f"actv_{a.id}",
+            "kind": a.activity_type,  # "family_added" | "user_deactivated"
+            "ref_id": a.id,
+            "title": a.subject_name or ("New family" if a.activity_type == "family_added" else "User"),
+            "subtitle": subtitle,
+            "amount": 0.0,
+            "method": None,
+            "proof_image": None,
+            "payer_name": a.subject_name,
+            "paid_by_name": a.performed_by_name,
+            "head_id": a.head_id,
+            "covered_months": [],
+            "receipt_id": None,
+            "created_at": a.created_at.isoformat() + "Z" if a.created_at else None,
+            "actionable": True,
+            "can_act": True,
+            "activity_id": a.id,
+        })
+
     # ── 6. Recent self-service account deletions (last 24 h) ─────
     # Informational only (nothing to action) — same shape as recent_collection/
     # recent_donation. Sourced from the audit trail rather than a new table,
@@ -2201,7 +2243,7 @@ def get_notifications(
         })
 
     # Sort: pending_verification first, then expense_approval, then recent
-    kind_order = {"pending_verification": 0, "expense_approval": 1, "rollback_approval": 1, "recent_collection": 2, "recent_donation": 2, "account_deletion": 2}
+    kind_order = {"pending_verification": 0, "expense_approval": 1, "rollback_approval": 1, "family_added": 1, "user_deactivated": 1, "recent_collection": 2, "recent_donation": 2, "account_deletion": 2}
     results.sort(key=lambda x: (kind_order.get(x["kind"], 9), x.get("created_at") or ""))
     return results
 

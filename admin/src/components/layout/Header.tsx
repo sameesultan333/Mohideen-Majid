@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Bell, CalendarDays, Menu, Receipt, RefreshCw, X, CheckCircle, XCircle, Wallet, Clock, UserX } from "lucide-react";
+import { Bell, CalendarDays, Menu, Receipt, RefreshCw, X, CheckCircle, XCircle, Wallet, Clock, UserX, Home } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { COLORS } from "../../theme/colors";
 import { getCurrentUser } from "../../api/auth";
@@ -59,6 +59,8 @@ const KIND_META: Record<NotifItem["kind"], { label: string; dot: string; icon: t
   pending_verification: { label: "Payment",   dot: "#D94A3A", icon: Receipt },
   expense_approval:     { label: "Expense",   dot: "#B07A1E", icon: Wallet },
   rollback_approval:    { label: "Rollback",  dot: "#7C3AED", icon: RefreshCw },
+  family_added:    { label: "New Family",  dot: "#1A6EA8", icon: Home },
+  user_deactivated: { label: "Deactivated", dot: "#93998F", icon: UserX },
   recent_collection:    { label: "Collected", dot: COLORS.primary, icon: CheckCircle },
   recent_donation:      { label: "Donation",  dot: "#6B3FA0", icon: Wallet },
   account_deletion:     { label: "Account Deleted", dot: "#5B6660", icon: UserX },
@@ -75,6 +77,7 @@ function NotifRow({
   onApprove,
   onApproveRollback,
   onRejectRollback,
+  onAcknowledgeActivity,
   onLightbox,
 }: {
   item: NotifItem;
@@ -86,6 +89,7 @@ function NotifRow({
   onApprove: (id: number) => void;
   onApproveRollback: (id: number) => void;
   onRejectRollback: (id: number) => void;
+  onAcknowledgeActivity: (id: number) => void;
   onLightbox: (url: string) => void;
 }) {
   const meta  = KIND_META[item.kind];
@@ -221,6 +225,18 @@ function NotifRow({
                   </button>
                 </>
               )}
+              {(item.kind === "family_added" || item.kind === "user_deactivated") && (
+                <button disabled={busy} onClick={() => onAcknowledgeActivity(item.activity_id || item.ref_id)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 4,
+                    background: "#EAF3FA", color: "#1A6EA8",
+                    border: "1px solid #C7DEF0", borderRadius: 7,
+                    padding: "5px 11px", fontSize: 11, fontWeight: 700, cursor: busy ? "not-allowed" : "pointer",
+                    opacity: busy ? 0.5 : 1,
+                  }}>
+                  <CheckCircle size={11} /> {busy ? "…" : "Seen / Acknowledge"}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -235,7 +251,7 @@ function NotifRow({
 // viewport. Desktop keeps the original anchored dropdown under the bell.
 function NotificationPanel({ onClose }: { onClose(): void }) {
   const { items, unreadIds, loading, actioning, markAllRead, refresh,
-          verifyPay, rejectPay, approveExpense, approveRollback, rejectRollback } = useNotifications();
+          verifyPay, rejectPay, approveExpense, approveRollback, rejectRollback, acknowledgeActivity } = useNotifications();
   const navigate = useNavigate();
   const isMobile = useMediaQuery("(max-width: 640px)");
   const [lightbox, setLightbox] = useState<string | null>(null);
@@ -255,6 +271,8 @@ function NotificationPanel({ onClose }: { onClose(): void }) {
   const pendingCount  = items.filter(n => n.kind === "pending_verification").length;
   const expenseCount  = items.filter(n => n.kind === "expense_approval").length;
   const rollbackCount = items.filter(n => n.kind === "rollback_approval").length;
+  const familyAddedCount = items.filter(n => n.kind === "family_added").length;
+  const userDeactivatedCount = items.filter(n => n.kind === "user_deactivated").length;
   const recentCount   = items.filter(n => n.kind === "recent_collection").length;
   const donationCount = items.filter(n => n.kind === "recent_donation").length;
 
@@ -341,6 +359,18 @@ function NotificationPanel({ onClose }: { onClose(): void }) {
                 Rollbacks ({rollbackCount})
               </button>
             )}
+            {familyAddedCount > 0 && (
+              <button style={TAB_STYLE(filter === "family_added", "#1A6EA8")}
+                onClick={() => setFilter("family_added")}>
+                New Families ({familyAddedCount})
+              </button>
+            )}
+            {userDeactivatedCount > 0 && (
+              <button style={TAB_STYLE(filter === "user_deactivated", "#93998F")}
+                onClick={() => setFilter("user_deactivated")}>
+                Deactivated ({userDeactivatedCount})
+              </button>
+            )}
             {recentCount > 0 && (
               <button style={TAB_STYLE(filter === "recent_collection", COLORS.primary)}
                 onClick={() => setFilter("recent_collection")}>
@@ -384,6 +414,7 @@ function NotificationPanel({ onClose }: { onClose(): void }) {
               onApprove={() => approveExpense(item.ref_id)}
               onApproveRollback={() => approveRollback(item.request_id || 0)}
               onRejectRollback={() => rejectRollback(item.request_id || 0)}
+              onAcknowledgeActivity={() => acknowledgeActivity(item.activity_id || item.ref_id)}
               onLightbox={setLightbox}
             />
           ))}
