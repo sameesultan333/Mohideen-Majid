@@ -172,6 +172,35 @@ def test_4_backdated_but_actually_today_counts_normally(env):
     assert dash["collector_payout"]["amount"] == pytest.approx(45.0)
 
 
+def test_6_unchanged_today_date_keeps_the_real_submission_time_not_midnight(env):
+    """
+    The mobile date picker always sends a date-only collected_date (no
+    time-of-day), even when the collector never touched it - it just
+    defaults to today. Regression: naively applying that as collected_at
+    collapsed every same-day payment's time to midnight UTC (displays as
+    5:30 AM IST on the Finance Dashboard's Recent Collections panel),
+    destroying the real submission time for the common, unchanged case.
+    """
+    client, db, current = env
+    now = datetime.utcnow()
+    this_month = now.strftime("%Y-%m")
+
+    current["user"] = COLLECTOR
+    r = client.post("/chanda/collect", json={
+        "member_id": 10, "amount": 300, "method": "cash",
+        "months_list": [this_month],
+        "collected_date": now.strftime("%Y-%m-%d"),  # today, unchanged from the picker's default
+    })
+    assert r.status_code == 200, r.text
+    payment_id = r.json()["id"]
+
+    row = db.query(models.PaymentEntry).filter_by(id=payment_id).first()
+    assert row.collected_at == row.created_at, \
+        f"unchanged 'today' must keep the real timestamp, not collapse to midnight: {row.collected_at} vs {row.created_at}"
+    assert row.collected_at.hour != 0 or row.collected_at.minute != 0, \
+        "collected_at must not be midnight for a live same-day payment (unless created_at genuinely is)"
+
+
 def test_5_advance_payment_belongs_to_collection_month_not_coverage_month(env):
     """
     Advance Chanda: collection_date = today, coverage = today..+4 months ahead.

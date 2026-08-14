@@ -23,7 +23,7 @@ from app.utils.chanda_months import (
     pending_month_filter,
     visible_month_filter,
 )
-from app.utils.timezones import add_months, india_month_key, parse_frontend_datetime, utc_now_naive
+from app.utils.timezones import add_months, india_month_key, parse_frontend_datetime, utc_now_naive, to_india
 from app.websocket_manager import manager
 from app.routes.finance import write_audit, write_ledger
 from app.rate_limit import rate_limit
@@ -240,9 +240,21 @@ async def collect_payment(
     if data.collected_date:
         try:
             cd = data.collected_date.strip()
-            parsed = datetime.fromisoformat(cd.replace("Z", "+00:00"))
-            collected_at = parse_frontend_datetime(parsed) or created_at
-            _visit_date_for_month = india_month_key(datetime.strptime(cd[:10], "%Y-%m-%d"))
+            picked_date_str = cd[:10]  # "YYYY-MM-DD" — the collector's local (IST) calendar date
+            _visit_date_for_month = india_month_key(datetime.strptime(picked_date_str, "%Y-%m-%d"))
+            today_ist_str = to_india(created_at).strftime("%Y-%m-%d")
+            # The mobile date picker sends a date only (no time-of-day) even
+            # when the collector never touched it — it just defaults to
+            # today. Applying that as-is would collapse every same-day
+            # payment's time to midnight (shows as 5:30 AM IST on the Finance
+            # Dashboard), destroying the real submission time on the common,
+            # unchanged case. Only treat this as a genuine backdate - and
+            # only then take midnight as the best available precision, since
+            # a date-only field can't carry a real historical time - when the
+            # picked date differs from today's IST calendar date.
+            if picked_date_str != today_ist_str:
+                parsed = datetime.fromisoformat(cd.replace("Z", "+00:00"))
+                collected_at = parse_frontend_datetime(parsed) or created_at
         except Exception:
             pass
     coverage_map = {}
