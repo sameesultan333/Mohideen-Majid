@@ -16,6 +16,7 @@ from decimal import Decimal
 from typing import Optional
 
 from fastapi import HTTPException, Request
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import models
@@ -282,7 +283,19 @@ def _serialize_transactions(payments, donations) -> list[dict]:
 def get_submission_transactions(db: Session, submission: models.CollectorCashSubmission) -> list[dict]:
     payments = (
         db.query(models.PaymentEntry)
-        .filter_by(submission_id=submission.id)
+        .filter(
+            models.PaymentEntry.submission_id == submission.id,
+            # A payment can be rolled back after it was already bundled into
+            # a submission (submission_id is never cleared by rollback). It
+            # must not still appear in the collector's/admin's transaction
+            # list for that submission. Note: this only fixes the displayed
+            # list - `submission.submitted_amount`/`cash_amount` are a frozen
+            # snapshot taken at submit time and are NOT retroactively reduced
+            # here, since that batch may already represent cash physically
+            # reconciled with an admin; adjusting a finalized submission's
+            # total is a separate reconciliation decision, not a display bug.
+            func.coalesce(models.PaymentEntry.rollback_status, "") != "approved",
+        )
         .all()
     )
     donations = (

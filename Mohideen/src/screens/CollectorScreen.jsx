@@ -1357,11 +1357,11 @@ export default function CollectorScreen({ navigation, route }) {
                     </View>
 
                     <AnimatedPressable onPress={openDatePicker} style={s.dateRow}>
-                      <View>
+                      <View style={s.dateLabelCol}>
                         <Text allowFontScaling={false} style={s.dateLabel}>{t("collector.visitDate")}</Text>
-                        <Text allowFontScaling={false} style={[s.dateLabel, { fontSize: 10, marginTop: 1, opacity: 0.6 }]}>{t("collector.visitDateHint")}</Text>
+                        <Text allowFontScaling={false} style={[s.dateLabel, { fontSize: 10, marginTop: 1, opacity: 0.6 }]} numberOfLines={2}>{t("collector.visitDateHint")}</Text>
                       </View>
-                      <Text allowFontScaling={false} style={s.dateVal}>
+                      <Text allowFontScaling={false} style={s.dateVal} numberOfLines={1}>
                         {collectedDate.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
                       </Text>
                     </AnimatedPressable>
@@ -1755,8 +1755,12 @@ const s = StyleSheet.create({
   notConnectedNote: { fontSize: 10.5, color: H.warn, marginTop: 8, lineHeight: 15 },
 
   dateRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: H.card, borderRadius: 11, borderWidth: 1, borderColor: H.cardBorder, paddingHorizontal: 14, paddingVertical: 11, marginTop: 12 },
-  dateLabel: { color: H.textMuted, fontSize: 13 },
-  dateVal: { color: H.goldDeep, fontSize: 13, fontWeight: "700" },
+  // The hint text is long enough on some locales/screens to push the date
+  // value outside the card if left unconstrained — flex:1 + shrink lets the
+  // label/hint wrap instead, while dateVal keeps its own space on the right.
+  dateLabelCol: { flex: 1, flexShrink: 1, marginRight: 10 },
+  dateLabel: { color: H.textMuted, fontSize: 13, flexWrap: "wrap" },
+  dateVal: { color: H.goldDeep, fontSize: 13, fontWeight: "700", flexShrink: 0 },
 
   amtRow: { flexDirection: "row", alignItems: "center", borderBottomWidth: 2, borderBottomColor: H.gold, marginVertical: 14, paddingBottom: 4 },
   amtRupee: { color: H.gold, fontSize: 20, fontWeight: "700", marginRight: 8 },

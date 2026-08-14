@@ -72,7 +72,15 @@ const AppNavigator = () => {
 
       animation: 'fade',
 
-      gestureEnabled: false,
+      // false disabled BOTH the iOS edge-swipe-back gesture AND Android's
+      // predictive-back / gesture-nav edge swipe (react-native-screens gates
+      // both behind this flag). With no custom BackHandler anywhere in the
+      // app, that left gesture-nav Android users with no way to pop a screen
+      // via edge swipe - only the in-header back button worked, and on some
+      // OS/launcher combinations an unhandled edge swipe falls through to
+      // exiting the app instead of doing nothing. True restores the native
+      // stack's own back handling; no BackHandler code needed on either side.
+      gestureEnabled: true,
 
       freezeOnBlur: true,
 

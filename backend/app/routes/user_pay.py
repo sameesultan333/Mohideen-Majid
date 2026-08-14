@@ -23,7 +23,7 @@ from app.routes.upload import (
     _verify_magic,
 )
 
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 
 from sqlalchemy.orm import Session, joinedload
 
@@ -897,7 +897,16 @@ def get_user_payments(
 
             .options(joinedload(models.PaymentEntry.head))
 
-            .filter(models.PaymentEntry.head_id == head.id)
+            .filter(
+                models.PaymentEntry.head_id == head.id,
+                # An approved rollback sets status="rejected" the same as a
+                # failed verification, but it is a different thing: the money
+                # was reversed, not that the payment was invalid. It must
+                # disappear from the user's own history, not show as
+                # "Rejected" - the audit trail (rollback_status itself, plus
+                # PaymentRollbackRequest) stays on the backend for admins.
+                func.coalesce(models.PaymentEntry.rollback_status, "") != "approved",
+            )
 
             .order_by(models.PaymentEntry.created_at.desc())
 

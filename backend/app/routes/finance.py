@@ -1076,7 +1076,13 @@ def family_statement(
     )
     payments = (
         db.query(models.PaymentEntry)
-        .filter_by(head_id=head.id)
+        .filter(
+            models.PaymentEntry.head_id == head.id,
+            # Same rule as every other history view: an approved rollback is
+            # not "the last payment was rejected" - the payment is reversed
+            # and must not appear (or count as "last payment") at all.
+            func.coalesce(models.PaymentEntry.rollback_status, "") != "approved",
+        )
         .order_by(models.PaymentEntry.created_at)
         .all()
     )
@@ -2561,7 +2567,13 @@ def get_collector_history(
 
     payments = (
         db.query(models.PaymentEntry)
-        .filter(models.PaymentEntry.collected_by == collector_name)
+        .filter(
+            models.PaymentEntry.collected_by == collector_name,
+            # An approved rollback must disappear from the collector's own
+            # history, not show up labeled "Rejected" - same reasoning as
+            # the user-facing /user/payments endpoint.
+            func.coalesce(models.PaymentEntry.rollback_status, "") != "approved",
+        )
         .all()
     )
 
