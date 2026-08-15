@@ -1,5 +1,7 @@
 from datetime import datetime
 
+import logging
+
 import os
 
 import shutil
@@ -16,10 +18,11 @@ from pathlib import Path
 from app.routes.upload import (
     ALLOWED_IMAGE_EXT,
     MAX_FILE_SIZE_MB,
+    _CLOUDINARY_AVAILABLE,
     _IMAGE_MAGIC,
     _read_bytes,
     _safe_ext,
-    _save_local,
+    _upload_to_cloudinary,
     _verify_magic,
 )
 
@@ -57,6 +60,8 @@ from app.utils.payment_notify import notify_donation_payment
 
 router = APIRouter(prefix="/user", tags=["User Payment"])
 
+logger = logging.getLogger("mohideen.user_pay")
+
 
 
 
@@ -77,11 +82,8 @@ def get_db():
 
 
 
-UPLOAD_DIR = "uploads/payments"
-
-if not os.path.exists(UPLOAD_DIR):
-
-    os.makedirs(UPLOAD_DIR)
+# Payment-proof screenshots go to Cloudinary only now (see user_pay() below) -
+# no local uploads/payments directory needed anymore.
 
 
 
@@ -300,11 +302,8 @@ async def user_pay(
 
 
         # The extension used to be taken straight from the uploaded filename
-        # with no allowlist, no size cap and no content check. /uploads is
-        # served by StaticFiles from this same origin, so a file named
-        # "x.html" was stored and then served as HTML - stored XSS against any
-        # admin who opened the payment proof. Reuse the hardened image path
-        # that /upload/image already goes through.
+        # with no allowlist, no size cap and no content check. Reuse the
+        # hardened image path that /upload/image already goes through.
 
         ext = _safe_ext(file.filename or "", ALLOWED_IMAGE_EXT)
 
@@ -312,9 +311,31 @@ async def user_pay(
 
         _verify_magic(data, ext, _IMAGE_MAGIC)
 
-        filename = _save_local(data, Path(UPLOAD_DIR), ext)
-
-        filepath = os.path.join(UPLOAD_DIR, filename)
+        # Cloudinary is the only storage for UPI payment-proof screenshots -
+        # Render's local filesystem is wiped on every deploy/restart, which
+        # silently orphaned every proof_image row that pointed at it. Unlike
+        # /upload/image /upload/screenshot /upload/audio (which still fall
+        # back to local disk for their other callers - Hadith, Q&A,
+        # Announcements), this endpoint must not: a broken/missing payment
+        # proof is a financial-audit problem, not a cosmetic one, so a
+        # Cloudinary failure here must fail the whole request rather than
+        # silently writing a payment record with a screenshot nobody can
+        # ever actually view again after the next deploy.
+        if not _CLOUDINARY_AVAILABLE:
+            raise HTTPException(
+                503,
+                "Payment screenshot storage is not configured. Please contact "
+                "the mosque administrator - do not retry until this is fixed.",
+            )
+        try:
+            result = _upload_to_cloudinary(data, "payments", str(uuid.uuid4()))
+            filepath = result["url"]
+        except Exception as exc:
+            logger.warning("[user_pay] Cloudinary upload failed: %s", exc)
+            raise HTTPException(
+                502,
+                "Could not upload payment screenshot. Please check your connection and try again.",
+            )
 
 
 
@@ -438,9 +459,10 @@ async def user_pay(
 
 
 
-    # Donation branch - same hardening as the chanda branch above. An
-    # attacker-named "x.html" was previously stored and then served as HTML
-    # from /uploads on this origin.
+    # Donation branch - same hardening as the chanda branch above, and same
+    # Cloudinary-only storage rule (see comment above): a payment/donation
+    # proof that can't survive a Render restart is a financial-audit gap,
+    # not a cosmetic one.
 
     ext = _safe_ext(file.filename or "", ALLOWED_IMAGE_EXT)
 
@@ -448,9 +470,21 @@ async def user_pay(
 
     _verify_magic(data, ext, _IMAGE_MAGIC)
 
-    filename = _save_local(data, Path(UPLOAD_DIR), ext)
-
-    filepath = os.path.join(UPLOAD_DIR, filename)
+    if not _CLOUDINARY_AVAILABLE:
+        raise HTTPException(
+            503,
+            "Payment screenshot storage is not configured. Please contact "
+            "the mosque administrator - do not retry until this is fixed.",
+        )
+    try:
+        result = _upload_to_cloudinary(data, "payments", str(uuid.uuid4()))
+        filepath = result["url"]
+    except Exception as exc:
+        logger.warning("[user_pay] Cloudinary upload failed: %s", exc)
+        raise HTTPException(
+            502,
+            "Could not upload payment screenshot. Please check your connection and try again.",
+        )
 
 
 
