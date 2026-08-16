@@ -1,4 +1,13 @@
 import React, { useEffect, useState, useCallback } from "react";
+import {
+  X,
+  KeyRound,
+  AlertTriangle,
+  CheckCircle2,
+  ChevronRight,
+  Loader2,
+  ChevronLeft,
+} from "lucide-react";
 import { COLORS, TYPOGRAPHY } from "../../theme/colors";
 import {
   listPendingRegistrations,
@@ -13,6 +22,24 @@ import {
   type AdminActivity,
 } from "../../api/registrations";
 import { resetUserPassword } from "../../api/users";
+
+// ─── Responsive helper ────────────────────────────────────────────────────────
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState<boolean>(
+    () => typeof window !== "undefined" && window.matchMedia(query).matches
+  );
+
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const handler = () => setMatches(mq.matches);
+    handler();
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, [query]);
+
+  return matches;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -35,90 +62,112 @@ const initials = (name?: string | null) => {
 
 const S: Record<string, React.CSSProperties> = {
   page:        { padding: "16px", maxWidth: "1100px", margin: "0 auto" },
-  title:       { fontFamily: TYPOGRAPHY.fontDisplay, fontSize: "32px", fontWeight: 400, color: COLORS.text, marginBottom: "4px" },
-  subtitle:    { fontSize: "15px", color: COLORS.textSecondary, marginBottom: "24px" },
-  emptyBox:    { textAlign: "center", padding: "80px 24px", color: COLORS.textMuted },
-  emptyIcon:   { fontSize: "48px", marginBottom: "16px" },
-  emptyMsg:    { fontSize: "16px", fontWeight: 600, color: COLORS.textSecondary },
-  emptyHint:   { fontSize: "14px", color: COLORS.textMuted, marginTop: "6px" },
+  title:       { fontFamily: TYPOGRAPHY.fontDisplay, fontWeight: 400, color: COLORS.text, marginBottom: "4px" },
+  subtitle:    { fontSize: "14px", color: COLORS.textSecondary, marginBottom: "20px", lineHeight: 1.5 },
+
+  tabsRow:     { display: "flex", gap: "8px", marginBottom: "20px", overflowX: "auto",
+                 WebkitOverflowScrolling: "touch", scrollbarWidth: "none", paddingBottom: "2px" },
+
+  emptyBox:    { textAlign: "center", padding: "56px 20px", color: COLORS.textMuted,
+                 background: COLORS.surface, borderRadius: "16px", border: `1px solid ${COLORS.border}` },
+  emptyIconWrap: { width: "44px", height: "44px", borderRadius: "50%", background: COLORS.primaryLight,
+                   color: COLORS.primary, display: "flex", alignItems: "center", justifyContent: "center",
+                   margin: "0 auto 14px" },
+  emptyMsg:    { fontSize: "15px", fontWeight: 700, color: COLORS.textSecondary },
+  emptyHint:   { fontSize: "13px", color: COLORS.textMuted, marginTop: "6px" },
+
   card:        { background: COLORS.surface, borderRadius: "16px", border: `1px solid ${COLORS.border}`,
-                 boxShadow: COLORS.shadowSm, padding: "20px", marginBottom: "12px",
-                 display: "flex", alignItems: "center", gap: "16px", cursor: "pointer",
-                 transition: "box-shadow 0.2s, transform 0.2s" },
-  avatar:      { width: "48px", height: "48px", borderRadius: "50%", background: COLORS.accentLight,
+                 boxShadow: COLORS.shadowSm, padding: "16px", marginBottom: "10px",
+                 display: "flex", alignItems: "center", gap: "14px",
+                 transition: "box-shadow 0.2s" },
+  avatar:      { width: "44px", height: "44px", borderRadius: "50%", background: COLORS.accentLight,
                  color: COLORS.accent, display: "flex", alignItems: "center", justifyContent: "center",
-                 fontWeight: 700, fontSize: "16px", flexShrink: 0 },
+                 fontWeight: 700, fontSize: "15px", flexShrink: 0 },
   cardInfo:    { flex: 1, minWidth: 0 },
-  cardName:    { fontSize: "16px", fontWeight: 700, color: COLORS.text },
-  cardMeta:    { fontSize: "13px", color: COLORS.textSecondary, marginTop: "3px" },
-  pendingBadge: { display: "inline-block", padding: "3px 12px", borderRadius: "999px", fontSize: "11px",
+  cardKicker:  { fontSize: "10px", fontWeight: 700, letterSpacing: "0.06em", color: COLORS.textMuted, marginBottom: "3px" },
+  cardName:    { fontSize: "15px", fontWeight: 700, color: COLORS.text, wordBreak: "break-word" },
+  cardMeta:    { fontSize: "13px", color: COLORS.textSecondary, marginTop: "3px", lineHeight: 1.4, wordBreak: "break-word" },
+  pendingBadge: { display: "inline-block", padding: "3px 10px", borderRadius: "999px", fontSize: "11px",
                   fontWeight: 700, background: COLORS.warningLight ?? "#FFF8E6", color: COLORS.warning ?? "#A97300",
                   textTransform: "uppercase", letterSpacing: "0.05em" },
-  reviewBtn:   { padding: "8px 20px", borderRadius: "10px", border: `1px solid ${COLORS.primaryBorder}`,
+  reviewBtn:   { display: "flex", alignItems: "center", justifyContent: "center", gap: "4px",
+                 padding: "9px 16px", borderRadius: "10px", border: `1px solid ${COLORS.primaryBorder}`,
                  background: COLORS.primaryLight, color: COLORS.primary, fontWeight: 700, fontSize: "13px",
-                 cursor: "pointer", flexShrink: 0, transition: "background 0.2s" },
+                 cursor: "pointer", flexShrink: 0, transition: "background 0.2s", whiteSpace: "nowrap" },
+  ackBtn:      { display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
+                 padding: "9px 14px", borderRadius: "10px", border: `1px solid ${COLORS.border}`,
+                 background: COLORS.backgroundAlt, color: COLORS.textSecondary, fontWeight: 700, fontSize: "13px",
+                 cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" },
 
   // ── Modal ─────────────────────────────────────────────────────────────────
   overlay:     { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 200,
-                 display: "flex", alignItems: "center", justifyContent: "center", padding: "16px",
-                 animation: "fadeIn 0.2s ease" },
-  modal:       { background: COLORS.surface, borderRadius: "20px", width: "540px", maxWidth: "100%",
-                 maxHeight: "90vh", overflowY: "auto", boxShadow: COLORS.shadowLg ?? "0 20px 60px rgba(0,0,0,0.2)",
-                 animation: "slideUp 0.25s ease" },
-  modalHeader: { padding: "22px 24px 0", display: "flex", justifyContent: "space-between", alignItems: "flex-start" },
-  modalTitle:  { fontSize: "18px", fontWeight: 700, color: COLORS.text },
+                 display: "flex", animation: "fadeIn 0.2s ease" },
+  modalHeader: { padding: "18px 20px 0", display: "flex", justifyContent: "space-between", alignItems: "flex-start",
+                 position: "sticky", top: 0, background: COLORS.surface, zIndex: 1 },
+  modalTitle:  { fontSize: "17px", fontWeight: 700, color: COLORS.text },
   modalClose:  { width: "32px", height: "32px", borderRadius: "50%", border: "none",
-                 background: COLORS.backgroundAlt, cursor: "pointer", fontSize: "18px",
+                 background: COLORS.backgroundAlt, cursor: "pointer",
                  color: COLORS.textSecondary, display: "flex", alignItems: "center", justifyContent: "center",
                  flexShrink: 0 },
-  modalBody:   { padding: "20px 24px 28px" },
+  modalBody:   { padding: "18px 20px 24px" },
 
   sectionLabel: { fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em",
-                  color: COLORS.textMuted, marginBottom: "10px", marginTop: "20px" },
-  infoRow:     { display: "flex", justifyContent: "space-between", padding: "7px 0",
+                  color: COLORS.textMuted, marginBottom: "10px", marginTop: "18px" },
+  infoRow:     { display: "flex", justifyContent: "space-between", gap: "12px", padding: "7px 0",
                  borderBottom: `1px solid ${COLORS.divider}`, fontSize: "14px" },
-  infoLabel:   { color: COLORS.textSecondary },
+  infoLabel:   { color: COLORS.textSecondary, flexShrink: 0 },
   infoValue:   { fontWeight: 500, color: COLORS.text, maxWidth: "260px", wordBreak: "break-word", textAlign: "right" },
 
   field:       { marginBottom: "14px" },
   label:       { display: "block", fontSize: "12px", fontWeight: 700, color: COLORS.textSecondary,
                  marginBottom: "5px", textTransform: "uppercase", letterSpacing: "0.04em" },
-  input:       { width: "100%", padding: "9px 12px", borderRadius: "10px", border: `1px solid ${COLORS.border}`,
+  hint:        { fontSize: "11px", color: COLORS.textMuted, marginTop: "4px" },
+  input:       { width: "100%", padding: "10px 12px", borderRadius: "10px", border: `1px solid ${COLORS.border}`,
                  fontSize: "14px", background: COLORS.surface, color: COLORS.text,
                  boxSizing: "border-box", outline: "none", transition: "border-color 0.2s" },
-  select:      { width: "100%", padding: "9px 12px", borderRadius: "10px", border: `1px solid ${COLORS.border}`,
+  select:      { width: "100%", padding: "10px 12px", borderRadius: "10px", border: `1px solid ${COLORS.border}`,
                  fontSize: "14px", background: COLORS.surface, color: COLORS.text,
                  boxSizing: "border-box", outline: "none", appearance: "none",
                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23666'/%3E%3C/svg%3E")`,
                  backgroundRepeat: "no-repeat", backgroundPosition: "right 12px center", cursor: "pointer" },
-  textarea:    { width: "100%", padding: "9px 12px", borderRadius: "10px", border: `1px solid ${COLORS.border}`,
+  textarea:    { width: "100%", padding: "10px 12px", borderRadius: "10px", border: `1px solid ${COLORS.border}`,
                  fontSize: "14px", background: COLORS.surface, color: COLORS.text,
                  boxSizing: "border-box", outline: "none", resize: "vertical", minHeight: "70px", fontFamily: "inherit" },
-  actionRow:   { display: "flex", gap: "10px", marginTop: "24px" },
-  approveBtn:  { flex: 1, padding: "12px", borderRadius: "12px", border: "none",
+
+  approveBtn:  { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
+                 padding: "12px", borderRadius: "12px", border: "none",
                  background: COLORS.primary, color: "#fff", fontWeight: 700, fontSize: "14px",
                  cursor: "pointer", transition: "background 0.2s" },
-  rejectBtn:   { flex: 1, padding: "12px", borderRadius: "12px", border: `1px solid ${COLORS.danger}`,
+  rejectBtn:   { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
+                 padding: "12px", borderRadius: "12px", border: `1px solid ${COLORS.danger}`,
                  background: COLORS.dangerLight, color: COLORS.danger, fontWeight: 700, fontSize: "14px",
                  cursor: "pointer", transition: "background 0.2s" },
-  cancelBtn:   { padding: "12px 20px", borderRadius: "12px", border: `1px solid ${COLORS.border}`,
+  cancelBtn:   { display: "flex", alignItems: "center", justifyContent: "center", gap: "4px",
+                 padding: "12px 18px", borderRadius: "12px", border: `1px solid ${COLORS.border}`,
                  background: COLORS.backgroundAlt, color: COLORS.textMuted, fontWeight: 600, fontSize: "14px",
                  cursor: "pointer" },
-  suggCard:    { padding: "10px 14px", borderRadius: "10px", border: `1px solid ${COLORS.border}`,
-                 background: COLORS.backgroundAlt, cursor: "pointer", marginBottom: "6px",
-                 transition: "border-color 0.2s, background 0.2s" },
-  suggSel:     { borderColor: COLORS.primary, background: COLORS.primaryLight },
-  spinner:     { textAlign: "center", padding: "40px", color: COLORS.textMuted },
-  errorBanner: { background: COLORS.dangerLight, color: COLORS.danger, padding: "12px 16px",
-                 borderRadius: "12px", marginBottom: "16px", fontSize: "14px", border: `1px solid ${COLORS.danger}` },
-  successBanner: { background: COLORS.successLight ?? "#EEF9EE", color: COLORS.success, padding: "12px 16px",
-                   borderRadius: "12px", marginBottom: "16px", fontSize: "14px", border: `1px solid ${COLORS.success}` },
+  resetBtn:    { display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
+                 padding: "10px 16px", borderRadius: "10px", border: `1px solid ${COLORS.danger}`,
+                 background: COLORS.dangerLight, color: COLORS.danger, fontWeight: 700, fontSize: "13px",
+                 cursor: "pointer", whiteSpace: "nowrap" },
+
+  spinnerBox:  { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                 gap: "10px", padding: "48px 20px", color: COLORS.textMuted },
+  errorBanner: { display: "flex", alignItems: "flex-start", gap: "8px", background: COLORS.dangerLight, color: COLORS.danger,
+                 padding: "12px 16px", borderRadius: "12px", marginBottom: "16px", fontSize: "14px",
+                 border: `1px solid ${COLORS.danger}` },
+  successBanner: { display: "flex", alignItems: "flex-start", gap: "8px", background: COLORS.successLight ?? "#EEF9EE",
+                   color: COLORS.success, padding: "12px 16px", borderRadius: "12px", marginBottom: "16px",
+                   fontSize: "14px", border: `1px solid ${COLORS.success}` },
 };
 
 const css = document.createElement("style");
 css.innerHTML = `
   @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
   @keyframes slideUp { from { transform: translateY(24px); opacity: 0 } to { transform: none; opacity: 1 } }
+  @keyframes slideUpSheet { from { transform: translateY(100%) } to { transform: translateY(0) } }
+  @keyframes spin { to { transform: rotate(360deg) } }
+  .spin-icon { animation: spin 0.9s linear infinite; }
 `;
 document.head.appendChild(css);
 
@@ -139,6 +188,8 @@ interface ApprovalModalProps {
 }
 
 function ApprovalModal({ userId, onClose, onDone }: ApprovalModalProps) {
+  const isMobile = useMediaQuery("(max-width: 720px)");
+
   const [detail, setDetail] = useState<PendingDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -211,24 +262,58 @@ function ApprovalModal({ userId, onClose, onDone }: ApprovalModalProps) {
     }
   };
 
+  const modalStyle: React.CSSProperties = isMobile
+    ? {
+        background: COLORS.surface,
+        width: "100%",
+        maxHeight: "92vh",
+        marginTop: "auto",
+        borderRadius: "20px 20px 0 0",
+        overflowY: "auto",
+        animation: "slideUpSheet 0.25s ease",
+      }
+    : {
+        background: COLORS.surface,
+        borderRadius: "20px",
+        width: "540px",
+        maxWidth: "100%",
+        maxHeight: "90vh",
+        margin: "auto",
+        overflowY: "auto",
+        boxShadow: COLORS.shadowLg ?? "0 20px 60px rgba(0,0,0,0.2)",
+        animation: "slideUp 0.25s ease",
+      };
+
+  const actionRowStyle: React.CSSProperties = {
+    display: "flex",
+    flexDirection: isMobile ? "column" : "row",
+    gap: "10px",
+    marginTop: "22px",
+  };
+
   return (
-    <div style={S.overlay} onClick={onClose}>
-      <div style={S.modal} onClick={(e) => e.stopPropagation()}>
+    <div style={{ ...S.overlay, alignItems: isMobile ? "flex-end" : "center", justifyContent: "center", padding: isMobile ? 0 : "16px" }} onClick={onClose}>
+      <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
         <div style={S.modalHeader}>
           <div style={S.modalTitle}>Review Registration</div>
-          <button style={S.modalClose} onClick={onClose}>✕</button>
+          <button style={S.modalClose} onClick={onClose} aria-label="Close">
+            <X size={18} />
+          </button>
         </div>
         <div style={S.modalBody}>
           {loading ? (
-            <div style={S.spinner}>Loading…</div>
+            <div style={S.spinnerBox}>
+              <Loader2 size={22} className="spin-icon" />
+              <span>Loading…</span>
+            </div>
           ) : !detail ? (
-            <div style={S.errorBanner}>Failed to load user details</div>
+            <div style={S.errorBanner}><AlertTriangle size={16} style={{ flexShrink: 0, marginTop: "2px" }} />Failed to load user details</div>
           ) : (
             <>
-              {error && <div style={S.errorBanner}>⚠ {error}</div>}
+              {error && <div style={S.errorBanner}><AlertTriangle size={16} style={{ flexShrink: 0, marginTop: "2px" }} />{error}</div>}
 
               {/* User info */}
-              <div style={S.sectionLabel}>Applicant</div>
+              <div style={{ ...S.sectionLabel, marginTop: 0 }}>Applicant</div>
               {[
                 ["Name", detail.user.name],
                 ["Phone", detail.user.phone ?? "—"],
@@ -271,9 +356,7 @@ function ApprovalModal({ userId, onClose, onDone }: ApprovalModalProps) {
                           value={activeFromMonth}
                           onChange={(e) => setActiveFromMonth(e.target.value)}
                         />
-                        <div style={{ fontSize: "11px", color: COLORS.textMuted, marginTop: "4px" }}>
-                          Pending chanda records will be created from this month onwards
-                        </div>
+                        <div style={S.hint}>Pending chanda records will be created from this month onwards</div>
                       </div>
                     </>
                   )}
@@ -300,22 +383,19 @@ function ApprovalModal({ userId, onClose, onDone }: ApprovalModalProps) {
                     <textarea style={S.textarea} value={adminNotes} onChange={(e) => setAdminNotes(e.target.value)} placeholder="Internal notes visible only to admins" />
                   </div>
 
-                  <div style={S.actionRow}>
-                    <button style={S.cancelBtn} onClick={onClose} disabled={busy}>Cancel</button>
+                  <div style={actionRowStyle}>
+                    <button style={{ ...S.approveBtn, opacity: busy ? 0.6 : 1, order: isMobile ? 1 : 3 }} onClick={handleApprove} disabled={busy}>
+                      {busy ? <Loader2 size={16} className="spin-icon" /> : null}
+                      {busy ? "Approving…" : "Approve & Activate"}
+                    </button>
                     <button
-                      style={{ ...S.rejectBtn, flex: "none", padding: "12px 20px", opacity: busy ? 0.6 : 1 }}
+                      style={{ ...S.rejectBtn, flex: isMobile ? 1 : "none", padding: isMobile ? "12px" : "12px 20px", opacity: busy ? 0.6 : 1, order: 2 }}
                       onClick={() => setMode("reject")}
                       disabled={busy}
                     >
                       Reject
                     </button>
-                    <button
-                      style={{ ...S.approveBtn, opacity: busy ? 0.6 : 1 }}
-                      onClick={handleApprove}
-                      disabled={busy}
-                    >
-                      {busy ? "Approving…" : "Approve & Activate"}
-                    </button>
+                    <button style={{ ...S.cancelBtn, order: isMobile ? 3 : 1 }} onClick={onClose} disabled={busy}>Cancel</button>
                   </div>
                 </>
               ) : (
@@ -329,16 +409,17 @@ function ApprovalModal({ userId, onClose, onDone }: ApprovalModalProps) {
                       placeholder="Explain why this registration is being rejected…"
                     />
                   </div>
-                  <div style={S.actionRow}>
-                    <button style={S.cancelBtn} onClick={() => setMode("approve")} disabled={busy}>
-                      ← Back
-                    </button>
+                  <div style={actionRowStyle}>
                     <button
-                      style={{ ...S.rejectBtn, opacity: busy ? 0.6 : 1 }}
+                      style={{ ...S.rejectBtn, opacity: busy ? 0.6 : 1, order: isMobile ? 1 : 2 }}
                       onClick={handleReject}
                       disabled={busy}
                     >
+                      {busy ? <Loader2 size={16} className="spin-icon" /> : null}
                       {busy ? "Rejecting…" : "Reject Registration"}
+                    </button>
+                    <button style={{ ...S.cancelBtn, order: isMobile ? 2 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: "4px" }} onClick={() => setMode("approve")} disabled={busy}>
+                      <ChevronLeft size={15} /> Back
                     </button>
                   </div>
                 </>
@@ -346,13 +427,14 @@ function ApprovalModal({ userId, onClose, onDone }: ApprovalModalProps) {
 
               {/* ── Reset Password ── */}
               <div style={{ marginTop: "24px", paddingTop: "16px", borderTop: `1px solid ${COLORS.divider}` }}>
-                <div style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "0.06em", color: COLORS.textMuted, marginBottom: "10px" }}>
-                  Reset Password
-                </div>
+                <div style={{ ...S.sectionLabel, marginTop: 0 }}>Reset Password</div>
                 {resetMsg && (
-                  <div style={{ ...S.successBanner, marginBottom: "10px" }}>✓ {resetMsg}</div>
+                  <div style={{ ...S.successBanner, marginBottom: "10px" }}>
+                    <CheckCircle2 size={16} style={{ flexShrink: 0, marginTop: "2px" }} />
+                    {resetMsg}
+                  </div>
                 )}
-                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: "8px" }}>
                   <input
                     style={{ ...S.input, flex: 1 }}
                     value={resetPwd}
@@ -360,7 +442,7 @@ function ApprovalModal({ userId, onClose, onDone }: ApprovalModalProps) {
                     placeholder="Temporary password (min 8 chars)"
                   />
                   <button
-                    style={{ padding: "9px 16px", borderRadius: "10px", border: `1px solid ${COLORS.danger}`, background: COLORS.dangerLight, color: COLORS.danger, fontWeight: 700, fontSize: "13px", cursor: "pointer", whiteSpace: "nowrap" as const, opacity: resetBusy || resetPwd.length < 8 ? 0.5 : 1 }}
+                    style={{ ...S.resetBtn, opacity: resetBusy || resetPwd.length < 8 ? 0.5 : 1 }}
                     disabled={resetBusy || resetPwd.length < 8}
                     onClick={async () => {
                       setResetBusy(true);
@@ -375,7 +457,8 @@ function ApprovalModal({ userId, onClose, onDone }: ApprovalModalProps) {
                       }
                     }}
                   >
-                    {resetBusy ? "…" : "🔑 Reset"}
+                    {resetBusy ? <Loader2 size={15} className="spin-icon" /> : <KeyRound size={15} />}
+                    Reset
                   </button>
                 </div>
               </div>
@@ -398,6 +481,7 @@ const ACTIVITY_LABEL: Record<AdminActivity["activity_type"], string> = {
 };
 
 const AdminActivitySection: React.FC<{ activityType?: "family_added" | "user_deactivated" }> = ({ activityType }) => {
+  const isMobile = useMediaQuery("(max-width: 720px)");
   const [items, setItems] = useState<AdminActivity[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -429,9 +513,17 @@ const AdminActivitySection: React.FC<{ activityType?: "family_added" | "user_dea
     }
   };
 
-  if (!loading && items.length === 0) {
+  if (loading) {
     return (
-      <div style={{ ...S.emptyBox, padding: "40px 24px" }}>
+      <div style={S.spinnerBox}>
+        <Loader2 size={20} className="spin-icon" />
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <div style={{ ...S.emptyBox, padding: "32px 20px" }}>
         <div style={S.emptyMsg}>Nothing to acknowledge</div>
       </div>
     );
@@ -439,48 +531,49 @@ const AdminActivitySection: React.FC<{ activityType?: "family_added" | "user_dea
 
   return (
     <div>
-      {error && <div style={S.errorBanner}>⚠ {error}</div>}
+      {error && <div style={S.errorBanner}><AlertTriangle size={16} style={{ flexShrink: 0, marginTop: "2px" }} />{error}</div>}
       {items.map((a) => (
-        <div key={a.id} style={{ ...S.card, alignItems: "flex-start", cursor: "default" }}>
-          <div style={S.avatar}>{initials(a.name)}</div>
-          <div style={S.cardInfo}>
-            <div style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.06em", color: COLORS.textMuted, marginBottom: "3px" }}>
-              {ACTIVITY_LABEL[a.activity_type]}
-            </div>
-            <div style={S.cardName}>{a.name ?? "Unknown"}</div>
-            {a.activity_type === "family_added" ? (
-              <>
-                <div style={S.cardMeta}>
-                  {a.phone ?? "No phone"} · {a.chanda_no ?? "No Chanda No."} · ₹{a.monthly_amount ?? 0}/mo
-                </div>
-                <div style={S.cardMeta}>
-                  {a.zone ?? "No zone"} · {a.street ?? "No street"} · {a.address ?? "No address"}
-                </div>
-                <div style={S.cardMeta}>
-                  Added by {a.performed_by_name ?? "staff"} ({a.performed_by_role ?? "—"}) · {fmtDateTime(a.created_at)}
-                </div>
-              </>
-            ) : (
-              <>
-                <div style={S.cardMeta}>
-                  {a.chanda_no ? `Chanda No. ${a.chanda_no}` : a.phone ?? "—"}
-                </div>
-                <div style={S.cardMeta}>
-                  Removed by {a.performed_by_name ?? "an admin"} · {fmtDateTime(a.created_at)}
-                </div>
-                {a.reason && <div style={S.cardMeta}>Reason: {a.reason}</div>}
-              </>
-            )}
-            <div style={{ marginTop: "6px" }}>
-              <span style={S.pendingBadge}>Needs Acknowledgement</span>
+        <div key={a.id} style={{ ...S.card, alignItems: "flex-start", flexDirection: isMobile ? "column" : "row" }}>
+          <div style={{ display: "flex", gap: "14px", width: "100%" }}>
+            <div style={S.avatar}>{initials(a.name)}</div>
+            <div style={S.cardInfo}>
+              <div style={S.cardKicker}>{ACTIVITY_LABEL[a.activity_type]}</div>
+              <div style={S.cardName}>{a.name ?? "Unknown"}</div>
+              {a.activity_type === "family_added" ? (
+                <>
+                  <div style={S.cardMeta}>
+                    {a.phone ?? "No phone"} · {a.chanda_no ?? "No Chanda No."} · ₹{a.monthly_amount ?? 0}/mo
+                  </div>
+                  <div style={S.cardMeta}>
+                    {a.zone ?? "No zone"} · {a.street ?? "No street"} · {a.address ?? "No address"}
+                  </div>
+                  <div style={S.cardMeta}>
+                    Added by {a.performed_by_name ?? "staff"} ({a.performed_by_role ?? "—"}) · {fmtDateTime(a.created_at)}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={S.cardMeta}>
+                    {a.chanda_no ? `Chanda No. ${a.chanda_no}` : a.phone ?? "—"}
+                  </div>
+                  <div style={S.cardMeta}>
+                    Removed by {a.performed_by_name ?? "an admin"} · {fmtDateTime(a.created_at)}
+                  </div>
+                  {a.reason && <div style={S.cardMeta}>Reason: {a.reason}</div>}
+                </>
+              )}
+              <div style={{ marginTop: "6px" }}>
+                <span style={S.pendingBadge}>Needs Acknowledgement</span>
+              </div>
             </div>
           </div>
           <button
-            style={{ ...S.reviewBtn, opacity: busyId === a.id ? 0.6 : 1 }}
+            style={{ ...S.ackBtn, width: isMobile ? "100%" : "auto", marginTop: isMobile ? "12px" : 0, opacity: busyId === a.id ? 0.6 : 1 }}
             disabled={busyId === a.id}
             onClick={() => handleAcknowledge(a.id)}
           >
-            {busyId === a.id ? "…" : "Seen / Acknowledge"}
+            {busyId === a.id ? <Loader2 size={15} className="spin-icon" /> : <CheckCircle2 size={15} />}
+            Seen / Acknowledge
           </button>
         </div>
       ))}
@@ -493,6 +586,8 @@ const AdminActivitySection: React.FC<{ activityType?: "family_added" | "user_dea
 type ActivityTab = "all" | "registrations" | "family_added" | "user_deactivated";
 
 const PendingRegistrationsPage: React.FC = () => {
+  const isMobile = useMediaQuery("(max-width: 720px)");
+
   const [users, setUsers] = useState<PendingUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -533,66 +628,65 @@ const PendingRegistrationsPage: React.FC = () => {
     cursor: "pointer", border: `1px solid ${active ? COLORS.primaryBorder : COLORS.border}`,
     background: active ? COLORS.primaryLight : COLORS.surface,
     color: active ? COLORS.primary : COLORS.textSecondary,
+    flexShrink: 0,
   });
 
-  const registrationsSection = (
-    <>
-      {!loading && users.length === 0 ? (
-        <div style={S.emptyBox}>
-          <div style={S.emptyIcon}>✓</div>
-          <div style={S.emptyMsg}>All caught up!</div>
-          <div style={S.emptyHint}>No pending registrations at the moment.</div>
-        </div>
-      ) : (
-        users.map((u) => (
-          <div
-            key={u.id}
-            style={S.card}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.boxShadow = COLORS.shadow; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.boxShadow = COLORS.shadowSm; }}
-          >
-            <div style={S.avatar}>{initials(u.name)}</div>
-            <div style={S.cardInfo}>
-              <div style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.06em", color: COLORS.textMuted, marginBottom: "3px" }}>
-                NEW REGISTRATION
-              </div>
-              <div style={S.cardName}>{u.name}</div>
-              <div style={S.cardMeta}>
-                {u.phone ?? "No phone"} · Registered {fmtDateTime(u.registered_at)}
-              </div>
-              <div style={{ marginTop: "6px" }}>
-                <span style={S.pendingBadge}>Pending Approval</span>
-              </div>
+  const registrationsSection = loading ? (
+    <div style={S.spinnerBox}>
+      <Loader2 size={20} className="spin-icon" />
+    </div>
+  ) : users.length === 0 ? (
+    <div style={S.emptyBox}>
+      <div style={S.emptyIconWrap}><CheckCircle2 size={22} /></div>
+      <div style={S.emptyMsg}>All caught up!</div>
+      <div style={S.emptyHint}>No pending registrations at the moment.</div>
+    </div>
+  ) : (
+    users.map((u) => (
+      <div
+        key={u.id}
+        style={{ ...S.card, flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center" }}
+        onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.boxShadow = COLORS.shadow; }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.boxShadow = COLORS.shadowSm; }}
+      >
+        <div style={{ display: "flex", gap: "14px", width: "100%" }}>
+          <div style={S.avatar}>{initials(u.name)}</div>
+          <div style={S.cardInfo}>
+            <div style={S.cardKicker}>NEW REGISTRATION</div>
+            <div style={S.cardName}>{u.name}</div>
+            <div style={S.cardMeta}>{u.phone ?? "No phone"} · Registered {fmtDateTime(u.registered_at)}</div>
+            <div style={{ marginTop: "6px" }}>
+              <span style={S.pendingBadge}>Pending Approval</span>
             </div>
-            <button
-              style={S.reviewBtn}
-              onClick={() => setReviewingId(u.id)}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = COLORS.primaryLighter; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = COLORS.primaryLight; }}
-            >
-              Review →
-            </button>
           </div>
-        ))
-      )}
-    </>
+        </div>
+        <button
+          style={{ ...S.reviewBtn, width: isMobile ? "100%" : "auto", marginTop: isMobile ? "12px" : 0 }}
+          onClick={() => setReviewingId(u.id)}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = COLORS.primaryLighter; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = COLORS.primaryLight; }}
+        >
+          Review <ChevronRight size={14} />
+        </button>
+      </div>
+    ))
   );
 
   return (
     <div style={S.page}>
-      <h1 style={S.title}>Admin Activity</h1>
+      <h1 style={{ ...S.title, fontSize: isMobile ? "24px" : "32px" }}>Admin Activity</h1>
       <p style={S.subtitle}>
         New registrations, families added directly by staff, and users/families removed — all in one place.
       </p>
 
-      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "20px" }}>
+      <div style={S.tabsRow}>
         {TABS.map(({ key, label }) => (
           <button key={key} style={tabBtn(tab === key)} onClick={() => setTab(key)}>{label}</button>
         ))}
       </div>
 
-      {error && <div style={S.errorBanner}>⚠ {error}</div>}
-      {success && <div style={S.successBanner}>✓ {success}</div>}
+      {error && <div style={S.errorBanner}><AlertTriangle size={16} style={{ flexShrink: 0, marginTop: "2px" }} />{error}</div>}
+      {success && <div style={S.successBanner}><CheckCircle2 size={16} style={{ flexShrink: 0, marginTop: "2px" }} />{success}</div>}
 
       {(tab === "all" || tab === "registrations") && (
         <>
