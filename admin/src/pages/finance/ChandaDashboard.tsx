@@ -11,7 +11,7 @@ import AddFamilyModal from "../../components/AddFamilyModal";
 import EditAmountModal from "../../components/EditAmountModal";
 import {
   getDashboard, getMembers, getDefaulters, generateMonth,
-  addFamily, updateFamily, getFamilyHistory, updateChandaStartMonth,
+  addFamily, updateFamily, getFamilyHistory, updateChandaStartMonth, removeMigrationCoverage,
   downloadMonthlyExcel, downloadMonthlyPDF, downloadFamilyStatementPDF,
   currentMonthKey, triggerDownload, notifyDefaulters,
   type FinanceDashboard, type MemberWithCollection, type DefaulterItem,
@@ -31,18 +31,22 @@ const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct"
 
 /** One tile in the member history grid. Shared by the fixed 12-month grid and
  * the extra tiles appended for months paid ahead of the current year. */
-function renderHistoryTile(key: string, label: string, c: any, isFuture: boolean) {
+function renderHistoryTile(
+  key: string, label: string, c: any, isFuture: boolean,
+  onRemoveMigration?: (month: string) => void,
+) {
   let bg = "#F7F5EF", borderC = "#E7E2D3", textC = "#93998F";
   if (c?.status === "paid")          { bg = "#E9F5F0"; borderC = "#BFE0D4"; textC = "#0F5C4C"; }
   if (c?.status === "pending")       { bg = "#F8E9E9"; borderC = "#E8BBBB"; textC = "#A13A3A"; }
   if (c?.status === "not_applicable") { bg = "#F2F2EF"; borderC = "#E0DED6"; textC = "#9A9690"; }
 
   const balance = c ? Math.max((c.amount_due ?? 0) - (c.total_paid ?? 0), 0) : 0;
+  const isMigration = c?.status === "paid" && c?.is_migration_covered;
 
   return (
     <div key={key} style={{
       background: bg, border: `1.5px solid ${borderC}`,
-      borderRadius: 12, padding: "12px 12px",
+      borderRadius: 12, padding: "12px 12px", position: "relative",
     }}>
       <div style={{ fontSize: 12, fontWeight: 800, color: textC,
         textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
@@ -58,6 +62,28 @@ function renderHistoryTile(key: string, label: string, c: any, isFuture: boolean
             <div style={{ color: "#A13A3A", fontWeight: 700 }}>
               bal {fmt(balance)}
             </div>
+          )}
+        </div>
+      )}
+      {isMigration && (
+        <div style={{ marginTop: 6, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 4 }}>
+          <span style={{
+            fontSize: 9, fontWeight: 800, letterSpacing: "0.04em", color: "#8A6D1E",
+            background: "#FCF3D9", border: "1px solid #EBD48F", borderRadius: 5, padding: "1px 5px",
+          }}>
+            MIGRATION
+          </span>
+          {onRemoveMigration && (
+            <button
+              onClick={() => onRemoveMigration(key)}
+              title="Remove Excel migration coverage for this month — not a payment rollback"
+              style={{
+                fontSize: 9, fontWeight: 700, color: "#A13A3A", background: "none",
+                border: "none", cursor: "pointer", textDecoration: "underline", padding: 0,
+              }}
+            >
+              Remove
+            </button>
           )}
         </div>
       )}
@@ -142,6 +168,24 @@ function FamilyDetail({ memberId, memberName, memberNo, memberPhone, monthlyAmou
       setStartMonthError(e?.response?.data?.detail || "Failed to update Chanda start month");
     } finally {
       setStartMonthBusy(false);
+    }
+  };
+
+  const [removeMigrationError, setRemoveMigrationError] = useState<string | null>(null);
+  const handleRemoveMigrationCoverage = async (month: string) => {
+    const label = new Date(month + "-01").toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+    if (!window.confirm(
+      `Remove Excel migration coverage for ${label}?\n\n` +
+      `This is NOT a payment rollback — no real transaction is being reversed. ` +
+      `${label} will go back to Pending and count toward outstanding again. ` +
+      `Earlier and later months are not affected.`
+    )) return;
+    setRemoveMigrationError(null);
+    try {
+      await removeMigrationCoverage(memberId, month);
+      await reloadHistory();
+    } catch (e: any) {
+      setRemoveMigrationError(e?.response?.data?.detail || "Failed to remove migration coverage");
     }
   };
 
@@ -300,6 +344,11 @@ function FamilyDetail({ memberId, memberName, memberNo, memberPhone, monthlyAmou
 
         {/* Year grid — ALL 12 months always visible */}
         <div style={{ padding: "18px 18px 28px" }}>
+          {removeMigrationError && (
+            <div style={{ marginBottom: 12, fontSize: 12.5, color: "#A13A3A", background: "#FBEAEA", borderRadius: 8, padding: "8px 10px" }}>
+              {removeMigrationError}
+            </div>
+          )}
           {loading ? (
             <div style={{ textAlign: "center", color: "#93998F", padding: 24, fontSize: 14 }}>
               Loading history…
@@ -320,7 +369,7 @@ function FamilyDetail({ memberId, memberName, memberNo, memberPhone, monthlyAmou
                   // advance; an unpaid one is not generated yet, so it is never
                   // pending no matter what the API sends back.
                   const c = isFuture && !((row?.total_paid ?? 0) > 0) ? undefined : row;
-                  return renderHistoryTile(key, name, c, isFuture);
+                  return renderHistoryTile(key, name, c, isFuture, handleRemoveMigrationCoverage);
                 })}
 
                 {/* Advance-paid months beyond this year's December — e.g. a
@@ -339,7 +388,7 @@ function FamilyDetail({ memberId, memberName, memberNo, memberPhone, monthlyAmou
                   .map(key => {
                     const [ky, km] = key.split("-");
                     const label = `${MONTH_NAMES[parseInt(km, 10) - 1]} '${ky.slice(2)}`;
-                    return renderHistoryTile(key, label, colMap[key], false);
+                    return renderHistoryTile(key, label, colMap[key], false, handleRemoveMigrationCoverage);
                   })}
               </div>
 

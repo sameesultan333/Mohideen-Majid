@@ -237,6 +237,15 @@ export async function updateChandaStartMonth(id: number, startMonth: string) {
   return data;
 }
 
+/** Removes ONE month's Excel-migration coverage — NOT a payment rollback,
+ * since migration coverage is a historical claim entered during import, not
+ * necessarily a real logged transaction. Backend refuses (404) if that
+ * month isn't actually migration-covered for this family. */
+export async function removeMigrationCoverage(id: number, month: string) {
+  const { data } = await api.delete(`/admin/families/${id}/migration-coverage/${month}`);
+  return data;
+}
+
 export async function activateFamily(id: number) {
   const { data } = await api.patch(`/admin/families/${id}/activate`);
   return data;

@@ -1092,6 +1092,17 @@ def family_statement(
     )
     donations = db.query(models.Donation).filter_by(head_id=head.id).all()
 
+    # Months covered by an Excel migration import (payment_source == "import")
+    # vs a real transaction - the UI must never present "remove migration
+    # coverage" as if it were a payment rollback, so it needs to tell the
+    # two apart per month.
+    migration_covered_months = {
+        m
+        for p in payments
+        if p.payment_source == "import" and p.status == "verified"
+        for m in (p.covered_months or [])
+    }
+
     # Money owed is measured over generated months only — a month paid in
     # advance is shown in `cols` but is not yet due, so it must not move
     # total_due or outstanding. Advance cash is reported separately. A
@@ -1160,6 +1171,7 @@ def family_statement(
                 "is_advance":        c.is_advance or False,
                 "rate_snapshot":     c.rate_snapshot,
                 "advance_payment_id": c.advance_payment_id,
+                "is_migration_covered": c.month in migration_covered_months,
             }
             for c in cols
         ],

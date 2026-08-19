@@ -1250,6 +1250,134 @@ def update_chanda_start_month(
     return {"message": f"Chanda start month set to {new_start}", "start_month": new_start, "family_id": head.id}
 
 
+@router.delete("/families/{family_id}/migration-coverage/{month}")
+def remove_migration_coverage(
+    family_id: int,
+    month: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    """
+    Remove ONE month's Excel-migration coverage from a family, dynamically -
+    works for any YYYY-MM, past or future, not a special case for any
+    particular month.
+
+    This is deliberately NOT the payment-rollback flow (PaymentRollbackRequest /
+    approve_payment_rollback in chanda.py): migration coverage represents a
+    historical claim entered during import, not necessarily a real logged
+    transaction, so there is nothing to "roll back" in the financial sense -
+    only a data-correction to make.
+
+    Safest-possible data model, per the audit: every migration importer
+    (_create_historical_records, _create_migration_record,
+    _create_year_qualified_migration_record) already writes coverage_map/
+    covered_months on payment_source="import" PaymentEntry rows, and
+    sync_generated_month() already recomputes a ChandaCollection's
+    total_paid/status from scratch by summing coverage_map across every
+    verified payment for that month - not incrementally. So the entire fix is:
+    drop `month` from every migration PaymentEntry's coverage_map, then re-run
+    that same recalculation for the one affected ChandaCollection row. Every
+    dashboard/collector/family-detail screen reads that row directly, so
+    nothing else needs to be touched or patched by hand - and June/earlier,
+    August/later are structurally untouched since only one dict key and one
+    ChandaCollection row are ever modified.
+
+    Never deletes a PaymentEntry row, even if this was its only covered
+    month (financial history stays auditable) - it's left as a zero-value
+    historical record.
+    """
+    from app.utils.timezones import india_month_key
+    from app.utils.payment_ledger import sync_generated_month
+
+    head = db.query(models.ApprovedHead).filter_by(id=family_id).first()
+    if not head:
+        raise HTTPException(404, "Family not found")
+
+    try:
+        datetime.strptime(month + "-01", "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(400, "month must be in YYYY-MM format")
+
+    migration_payments = (
+        db.query(models.PaymentEntry)
+        .filter(
+            models.PaymentEntry.head_id == family_id,
+            models.PaymentEntry.payment_source == "import",
+            models.PaymentEntry.status == "verified",
+        )
+        .all()
+    )
+    affected = [p for p in migration_payments if month in (p.covered_months or [])]
+    if not affected:
+        raise HTTPException(
+            404,
+            f"No migration coverage found for {month} on {head.name} ({head.chanda_no}).",
+        )
+
+    removed_total = 0.0
+    for payment in affected:
+        cov_map = dict(payment.coverage_map or {})
+        removed_amount = round(float(cov_map.pop(month, 0) or 0), 2)
+        removed_total += removed_amount
+
+        payment.coverage_map = cov_map
+        payment.covered_months = sorted(cov_map.keys())
+        # amount/months_covered describe what this record actually still
+        # allocates - recomputed from the reduced map, never left stale.
+        payment.amount = round(sum(cov_map.values()), 2)
+        payment.months_covered = len(cov_map)
+
+        write_audit(
+            db, "payment_entries", payment.id, "migration_coverage_removed",
+            old_values={"covered_months": sorted(list(cov_map.keys()) + [month])},
+            new_values={"covered_months": payment.covered_months, "removed_month": month,
+                        "removed_amount": removed_amount},
+            performed_by_id=_actor_id(current_user),
+            note=f"Removed migration coverage for {month} ({head.name}, {head.chanda_no}) - "
+                 f"₹{removed_amount:.2f} - not a real transaction, no payment rollback involved.",
+        )
+
+    db.flush()
+
+    collection = (
+        db.query(models.ChandaCollection)
+        .filter_by(head_id=family_id, month=month)
+        .first()
+    )
+    if not collection:
+        # Defensive: the month row should already exist (migration created
+        # it), but recreate it so the now-unpaid month still surfaces in
+        # pending/outstanding rather than silently vanishing.
+        collection = models.ChandaCollection(
+            head_id=family_id, month=month,
+            amount_due=round(float(head.monthly_amount or 0), 2),
+            total_paid=0, status="pending",
+            rate_snapshot=head.monthly_amount,
+        )
+        db.add(collection)
+        db.flush()
+
+    sync_generated_month(db, collection)
+
+    db.commit()
+    db.refresh(collection)
+
+    manager.publish_sync("finance", "family_updated", {"family_id": head.id})
+    manager.publish_sync("finance", "migration_coverage_removed", {
+        "family_id": head.id, "month": month, "removed_amount": removed_total,
+    })
+
+    return {
+        "message": f"Migration coverage for {month} removed from {head.name} ({head.chanda_no})",
+        "family_id": head.id,
+        "month": month,
+        "removed_amount": removed_total,
+        "new_status": collection.status,
+        "new_total_paid": collection.total_paid,
+        "amount_due": collection.amount_due,
+    }
+
+
 @router.patch("/families/{family_id}/activate")
 def activate_family(
     family_id: int,
