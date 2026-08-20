@@ -33,6 +33,7 @@ from app.routes import finance as finance_routes
 from app.security import get_current_user
 
 ADMIN = {"sub": "1", "name": "Test Admin", "role": "admin", "roles": ["admin"], "status": "ACTIVE"}
+COLLECTOR = {"sub": "2", "name": "Test Collector", "role": "collector", "roles": ["collector"], "status": "ACTIVE"}
 
 
 @pytest.fixture
@@ -43,6 +44,7 @@ def env():
     db = Session()
 
     db.add(models.User(id=1, name="Test Admin", phone="9000000001", password="x", role="admin", is_active=True))
+    db.add(models.User(id=2, name="Test Collector", phone="9000000002", password="x", role="collector", is_active=True))
     db.add(models.ApprovedHead(id=10, chanda_no="CH-010", name="Farhana", phone="9000000010",
                                monthly_amount=100.0, is_active=True))
     db.commit()
@@ -57,9 +59,11 @@ def env():
 
     for r in (admin_routes, chanda_routes, finance_routes):
         app.dependency_overrides[r.get_db] = _db
-    app.dependency_overrides[get_current_user] = lambda: ADMIN
 
-    yield TestClient(app), db
+    current = {"user": ADMIN}
+    app.dependency_overrides[get_current_user] = lambda: current["user"]
+
+    yield TestClient(app), db, current
     db.close()
 
 
@@ -90,7 +94,7 @@ def _seed_lump_sum_migration(db, months=MONTHS, amount_per_month=100.0):
 
 
 def test_remove_first_month_january(env):
-    client, db = env
+    client, db, current = env
     payment = _seed_lump_sum_migration(db)
 
     resp = client.delete("/admin/families/10/migration-coverage/2026-01")
@@ -113,7 +117,7 @@ def test_remove_first_month_january(env):
 
 
 def test_remove_middle_month_does_not_affect_neighbors(env):
-    client, db = env
+    client, db, current = env
     payment = _seed_lump_sum_migration(db)
 
     resp = client.delete("/admin/families/10/migration-coverage/2026-04")
@@ -134,7 +138,7 @@ def test_remove_middle_month_does_not_affect_neighbors(env):
 
 def test_remove_final_covered_month_july(env):
     """The exact scenario from the request: Jan-Jul covered, July removed."""
-    client, db = env
+    client, db, current = env
     payment = _seed_lump_sum_migration(db)
 
     resp = client.delete("/admin/families/10/migration-coverage/2026-07")
@@ -155,7 +159,7 @@ def test_remove_final_covered_month_july(env):
 
 
 def test_removing_the_only_covered_month_leaves_a_zero_value_record_not_a_deletion(env):
-    client, db = env
+    client, db, current = env
     payment = _seed_lump_sum_migration(db, months=["2026-01"], amount_per_month=100.0)
 
     resp = client.delete("/admin/families/10/migration-coverage/2026-01")
@@ -173,7 +177,7 @@ def test_removed_month_now_counts_as_pending_outstanding_and_defaulter_eligible(
     """Verifies the fix flows through the SAME authoritative-state functions
     every dashboard/collector/family-detail screen already reads - not a
     hand-patched number."""
-    client, db = env
+    client, db, current = env
     _seed_lump_sum_migration(db)
 
     resp = client.delete("/admin/families/10/migration-coverage/2026-07")
@@ -192,8 +196,22 @@ def test_removed_month_now_counts_as_pending_outstanding_and_defaulter_eligible(
     assert stmt["summary"]["total_outstanding"] > 0
 
 
+def test_collector_cannot_remove_migration_coverage(env):
+    """Backend must reject this outright (403), not merely hide the button -
+    a Collector who calls the endpoint directly must still be refused."""
+    client, db, current = env
+    _seed_lump_sum_migration(db)
+    current["user"] = COLLECTOR
+
+    resp = client.delete("/admin/families/10/migration-coverage/2026-07")
+    assert resp.status_code == 403, resp.text
+
+    july = db.query(models.ChandaCollection).filter_by(head_id=10, month="2026-07").first()
+    assert july.status == "paid", "rejected request must leave the collection state untouched"
+
+
 def test_no_migration_coverage_for_month_returns_404(env):
-    client, db = env
+    client, db, current = env
     _seed_lump_sum_migration(db)
 
     resp = client.delete("/admin/families/10/migration-coverage/2027-01")
@@ -204,7 +222,7 @@ def test_does_not_touch_normal_payment_rollback_machinery(env):
     """A completely separate, real (non-migration) verified payment for a
     DIFFERENT month must be untouched, and removing migration coverage must
     never create/modify a PaymentRollbackRequest."""
-    client, db = env
+    client, db, current = env
     _seed_lump_sum_migration(db)
 
     real_payment = models.PaymentEntry(

@@ -69,6 +69,7 @@ export default function FamilySearchScreen({ navigation }) {
   const [showAddFamily, setShowAddFamily] = useState(false);
   const [addForm, setAddForm] = useState(EMPTY_FORM);
   const [addSaving, setAddSaving] = useState(false);
+  const [confirmStartMonth, setConfirmStartMonth] = useState(false);
 
   const [showEditFamily, setShowEditFamily] = useState(false);
   const [editItem, setEditItem] = useState(null);
@@ -178,7 +179,13 @@ export default function FamilySearchScreen({ navigation }) {
     setDueSinceModal(which);
   }, [addForm.registration_date, editForm.registration_date]);
 
-  const addFamily = useCallback(async () => {
+  // Validates the form and opens the "Confirm Chanda Start Month" dialog -
+  // the actual family isn't created until the collector explicitly confirms
+  // the effective start month there (submitAddFamily below). This exists
+  // specifically so leaving "Chanda Due Since" blank in, say, August for a
+  // family that has actually existed since January can't slip through
+  // silently: the dialog always states the exact month that will be used.
+  const requestAddFamily = useCallback(() => {
     const amt = parseFloat(addForm.monthly_amount);
     if (!addForm.name.trim() || isNaN(amt) || amt <= 0) {
       return Alert.alert("Required fields missing", "Name and Monthly Amount are required.");
@@ -190,6 +197,13 @@ export default function FamilySearchScreen({ navigation }) {
     if (dueSince && !/^\d{4}-(0[1-9]|1[0-2])$/.test(dueSince)) {
       return Alert.alert("Invalid month", "Chanda Due Since must be in YYYY-MM format, e.g. 2026-01.");
     }
+    setConfirmStartMonth(true);
+  }, [addForm, isChandaNoTaken]);
+
+  const submitAddFamily = useCallback(async () => {
+    const amt = parseFloat(addForm.monthly_amount);
+    const dueSince = addForm.registration_date.trim();
+    setConfirmStartMonth(false);
     setAddSaving(true);
     try {
       const res = await authApiFetch("/collector/families", {
@@ -526,7 +540,7 @@ export default function FamilySearchScreen({ navigation }) {
                 ))}
                 <AnimatedPressable
                   style={[s.submitBtn, addSaving && { opacity: 0.6 }, { marginTop: 8 }]}
-                  onPress={addFamily}
+                  onPress={requestAddFamily}
                   disabled={addSaving}
                 >
                   {addSaving
@@ -538,6 +552,75 @@ export default function FamilySearchScreen({ navigation }) {
             </View>
           </View>
         </KeyboardAvoidingView>
+      </SafeModal>
+
+      {/* ── Confirm Chanda Start Month ── forces a conscious confirmation of
+          the effective start month before the family is actually created,
+          instead of silently accepting today's month when the collector
+          leaves "Chanda Due Since" blank. Cancel returns to the form with
+          nothing created; Confirm runs the real submission. */}
+      <SafeModal visible={confirmStartMonth} transparent animationType="fade" onRequestClose={() => setConfirmStartMonth(false)}>
+        <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", paddingHorizontal: 24 }} onPress={() => setConfirmStartMonth(false)}>
+          <Pressable style={{ backgroundColor: H.card, borderRadius: 18, padding: 20 }} onPress={() => {}}>
+            <Text allowFontScaling={false} style={{ fontSize: 16, fontWeight: "800", color: H.textDark, marginBottom: 4 }}>
+              Confirm Chanda Start Month
+            </Text>
+            {(() => {
+              const dueSince = addForm.registration_date.trim();
+              const [y, m] = dueSince
+                ? dueSince.split("-").map(Number)
+                : [new Date().getFullYear(), new Date().getMonth() + 1];
+              const monthLabel = new Date(y, m - 1, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+              return (
+                <>
+                  <Text allowFontScaling={false} style={{ fontSize: 13, color: H.textMuted, marginTop: 4, marginBottom: 14, lineHeight: 19 }}>
+                    This family will be generated from <Text style={{ fontWeight: "800", color: H.textDark }}>{monthLabel}</Text>.
+                    {!dueSince ? "  \"Chanda Due Since\" was left blank, so today's month will be used." : ""}
+                  </Text>
+                  <View style={{ backgroundColor: H.bg, borderRadius: 12, padding: 12, marginBottom: 16 }}>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
+                      <Text allowFontScaling={false} style={{ fontSize: 12, color: H.textMuted }}>Name</Text>
+                      <Text allowFontScaling={false} style={{ fontSize: 13, fontWeight: "700", color: H.textDark }}>{addForm.name.trim()}</Text>
+                    </View>
+                    {!!addForm.chanda_no.trim() && (
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
+                        <Text allowFontScaling={false} style={{ fontSize: 12, color: H.textMuted }}>Chanda No.</Text>
+                        <Text allowFontScaling={false} style={{ fontSize: 13, fontWeight: "700", color: H.textDark }}>{addForm.chanda_no.trim()}</Text>
+                      </View>
+                    )}
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
+                      <Text allowFontScaling={false} style={{ fontSize: 12, color: H.textMuted }}>Monthly Chanda</Text>
+                      <Text allowFontScaling={false} style={{ fontSize: 13, fontWeight: "700", color: H.textDark }}>₹{addForm.monthly_amount}</Text>
+                    </View>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                      <Text allowFontScaling={false} style={{ fontSize: 12, color: H.textMuted }}>Chanda Start Month</Text>
+                      <Text allowFontScaling={false} style={{ fontSize: 13, fontWeight: "700", color: H.textDark }}>{monthLabel}</Text>
+                    </View>
+                  </View>
+                </>
+              );
+            })()}
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <AnimatedPressable
+                style={[s.submitBtn, { flex: 1, backgroundColor: H.bg, borderWidth: 1, borderColor: H.cardBorder }]}
+                onPress={() => setConfirmStartMonth(false)}
+                disabled={addSaving}
+              >
+                <Text allowFontScaling={false} style={[s.submitBtnTxt, { color: H.textDark }]}>Cancel</Text>
+              </AnimatedPressable>
+              <AnimatedPressable
+                style={[s.submitBtn, { flex: 1 }, addSaving && { opacity: 0.6 }]}
+                onPress={submitAddFamily}
+                disabled={addSaving}
+              >
+                {addSaving
+                  ? <ActivityIndicator color={H.headerDeep} />
+                  : <Text allowFontScaling={false} style={s.submitBtnTxt}>Confirm & Add Family</Text>
+                }
+              </AnimatedPressable>
+            </View>
+          </Pressable>
+        </Pressable>
       </SafeModal>
 
       {/* ── Edit Family modal ────────────────────────────────────────────── */}

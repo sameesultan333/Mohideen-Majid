@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.database import SessionLocal
-from app.security import require_superadmin
+from app.security import require_admin
 from app.websocket_manager import manager
 from app.routes.finance import write_audit
 
@@ -42,7 +42,7 @@ def _actor_id(current_user: dict) -> int:
 @router.get("/", response_model=List[schemas.StaffOut], summary="List all staff")
 def list_staff(
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_superadmin),
+    current_user: dict = Depends(require_admin),
 ):
     """
     Returns every user whose (primary) role is superadmin / admin / imam /
@@ -102,11 +102,15 @@ def list_staff(
 def create_staff(
     data: schemas.StaffCreate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_superadmin),
+    current_user: dict = Depends(require_admin),
 ):
     """
     Creates a new admin / imam / collector account.
     No password set here — staff self-register via the app to set their own password.
+
+    Admin (not just superadmin) can create staff - safe to open up because
+    schemas.STAFF_ROLE_VALUES excludes "superadmin" entirely, so this can
+    never be used to self-escalate or mint another superadmin account.
     """
     phone = _normalize(data.phone)
     if not phone:
@@ -154,7 +158,7 @@ def update_staff(
     staff_id: int,
     data: schemas.StaffUpdate,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_superadmin),
+    current_user: dict = Depends(require_admin),
 ):
     staff = db.query(models.User).filter_by(id=staff_id).first()
     if not staff:
@@ -218,11 +222,14 @@ def update_staff(
 def toggle_status(
     staff_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_superadmin),
+    current_user: dict = Depends(require_admin),
 ):
     staff = db.query(models.User).filter_by(id=staff_id).first()
     if not staff:
         raise HTTPException(404, "Staff member not found")
+
+    if staff.role == "superadmin" and staff_id != _actor_id(current_user):
+        raise HTTPException(403, "Cannot disable another superadmin's account")
 
     if staff_id == _actor_id(current_user):
         raise HTTPException(400, "You cannot disable yourself")
@@ -265,7 +272,7 @@ def toggle_status(
 def delete_staff(
     staff_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_superadmin),
+    current_user: dict = Depends(require_admin),
 ):
     staff = db.query(models.User).filter_by(id=staff_id).first()
     if not staff:
@@ -318,7 +325,7 @@ def delete_staff(
 def remove_staff_role(
     staff_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_superadmin),
+    current_user: dict = Depends(require_admin),
 ):
     """
     Someone leaving the mosque committee stops being staff - it does not stop

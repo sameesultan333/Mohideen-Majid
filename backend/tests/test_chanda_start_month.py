@@ -35,6 +35,7 @@ from app.security import get_current_user
 from app.utils.chanda_months import pending_month_filter, current_month_key
 
 ADMIN = {"sub": "1", "name": "Test Admin", "role": "admin", "roles": ["admin"], "status": "ACTIVE"}
+COLLECTOR = {"sub": "2", "name": "Test Collector", "role": "collector", "roles": ["collector"], "status": "ACTIVE"}
 
 
 @pytest.fixture
@@ -45,6 +46,7 @@ def env():
     db = Session()
 
     db.add(models.User(id=1, name="Test Admin", phone="9000000001", password="x", role="admin", is_active=True))
+    db.add(models.User(id=2, name="Test Collector", phone="9000000002", password="x", role="collector", is_active=True))
     db.add(models.ApprovedHead(
         id=10, chanda_no="CH-010", name="Farhana", phone="9000000010",
         monthly_amount=100.0, is_active=True, registration_date=datetime(2026, 1, 1),
@@ -61,9 +63,11 @@ def env():
 
     for r in (admin_routes, chanda_routes, finance_routes):
         app.dependency_overrides[r.get_db] = _db
-    app.dependency_overrides[get_current_user] = lambda: ADMIN
 
-    yield TestClient(app), db
+    current = {"user": ADMIN}
+    app.dependency_overrides[get_current_user] = lambda: current["user"]
+
+    yield TestClient(app), db, current
     db.close()
 
 
@@ -87,7 +91,7 @@ def _make_payment(db, month, amount=100.0, status="verified", rollback_status=No
 
 # 1. Family starts January → January counts normally.
 def test_family_starting_january_counts_january_normally(env):
-    client, db = env
+    client, db, current = env
     _make_collection(db, "2026-01", amount_due=100, total_paid=0, status="pending")
 
     rows = db.query(models.ChandaCollection).filter(
@@ -98,7 +102,7 @@ def test_family_starting_january_counts_january_normally(env):
 
 # 2. Family starts July → January–June don't count.
 def test_changing_start_to_july_excludes_jan_through_june(env):
-    client, db = env
+    client, db, current = env
     for m in ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"]:
         _make_collection(db, m, amount_due=100, total_paid=0, status="pending")
 
@@ -118,7 +122,7 @@ def test_changing_start_to_july_excludes_jan_through_june(env):
 
 # 3. Existing July/August payments remain correct after the change.
 def test_july_august_payments_remain_correct_after_start_month_change(env):
-    client, db = env
+    client, db, current = env
     for m in ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"]:
         _make_collection(db, m, amount_due=100, total_paid=0, status="pending")
     _make_collection(db, "2026-07", amount_due=100, total_paid=100, status="paid")
@@ -140,7 +144,7 @@ def test_july_august_payments_remain_correct_after_start_month_change(env):
 
 # 4. Pre-start verified payment blocks changing the start month.
 def test_verified_payment_before_new_start_blocks_the_change(env):
-    client, db = env
+    client, db, current = env
     _make_collection(db, "2026-01", amount_due=100, total_paid=100, status="paid")
     for m in ["2026-02", "2026-03", "2026-04", "2026-05", "2026-06"]:
         _make_collection(db, m, amount_due=100, total_paid=0, status="pending")
@@ -160,9 +164,24 @@ def test_verified_payment_before_new_start_blocks_the_change(env):
     assert len(payments) == 1, "the payment must never be touched by a blocked change"
 
 
+def test_collector_cannot_change_chanda_start_month(env):
+    """Backend must reject this outright (403), not merely hide the UI
+    control - a Collector who calls the endpoint directly must still fail."""
+    client, db, current = env
+    _make_collection(db, "2026-01", amount_due=100, total_paid=0, status="pending")
+    current["user"] = COLLECTOR
+
+    resp = client.patch("/admin/families/10/chanda-start-month", json={"start_month": "2026-07"})
+    assert resp.status_code == 403, resp.text
+
+    head = db.query(models.ApprovedHead).filter_by(id=10).first()
+    assert head.registration_date.strftime("%Y-%m") == "2026-01", \
+        "rejected request must leave the family's start month untouched"
+
+
 # 5. Rejected/rolled-back payment does not count as a valid payment.
 def test_rolled_back_payment_does_not_block_the_change(env):
-    client, db = env
+    client, db, current = env
     _make_collection(db, "2026-01", amount_due=100, total_paid=0, status="pending")
     for m in ["2026-02", "2026-03", "2026-04", "2026-05", "2026-06"]:
         _make_collection(db, m, amount_due=100, total_paid=0, status="pending")
@@ -184,7 +203,7 @@ def test_rolled_back_payment_does_not_block_the_change(env):
 
 # 6. Monthly generator doesn't create pre-start months.
 def test_scheduled_job_does_not_create_pre_start_months(env, monkeypatch):
-    client, db = env
+    client, db, current = env
     head = db.query(models.ApprovedHead).filter_by(id=10).first()
     head.registration_date = datetime(2026, 7, 1)
     db.commit()
@@ -209,7 +228,7 @@ def test_scheduled_job_does_not_create_pre_start_months(env, monkeypatch):
 
 # 7. Manual generator doesn't create pre-start months.
 def test_manual_generate_endpoint_does_not_create_pre_start_months(env):
-    client, db = env
+    client, db, current = env
     head = db.query(models.ApprovedHead).filter_by(id=10).first()
     head.registration_date = datetime(2026, 7, 1)
     db.commit()
@@ -228,7 +247,7 @@ def test_manual_generate_endpoint_does_not_create_pre_start_months(env):
 
 # 8. Outstanding excludes pre-start months.
 def test_outstanding_excludes_pre_start_months(env):
-    client, db = env
+    client, db, current = env
     for m in ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"]:
         _make_collection(db, m, amount_due=100, total_paid=0, status="pending")
     _make_collection(db, "2026-07", amount_due=100, total_paid=0, status="pending")
@@ -253,7 +272,7 @@ def test_outstanding_excludes_pre_start_months(env):
 
 # 9. Pending excludes pre-start months.
 def test_pending_count_excludes_pre_start_months(env):
-    client, db = env
+    client, db, current = env
     for m in ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"]:
         _make_collection(db, m, amount_due=100, total_paid=0, status="pending")
     _make_collection(db, "2026-07", amount_due=100, total_paid=0, status="pending")
