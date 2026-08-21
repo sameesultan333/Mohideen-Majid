@@ -25,10 +25,41 @@
  * Requires <SafeAreaProvider> at the root — mounted in App.jsx.
  */
 
+import { Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 /** Minimum breathing room between the system bar and header content. */
 const HEADER_TOP_GUTTER = 6;
+
+/**
+ * BottomNav's own fixed-content height (paddingTop 12 + icon 32 + gap 4 +
+ * label ~13 = 61) and bottom gutter, exported here so every screen that pads
+ * its scroll content to clear the bar reads the SAME numbers BottomNav.jsx
+ * itself uses - not a screen-local copy.
+ *
+ * Screens used to each hardcode their own "BOTTOM_NAV_H" constant built from
+ * a static SAFE_B guess (12 Android / 28 iOS). When BottomNav.jsx was fixed
+ * to use the real device inset (useBottomInset) instead of that static
+ * guess, every one of those screen-local constants went stale: on a device
+ * whose real inset is bigger than 12/28 (increasingly common since target
+ * SDK 35 forces edge-to-edge, so even 3-button-nav phones report a nonzero
+ * inset now), the bar grew taller but the screen's content padding didn't,
+ * so the last row(s) ended up hidden behind the bar. useBottomNavHeight()
+ * is the fix: one dynamic source of truth, always exactly as tall as the
+ * bar actually renders.
+ */
+export const BOTTOM_NAV_CONTENT_HEIGHT = 61;
+export const BOTTOM_NAV_GUTTER = Platform.OS === "ios" ? 8 : 10;
+
+/**
+ * Total height of BottomNav as it will actually render on this device right
+ * now, including its real safe-area inset. Use this for a screen's bottom
+ * scroll padding instead of any hardcoded constant.
+ */
+export function useBottomNavHeight() {
+  const insets = useSafeAreaInsets();
+  return BOTTOM_NAV_CONTENT_HEIGHT + insets.bottom + BOTTOM_NAV_GUTTER;
+}
 
 /**
  * Top padding a custom header should use so it always starts below the status

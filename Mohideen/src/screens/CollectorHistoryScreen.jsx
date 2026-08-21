@@ -17,11 +17,11 @@ import { authApiFetch } from "../config/server";
 import { COLORS as C, RADII, FONTS } from "../config/theme";
 import { useTranslation } from "react-i18next";
 import BottomNav from "../components/BottomNav";
+import { useBottomNavHeight } from "../hooks/useSafeArea";
 
 const { width: SW } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
 const HEADER_H = 110;
-const BOTTOM_NAV_H = Platform.select({ ios: 89, android: 73 });
 const CACHE_KEY = "collector_history_cache";
 const FETCH_TIMEOUT = 2000;
 
@@ -424,6 +424,7 @@ const SearchCard = ({ search, setSearch, t }) => (
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function CollectorHistoryScreen({ navigation }) {
   const { t } = useTranslation();
+  const bottomNavHeight = useBottomNavHeight();
   const isFocused = useIsFocused();
 
   const [allItems, setAllItems]   = useState([]);
@@ -629,7 +630,7 @@ export default function CollectorHistoryScreen({ navigation }) {
           keyboardShouldPersistTaps="handled"
           onEndReached={loadMore}
           onEndReachedThreshold={0.3}
-          contentContainerStyle={s.listContent}
+          contentContainerStyle={[s.listContent, { paddingBottom: bottomNavHeight + 16 }]}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}

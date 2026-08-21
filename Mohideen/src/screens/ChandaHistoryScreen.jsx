@@ -10,11 +10,11 @@ import { formatCoveredMonths, formatServerDateTime } from "../utils/datetime";
 import { COLORS as C, RADII, FONTS } from "../config/theme";
 import Svg, { Path, Rect, Defs, LinearGradient, Stop } from "react-native-svg";
 import BottomNav from "../components/BottomNav";
+import { useBottomNavHeight } from "../hooks/useSafeArea";
 
 const { width: SW } = Dimensions.get("window");
 const IOS = Platform.OS === "ios";
 const HEADER_H = 120;
-const BOTTOM_NAV_H = Platform.select({ ios: 89, android: 73 });
 
 // ─── Palette ──────────────────────────────────────────────────────────
 const H = {
@@ -112,6 +112,7 @@ const headerStyles = StyleSheet.create({
 // ─── Main Screen ──────────────────────────────────────────────────────
 const HistoryScreen = ({ navigation }) => {
   const { t } = useTranslation();
+  const bottomNavHeight = useBottomNavHeight();
   const [data, setData] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const isFocused = useIsFocused();
@@ -318,7 +319,7 @@ const HistoryScreen = ({ navigation }) => {
             `${item.created_by || "user"}-${item.collection_id || 0}-${item.id}`
           }
           renderItem={renderItem}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingBottom: bottomNavHeight + 20 }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -348,9 +349,9 @@ const styles = StyleSheet.create({
   listWrap: {
     flex: 1,
   },
+  // paddingBottom is set dynamically at the call site via useBottomNavHeight()
   listContent: {
     padding: 16,
-    paddingBottom: BOTTOM_NAV_H + 20,
   },
   card: {
     backgroundColor: H.card,

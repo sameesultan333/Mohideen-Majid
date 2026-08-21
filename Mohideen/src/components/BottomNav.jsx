@@ -30,12 +30,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Svg, { Path } from "react-native-svg";
 import { COLORS as C } from "../config/theme";
 import { useTranslation } from "react-i18next";
-import { useBottomInset } from "../hooks/useSafeArea";
+import { useBottomInset, BOTTOM_NAV_GUTTER } from "../hooks/useSafeArea";
 
 const IOS = Platform.OS === "ios";
-// Minimum breathing room below the real safe-area inset — devices with a
-// 3-button nav bar or no inset at all (insets.bottom === 0) still get this.
-const SAFE_B_GUTTER = IOS ? 8 : 10;
 const TAB_WIDTH = 68;
 const MAX_FIXED_TABS = 5; // beyond this, the bar scrolls instead of squishing
 
@@ -215,9 +212,10 @@ const TabButton = ({ tab, isActive, badgeCount, onPress }) => {
 export default function BottomNav({ navigation, currentRoute, badges }) {
   const { t } = useTranslation();
   // Real inset from react-native-safe-area-context, not a static guess — see
-  // useSafeArea.js. On gesture-nav Android this can be ~24-48dp; on 3-button
-  // nav or iOS without a home indicator it's 0, so SAFE_B_GUTTER alone still
-  // gives the bar breathing room.
+  // useSafeArea.js. On gesture-nav Android this can be ~24-48dp; on target
+  // SDK 35, edge-to-edge is forced even for 3-button nav, so this is
+  // essentially never 0 anymore. BOTTOM_NAV_GUTTER alone covers the rare
+  // case it is.
   const bottomInset = useBottomInset();
   const [role, setRole] = useState(null);
   const [roles, setRoles] = useState(null);
@@ -275,7 +273,7 @@ export default function BottomNav({ navigation, currentRoute, badges }) {
   };
 
   return (
-    <View style={[styles.wrap, { paddingBottom: bottomInset + SAFE_B_GUTTER }]}>
+    <View style={[styles.wrap, { paddingBottom: bottomInset + BOTTOM_NAV_GUTTER }]}>
       <View style={styles.topAccent} />
       {needsScroll ? (
         <ScrollView

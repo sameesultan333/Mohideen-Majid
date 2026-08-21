@@ -482,6 +482,7 @@ const ACTIVITY_LABEL: Record<AdminActivity["activity_type"], string> = {
 
 const AdminActivitySection: React.FC<{ activityType?: "family_added" | "user_deactivated" }> = ({ activityType }) => {
   const isMobile = useMediaQuery("(max-width: 720px)");
+  const [statusView, setStatusView] = useState<"pending" | "acknowledged">("pending");
   const [items, setItems] = useState<AdminActivity[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -490,14 +491,14 @@ const AdminActivitySection: React.FC<{ activityType?: "family_added" | "user_dea
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      setItems(await listAdminActivity("pending", activityType));
+      setItems(await listAdminActivity(statusView, activityType));
       setError(null);
     } catch {
       setError("Failed to load admin activity");
     } finally {
       setLoading(false);
     }
-  }, [activityType]);
+  }, [activityType, statusView]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -513,24 +514,55 @@ const AdminActivitySection: React.FC<{ activityType?: "family_added" | "user_dea
     }
   };
 
+  // Acknowledging never deletes the record - it stays in the database
+  // indefinitely (nothing ever purges admin_activities) so it can always be
+  // looked back on, e.g. "who added this family and when" months later.
+  // This toggle is what actually exposes that history in the UI - it was
+  // there in the DB all along, just never fetched once acknowledged.
+  const toggle = (
+    <div style={{ display: "flex", gap: "8px", marginBottom: "14px" }}>
+      {(["pending", "acknowledged"] as const).map((v) => (
+        <button
+          key={v}
+          onClick={() => setStatusView(v)}
+          style={{
+            padding: "6px 14px", borderRadius: "8px", fontSize: "12.5px", fontWeight: 700,
+            cursor: "pointer", border: `1px solid ${statusView === v ? COLORS.primaryBorder : COLORS.border}`,
+            background: statusView === v ? COLORS.primaryLight : COLORS.surface,
+            color: statusView === v ? COLORS.primary : COLORS.textSecondary,
+          }}
+        >
+          {v === "pending" ? "Needs Acknowledgement" : "History"}
+        </button>
+      ))}
+    </div>
+  );
+
   if (loading) {
     return (
-      <div style={S.spinnerBox}>
-        <Loader2 size={20} className="spin-icon" />
+      <div>
+        {toggle}
+        <div style={S.spinnerBox}>
+          <Loader2 size={20} className="spin-icon" />
+        </div>
       </div>
     );
   }
 
   if (items.length === 0) {
     return (
-      <div style={{ ...S.emptyBox, padding: "32px 20px" }}>
-        <div style={S.emptyMsg}>Nothing to acknowledge</div>
+      <div>
+        {toggle}
+        <div style={{ ...S.emptyBox, padding: "32px 20px" }}>
+          <div style={S.emptyMsg}>{statusView === "pending" ? "Nothing to acknowledge" : "No acknowledged history yet"}</div>
+        </div>
       </div>
     );
   }
 
   return (
     <div>
+      {toggle}
       {error && <div style={S.errorBanner}><AlertTriangle size={16} style={{ flexShrink: 0, marginTop: "2px" }} />{error}</div>}
       {items.map((a) => (
         <div key={a.id} style={{ ...S.card, alignItems: "flex-start", flexDirection: isMobile ? "column" : "row" }}>
@@ -562,19 +594,27 @@ const AdminActivitySection: React.FC<{ activityType?: "family_added" | "user_dea
                   {a.reason && <div style={S.cardMeta}>Reason: {a.reason}</div>}
                 </>
               )}
-              <div style={{ marginTop: "6px" }}>
-                <span style={S.pendingBadge}>Needs Acknowledgement</span>
-              </div>
+              {a.acknowledged ? (
+                <div style={S.cardMeta}>
+                  Acknowledged by {a.acknowledged_by_name ?? "an admin"} · {fmtDateTime(a.acknowledged_at)}
+                </div>
+              ) : (
+                <div style={{ marginTop: "6px" }}>
+                  <span style={S.pendingBadge}>Needs Acknowledgement</span>
+                </div>
+              )}
             </div>
           </div>
-          <button
-            style={{ ...S.ackBtn, width: isMobile ? "100%" : "auto", marginTop: isMobile ? "12px" : 0, opacity: busyId === a.id ? 0.6 : 1 }}
-            disabled={busyId === a.id}
-            onClick={() => handleAcknowledge(a.id)}
-          >
-            {busyId === a.id ? <Loader2 size={15} className="spin-icon" /> : <CheckCircle2 size={15} />}
-            Seen / Acknowledge
-          </button>
+          {!a.acknowledged && (
+            <button
+              style={{ ...S.ackBtn, width: isMobile ? "100%" : "auto", marginTop: isMobile ? "12px" : 0, opacity: busyId === a.id ? 0.6 : 1 }}
+              disabled={busyId === a.id}
+              onClick={() => handleAcknowledge(a.id)}
+            >
+              {busyId === a.id ? <Loader2 size={15} className="spin-icon" /> : <CheckCircle2 size={15} />}
+              Seen / Acknowledge
+            </button>
+          )}
         </div>
       ))}
     </div>

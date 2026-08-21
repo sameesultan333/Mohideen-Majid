@@ -50,6 +50,7 @@ import { getDeenUnreadCount } from "../utils/deenUnread";
 import { COLORS as C } from "../config/theme";
 import { useTranslation } from "react-i18next";
 import BottomNav from "../components/BottomNav";
+import { useBottomNavHeight } from "../hooks/useSafeArea";
 import { logger } from "../utils/logger";
 import FivePrayerCelebration from "../components/FivePrayerCelebration";
 import {
@@ -823,10 +824,6 @@ const HeaderPattern = memo(({ w = SW, h = 130 }) => {
 
 // ─── Header ───────────────────────────────────────────────────────────
 const HEADER_H = 168;
-// Computed exactly from the redesigned BottomNav.js: paddingTop(12) +
-// icon(32) + gap(4) + label line-height(~13) + paddingBottom(SAFE_B).
-// iOS SAFE_B=28 -> 12+32+4+13+28=89. Android SAFE_B=12 -> 12+32+4+13+12=73.
-const BOTTOM_NAV_H = Platform.select({ ios: 89, android: 73 });
 
 const CompactHeader = ({ userName, greetingKey, hijriDate, gregorianDate, unreadCount, onBellPress, onAvatarPress }) => {
   const { t } = useTranslation();
@@ -976,6 +973,7 @@ const TimelineRow = ({ item, status, confirmed, onToggle, isLast }) => {
 // ─── Main component ────────────────────────────────────────────────────
 export default function HomeScreen({ navigation, route }) {
   const { t } = useTranslation();
+  const bottomNavHeight = useBottomNavHeight();
   const currentRoute = route?.name || "Home";
   const [userName, setUserName] = useState("");
   const [userRole, setUserRole] = useState(null);
@@ -1505,7 +1503,7 @@ export default function HomeScreen({ navigation, route }) {
         />
       </Animated.View>
 
-      <View style={s.body}>
+      <View style={[s.body, { paddingBottom: bottomNavHeight }]}>
         <UpcomingPrayerCard item={prayerList[nextIndex]} timeUntil={timeUntil} progress={windowProgress} />
 
         <View style={s.timelineHeader}>
@@ -1582,7 +1580,8 @@ const s = StyleSheet.create({
   retryBtn: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10, backgroundColor: H.gold },
   retryTxt: { color: H.headerDeep, fontWeight: "700", fontSize: 13 },
 
-  body: { flex: 1, paddingHorizontal: 16, paddingTop: 14, paddingBottom: BOTTOM_NAV_H },
+  // paddingBottom is set dynamically at the call site via useBottomNavHeight()
+  body: { flex: 1, paddingHorizontal: 16, paddingTop: 14 },
 
   timelineHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 16, marginBottom: 8 },
   sectionTitle: { color: H.textDark, fontSize: 16, fontWeight: "700", letterSpacing: 0.2 },
