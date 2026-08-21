@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { authApiFetch } from "../config/server";
 import { COLORS as C, RADII, FONTS } from "../config/theme";
 import BottomNav from "../components/BottomNav";
+import { useBottomNavHeight } from "../hooks/useSafeArea";
 import Svg, { Path, Rect, Defs, LinearGradient, Stop, Circle } from "react-native-svg";
 
 const { width: SW } = Dimensions.get("window");
@@ -234,6 +235,7 @@ const dashboardCache = {};
 // ─── Main Component ──────────────────────────────────────────────────
 const CollectorDashboardScreen = ({ navigation }) => {
   const { t } = useTranslation();
+  const bottomNavHeight = useBottomNavHeight();
   const [month, setMonth] = useState(getMonthKey());
   const [data, setData] = useState(() => dashboardCache[month] ?? null);
   const [loading, setLoading] = useState(() => !dashboardCache[month]);
@@ -317,7 +319,7 @@ const CollectorDashboardScreen = ({ navigation }) => {
 
       <Animated.ScrollView
         style={{ flex: 1, opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomNavHeight + 20 }]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -420,7 +422,8 @@ export default memo(CollectorDashboardScreen);
 // ─── Styles ────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: H.bg },
-  scrollContent: { padding: 16, paddingBottom: 100 },
+  // paddingBottom is set dynamically at the call site via useBottomNavHeight()
+  scrollContent: { padding: 16 },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   loadingText: { color: C.textMuted, marginTop: 16, fontSize: 14 },
 

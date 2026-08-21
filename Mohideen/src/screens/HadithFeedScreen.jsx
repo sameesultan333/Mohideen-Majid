@@ -11,6 +11,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Svg, { Path, Rect, Defs, LinearGradient, Stop } from "react-native-svg";
 import { apiAxios, buildAbsoluteUrl, getWsUrl } from "../config/server";
 import BottomNav from "../components/BottomNav";
+import { useBottomNavHeight } from "../hooks/useSafeArea";
 import OfflineBanner from "../components/OfflineBanner";
 import { COLORS as C } from "../config/theme";
 
@@ -182,6 +183,7 @@ const HadithCard = memo(({ item, onPress }) => {
 // ─── Main Component ──────────────────────────────────────────────────
 export default function HadithFeedScreen({ navigation, route }) {
   const { t } = useTranslation();
+  const bottomNavHeight = useBottomNavHeight();
   const [hadiths, setHadiths] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -345,7 +347,7 @@ export default function HadithFeedScreen({ navigation, route }) {
           data={hadiths}
           keyExtractor={(item) => String(item.id)}
           renderItem={({ item }) => <HadithCard item={item} onPress={handleCardPress} />}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingBottom: bottomNavHeight + 20 }]}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={H.gold} colors={[H.gold]} />
           }
@@ -385,9 +387,9 @@ const styles = StyleSheet.create({
     color: H.textMuted,
     textAlign: "center",
   },
+  // paddingBottom is set dynamically at the call site via useBottomNavHeight()
   listContent: {
     padding: 16,
-    paddingBottom: 100,
   },
   card: {
     backgroundColor: H.card,

@@ -29,6 +29,7 @@ import { apiAxios, getWsUrl } from "../config/server";
 import { COLORS as C } from "../config/theme";
 import { useTranslation } from "react-i18next";
 import BottomNav from "../components/BottomNav";
+import { useBottomNavHeight } from "../hooks/useSafeArea";
 import { syncPrayerTimesToLocalScheduler } from "../utils/prayerScheduleSync";
 
 const { width: SW } = Dimensions.get("window");
@@ -453,6 +454,7 @@ const TimeCard = ({ label, arabic, time }) => (
 // ─── Main component ────────────────────────────────────────────────────
 export default function PrayerScreen({ navigation, route }) {
   const { t } = useTranslation();
+  const bottomNavHeight = useBottomNavHeight();
   const currentRoute = route?.name || "PrayerTime";
   const [timings, setTimings] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -603,7 +605,7 @@ export default function PrayerScreen({ navigation, route }) {
 
       <Animated.ScrollView
         style={{ flex: 1, opacity: fadeAnim }}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomNavHeight + 20 }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={H.gold} />}
         showsVerticalScrollIndicator={false}
       >

@@ -13,6 +13,7 @@ import Svg, { Path, Circle, Rect, Line, Defs, LinearGradient, Stop } from "react
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { apiAxios } from "../config/server";
 import BottomNav from "../components/BottomNav";
+import { useBottomNavHeight } from "../hooks/useSafeArea";
 import { getPendingQuestionCount, IMAM_LIKE_ROLES } from "../utils/deenUnread";
 import { COLORS as C } from "../config/theme";
 
@@ -231,6 +232,7 @@ const FeatureCard = ({ title, arabic, description, icon: Icon, onPress, badgeCou
 export default function DeenScreen({ navigation, route }) {
   const currentRoute = route?.name || "Deen";
   const { t } = useTranslation();
+  const bottomNavHeight = useBottomNavHeight();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [refreshing, setRefreshing] = useState(false);
   const [unreadHadithCount, setUnreadHadithCount] = useState(0);
@@ -345,7 +347,7 @@ export default function DeenScreen({ navigation, route }) {
 
       <Animated.ScrollView
         style={{ flex: 1, opacity: fadeAnim }}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomNavHeight + 20 }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={H.gold} />
@@ -432,7 +434,8 @@ export default function DeenScreen({ navigation, route }) {
 // ─── Styles ────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: H.bg },
-  scrollContent: { padding: 16, paddingBottom: 120 },
+  // paddingBottom is set dynamically at the call site via useBottomNavHeight()
+  scrollContent: { padding: 16 },
 
   quoteCard: {
     backgroundColor: H.card,

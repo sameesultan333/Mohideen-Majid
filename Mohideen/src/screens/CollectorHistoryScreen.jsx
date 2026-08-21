@@ -943,7 +943,8 @@ const s = StyleSheet.create({
   cardTime: { fontSize: 10, color: H.textMuted, fontWeight: "600" },
   cardCovered: { fontSize: 10, color: H.green, marginTop: 4, fontWeight: "600" },
 
-  listContent: { paddingBottom: BOTTOM_NAV_H + 16 },
+  // paddingBottom is set dynamically at the call site via useBottomNavHeight()
+  listContent: {},
 
   loadMoreBtn: {
     marginHorizontal: 16, marginTop: 6, marginBottom: 16,

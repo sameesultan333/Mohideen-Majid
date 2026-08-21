@@ -5,6 +5,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTranslation } from "react-i18next";
 import Svg, { Path, Rect, Defs, LinearGradient, Stop } from "react-native-svg";
 import BottomNav from "../components/BottomNav";
+import { useBottomNavHeight, useBottomInset } from "../hooks/useSafeArea";
 import OfflineBanner from "../components/OfflineBanner";
 import { apiAxios, getWsUrl, buildAbsoluteUrl } from "../config/server";
 import { COLORS as C } from "../config/theme";
@@ -209,6 +210,8 @@ function ImagePreviewModal({ uri, onClose }) {
 export default function AnnouncementScreen({ navigation, route }) {
   const currentRoute = route?.name || "Announcement";
   const { t } = useTranslation();
+  const bottomNavHeight = useBottomNavHeight();
+  const bottomInset = useBottomInset();
 
   const [announcements, setAnnouncements] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -425,7 +428,7 @@ export default function AnnouncementScreen({ navigation, route }) {
 
       <Animated.ScrollView
         style={{ flex: 1, opacity: fade, transform: [{ translateY: translate }] }}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomNavHeight + 20 }]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={H.gold} />
         }
@@ -546,7 +549,8 @@ export default function AnnouncementScreen({ navigation, route }) {
 // ─── Styles ────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: H.bg },
-  scrollContent: { padding: 16, paddingBottom: 120 },
+  // paddingBottom is set dynamically at the call site via useBottomNavHeight()
+  scrollContent: { padding: 16 },
 
   empty: {
     marginTop: 80,

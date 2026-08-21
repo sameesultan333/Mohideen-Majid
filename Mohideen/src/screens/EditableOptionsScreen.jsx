@@ -52,6 +52,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Svg, { Path, Rect, Defs, LinearGradient, Stop, Circle, Line } from "react-native-svg";
 
 import BottomNav from "../components/BottomNav";
+import { useBottomNavHeight } from "../hooks/useSafeArea";
 
 import { COLORS as C } from "../config/theme";
 
@@ -498,6 +499,8 @@ const ControlCard = ({ title, subtitle, type = "prayer", onPress, index }) => {
 
 export default function EditableOptionsScreen({ navigation, route }) {
 
+  const bottomNavHeight = useBottomNavHeight();
+
   const currentRoute = route?.name || "Editable";
 
   const [role, setRole] = useState(null);
@@ -654,7 +657,7 @@ export default function EditableOptionsScreen({ navigation, route }) {
 
       <Animated.ScrollView
 
-        contentContainerStyle={styles.container}
+        contentContainerStyle={[styles.container, { paddingBottom: bottomNavHeight + 20 }]}
 
         style={{ opacity: fade, transform: [{ translateY: translate }] }}
 
@@ -766,7 +769,8 @@ const styles = StyleSheet.create({
 
   root: { flex: 1, backgroundColor: H.bg },
 
-  container: { padding: 16, paddingBottom: 120 },
+  // paddingBottom is set dynamically at the call site via useBottomNavHeight()
+  container: { padding: 16 },
 
   sectionTitle: {
 

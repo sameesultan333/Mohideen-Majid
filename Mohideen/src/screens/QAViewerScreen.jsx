@@ -15,6 +15,7 @@ import Slider from "@react-native-community/slider";
 import Svg, { Path, Rect, Defs, LinearGradient, Stop } from "react-native-svg";
 import { apiAxios, buildAbsoluteUrl, getWsUrl } from "../config/server";
 import BottomNav from "../components/BottomNav";
+import { useBottomNavHeight } from "../hooks/useSafeArea";
 import { COLORS as C } from "../config/theme";
 import { logger } from "../utils/logger";
 import SafeModal from "../components/SafeModal";
@@ -534,6 +535,7 @@ const QACard = memo(({ item, isExpanded, onToggle, onImagePress, playingAudioId,
 // ─── Main Component ──────────────────────────────────────────────────
 export default function QAViewerScreen({ navigation, route }) {
   const { t } = useTranslation();
+  const bottomNavHeight = useBottomNavHeight();
   const [qas, setQas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -744,7 +746,7 @@ export default function QAViewerScreen({ navigation, route }) {
           data={qas}
           keyExtractor={(item) => item.id.toString()}
           renderItem={renderItem}
-          contentContainerStyle={[styles.listContent, qas.length === 0 && styles.emptyListContent]}
+          contentContainerStyle={[styles.listContent, { paddingBottom: bottomNavHeight + 20 }, qas.length === 0 && styles.emptyListContent]}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={() => fetchQAs(true)} tintColor={H.gold} colors={[H.gold]} />
           }
@@ -773,7 +775,8 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   loadingText: { marginTop: 16, color: H.textMuted, fontSize: 14, fontWeight: "500" },
 
-  listContent: { padding: 16, paddingBottom: 100 },
+  // paddingBottom is set dynamically at the call site via useBottomNavHeight()
+  listContent: { padding: 16 },
   emptyListContent: { flex: 1, justifyContent: "center" },
 
   // Card

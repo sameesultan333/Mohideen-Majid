@@ -8,6 +8,7 @@ import { changeAppLanguage } from "../localization/languages";
 import { useTranslation } from "react-i18next";
 import Svg, { Path, Rect, Defs, LinearGradient, Stop } from "react-native-svg";
 import BottomNav from "../components/BottomNav";
+import { useBottomNavHeight } from "../hooks/useSafeArea";
 import { apiAxios } from "../config/server";
 import { COLORS as C } from "../config/theme";
 import { logger } from "../utils/logger";
@@ -279,6 +280,7 @@ const CompactHeader = ({ userName, greetingKey, hijriDate, gregorianDate, unread
 // ─── Main Component ──────────────────────────────────────────────────
 export default function ProfileScreen({ navigation, route }) {
   const currentRoute = route?.name || "Profile";
+  const bottomNavHeight = useBottomNavHeight();
   const { t, i18n } = useTranslation();
   const currentLanguage = i18n.language;
 
@@ -475,7 +477,7 @@ export default function ProfileScreen({ navigation, route }) {
 
       <Animated.ScrollView
         style={{ flex: 1, opacity: fade, transform: [{ translateY: translate }, { scale: scale }] }}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomNavHeight + 20 }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={H.gold} />
@@ -610,7 +612,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: H.bg },
   loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: H.bg, paddingBottom: 80 },
   loadingText: { color: H.textMuted, fontSize: 14, fontWeight: "500", marginTop: 16 },
-  scrollContent: { paddingBottom: 40 },
+  // paddingBottom is set dynamically at the call site via useBottomNavHeight()
+  scrollContent: {},
 
   section: { marginHorizontal: 16, marginTop: 20 },
 
