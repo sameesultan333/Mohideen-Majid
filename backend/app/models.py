@@ -269,6 +269,18 @@ class Donation(Base):
 
 class ChandaCollection(Base):
     __tablename__ = "chanda_collections"
+    __table_args__ = (
+        # One row per family per month, enforced at the DB level. Without
+        # this, two gunicorn workers both running job_generate_chanda_month
+        # at 00:05 on the 1st of the month (APScheduler starts in every
+        # worker process - see main.py's startup handler - with no leader
+        # election) could both check "does head X have a row for this
+        # month?", both get "no" in the same race window, and both insert -
+        # producing a real duplicate row that silently doubled that family's
+        # amount_due in every dashboard/collector total. This is what
+        # actually happened for 62 of 439 families in September's generation.
+        UniqueConstraint("head_id", "month", name="uq_chanda_collection_head_month"),
+    )
 
     id                 = Column(Integer, primary_key=True, index=True)
     head_id            = Column(Integer, ForeignKey("approved_heads.id"), nullable=True, index=True)

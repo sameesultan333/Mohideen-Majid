@@ -24,15 +24,47 @@ log = logging.getLogger(__name__)
 # JOB FUNCTIONS
 # ─────────────────────────────────────────────────────────────
 
+
+# Arbitrary constant lock key for this job. Any single int works - it just
+# needs to be unique among this app's advisory locks so it can't collide
+# with an unrelated one taken elsewhere.
+_GENERATE_MONTH_LOCK_KEY = 837465123
+
+
 def job_generate_chanda_month():
-    """Auto-generate chanda collections on the 1st of every month."""
+    """Auto-generate chanda collections on the 1st of every month.
+
+    APScheduler is started unconditionally in every gunicorn worker's
+    FastAPI startup handler (main.py) - there is no leader election, so on
+    a multi-worker deployment every worker fires this job at 00:05 IST on
+    the 1st. Without a lock, two workers both querying "which heads already
+    have a row this month" in the same race window, both getting "none yet"
+    for the same family, and both inserting produced real duplicate
+    ChandaCollection rows - this is exactly what doubled 62 of 439 families'
+    amount_due in September's generation. A Postgres advisory lock (session-
+    scoped, released explicitly below rather than relying on pool behavior)
+    makes only one worker actually do the work; the rest see the lock held
+    and return immediately. The DB-level UniqueConstraint on
+    (head_id, month) is the second, independent line of defense in case any
+    other code path ever races this one.
+    """
     from app.database import SessionLocal
     from app import models
+    from sqlalchemy import text
+    from sqlalchemy.exc import IntegrityError
     from app.utils.timezones import india_month_key, utc_now
     from app.utils.payment_ledger import set_collection_status, sync_generated_month
 
     db = SessionLocal()
+    got_lock = False
     try:
+        got_lock = db.execute(
+            text("SELECT pg_try_advisory_lock(:key)"), {"key": _GENERATE_MONTH_LOCK_KEY}
+        ).scalar()
+        if not got_lock:
+            log.info("[scheduler] generate_chanda_month: another worker already holds the lock, skipping")
+            return
+
         month = india_month_key(utc_now())
         heads = db.query(models.ApprovedHead).filter_by(is_active=True).all()
         # One query for every head already holding this month, instead of an
@@ -63,8 +95,22 @@ def job_generate_chanda_month():
                 total_paid=0,
                 status="pending",
             )
-            db.add(col)
-            db.flush()
+            # SAVEPOINT, not a plain flush: a bare db.rollback() on conflict
+            # would discard every row already flushed earlier in this same
+            # loop, not just this one. begin_nested() scopes the rollback to
+            # just this head's insert attempt.
+            try:
+                with db.begin_nested():
+                    db.add(col)
+                    db.flush()
+            except IntegrityError:
+                # Belt-and-suspenders: the advisory lock above should already
+                # make this unreachable, but if some other code path (e.g. a
+                # manual "Generate Month" click) raced this exact head+month,
+                # the UniqueConstraint catches it here instead of creating a
+                # second row. Not our row to keep - the savepoint already
+                # rolled back just this insert.
+                continue
             sync_generated_month(db, col)
             set_collection_status(col)
             created += 1
@@ -74,6 +120,12 @@ def job_generate_chanda_month():
         log.error(f"[scheduler] generate_chanda_month failed: {e}")
         db.rollback()
     finally:
+        if got_lock:
+            try:
+                db.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": _GENERATE_MONTH_LOCK_KEY})
+                db.commit()
+            except Exception:
+                pass
         db.close()
 
 

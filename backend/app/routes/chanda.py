@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 from typing import List
 
@@ -207,8 +208,27 @@ def generate_month(
                 status="pending",
                 rate_snapshot=amount,
             )
-            db.add(collection)
-            db.flush()
+            # SAVEPOINT: the automatic scheduler (scheduler.py::job_generate_
+            # chanda_month) could in principle race a manual click landing at
+            # the same moment for the same month. The UniqueConstraint on
+            # (head_id, month) makes that a caught IntegrityError instead of
+            # a duplicate row; begin_nested() scopes the rollback to just
+            # this one insert, not the whole batch already processed above.
+            try:
+                with db.begin_nested():
+                    db.add(collection)
+                    db.flush()
+            except IntegrityError:
+                # Someone else (the scheduler, most likely) already created
+                # this exact row a moment ago - re-fetch the real one instead
+                # of keeping our now-stale local object.
+                collection = (
+                    db.query(models.ChandaCollection)
+                    .filter_by(head_id=head.id, month=month)
+                    .first()
+                )
+                if collection is None:
+                    continue
 
         sync_generated_month(db, collection)
         set_collection_status(collection)
