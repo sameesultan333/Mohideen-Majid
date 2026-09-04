@@ -158,9 +158,17 @@ export default function LoginScreen({ navigation, route }) {
         url: "/auth/login",
         data: { phone: normalizePhone(phone), password },
       });
-      await saveToken(data.access_token);
-      if (data.refresh_token) await saveRefreshToken(data.refresh_token);
-      if (data.user) await AsyncStorage.setItem("user", JSON.stringify(data.user));
+      // These three writes touch independent storage backends (access-token
+      // Keychain entry, refresh-token Keychain entry, AsyncStorage) — none
+      // depends on another's result, so running them in parallel costs
+      // max(writes) instead of their sum before navigating to Home. Each
+      // Keychain call is a native bridge round trip, so this is real time
+      // on the login critical path, not just a style change.
+      await Promise.all([
+        saveToken(data.access_token),
+        data.refresh_token ? saveRefreshToken(data.refresh_token) : null,
+        data.user ? AsyncStorage.setItem("user", JSON.stringify(data.user)) : null,
+      ]);
       const dest = data.user?.status === "PENDING_APPROVAL" ? "PendingApproval" : "Home";
       navigation.reset({ index: 0, routes: [{ name: dest }] });
     } catch (e) {

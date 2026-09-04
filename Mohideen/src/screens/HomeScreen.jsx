@@ -1108,7 +1108,12 @@ export default function HomeScreen({ navigation, route }) {
 
   const fetchUnreadCount = useCallback(async () => {
     try {
-      const response = await apiAxios({ method: "get", url: "/announcements/" });
+      // GET /announcements/ requires auth (it derives the caller's targeted
+      // announcements from the JWT) — this was calling the auth-less apiAxios,
+      // so it 401'd on every single call and silently fell through to the
+      // catch block below on every login, never refreshing the cache it read
+      // from. That's why announcements looked permanently stuck/stale.
+      const response = await authApiAxios({ method: "get", url: "/announcements/" });
       const announcements = response.data || [];
       await AsyncStorage.setItem(ANNOUNCEMENTS_CACHE_KEY, JSON.stringify(announcements));
       const read = parseJsonArray(await AsyncStorage.getItem("read_announcements"));

@@ -23,8 +23,8 @@ android {
         applicationId "com.mohideen"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 15
-        versionName "15.0"
+        versionCode 16
+        versionName "16.0"
     }
 
     signingConfigs {

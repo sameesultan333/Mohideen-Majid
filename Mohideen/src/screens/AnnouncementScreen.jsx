@@ -7,7 +7,7 @@ import Svg, { Path, Rect, Defs, LinearGradient, Stop } from "react-native-svg";
 import BottomNav from "../components/BottomNav";
 import { useBottomNavHeight, useBottomInset } from "../hooks/useSafeArea";
 import OfflineBanner from "../components/OfflineBanner";
-import { apiAxios, getWsUrl, buildAbsoluteUrl } from "../config/server";
+import { authApiAxios, getWsUrl, buildAbsoluteUrl } from "../config/server";
 import { COLORS as C } from "../config/theme";
 import SafeModal from "../components/SafeModal";
 import VoiceNotePlayer from "../components/VoiceNotePlayer";
@@ -294,9 +294,16 @@ export default function AnnouncementScreen({ navigation, route }) {
 
     // 2. Race network vs 4 s timeout
     try {
+      // GET /announcements/ requires auth — the backend derives targeted
+      // announcements from the caller's JWT and ignores the user_id query
+      // param (kept below only because the response schema still accepts
+      // it; it does nothing server-side). This was calling the auth-less
+      // apiAxios, so every request 401'd immediately and the screen always
+      // fell back to whatever was last cached — new announcements never
+      // actually loaded via this fetch.
       const params = currentUserId ? { user_id: currentUserId } : {};
       const res = await Promise.race([
-        apiAxios({ method: "get", url: "/announcements/", params }),
+        authApiAxios({ method: "get", url: "/announcements/", params }),
         new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 4000)),
       ]);
       const items = res.data || [];

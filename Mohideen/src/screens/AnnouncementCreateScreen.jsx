@@ -301,7 +301,15 @@ export default function AnnouncementScreen({ navigation }) {
   const fetchAnnouncements = useCallback(async () => {
     try {
       setFetching(true);
-      const res = await apiAxios({ method: "get", url: "/announcements/", params: { all: true } });
+      // Same missing-auth bug as the member-facing screens: this 401'd on
+      // every call (get_current_user is required regardless of ?all=true),
+      // so the manage list silently never loaded.
+      const res = await apiAxios({
+        method: "get",
+        url: "/announcements/",
+        params: { all: true },
+        headers: await authHeader(),
+      });
       setAnnouncements(res.data || []);
     } catch (err) {
       logger.log("ANNOUNCEMENTS FETCH ERROR:", err?.response?.data || err.message);
