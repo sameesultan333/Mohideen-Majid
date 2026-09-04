@@ -18,9 +18,9 @@ const ROLE_TOPICS = {
  * Register or refresh the FCM device token with the backend.
  * Safe to call on every app launch — backend upserts by (user_id, token).
  */
-export async function registerFcmToken(fcmToken, role) {
+export async function registerFcmToken(fcmToken, role, preFetchedAuthToken) {
   try {
-    const authToken = await getToken();
+    const authToken = preFetchedAuthToken || (await getToken());
     if (!authToken || !fcmToken) return;
 
     await apiAxios({

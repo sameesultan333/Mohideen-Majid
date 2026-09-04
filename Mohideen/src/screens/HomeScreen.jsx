@@ -28,7 +28,7 @@
 
 import React, { useEffect, useState, useRef, useCallback, useMemo, memo } from "react";
 import { useFocusEffect } from "@react-navigation/native";
-import { View, Text, StyleSheet, ActivityIndicator, StatusBar, Animated, Platform, Dimensions, Vibration, PermissionsAndroid, Alert, NativeModules } from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator, StatusBar, Animated, Platform, Dimensions, Vibration, PermissionsAndroid, Alert, NativeModules, InteractionManager } from "react-native";
 import AnimatedPressable from "../components/AnimatedPressable";
 import messaging, {
   getToken as getFcmToken,
@@ -978,7 +978,6 @@ export default function HomeScreen({ navigation, route }) {
   const [userName, setUserName] = useState("");
   const [userRole, setUserRole] = useState(null);
   const [userStatus, setUserStatus] = useState(null);
-  const [statusLoaded, setStatusLoaded] = useState(false);
   const [timings, setTimings] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isOffline, setIsOffline] = useState(false);
@@ -991,6 +990,11 @@ export default function HomeScreen({ navigation, route }) {
 
   const headerAnim = useRef(new Animated.Value(0)).current;
   const wsRef = useRef(null);
+  // Populated once by the mount-time user/status effect below, then reused
+  // by the FCM setup and chanda-pending fetch so they don't each pay for
+  // their own AsyncStorage/Keychain read during the post-login burst.
+  const userRef = useRef(null);
+  const tokenRef = useRef(null);
 
   // Keyed to the user's own calendar day. toISOString() gave the UTC date, so in
   // India the day only turned over at 05:30 and a Fajr marked at 5 AM was filed
@@ -1028,6 +1032,7 @@ export default function HomeScreen({ navigation, route }) {
         const userData = await AsyncStorage.getItem("user");
         if (userData) {
           const user = JSON.parse(userData);
+          userRef.current = user;
           setUserName(user.name || "");
           setUserRole(user.role || null);
           setUserStatus(user.status || "ACTIVE");
@@ -1037,7 +1042,14 @@ export default function HomeScreen({ navigation, route }) {
       } catch (e) {
         setUserStatus("ACTIVE");
       }
-      // Always verify status against DB (JWT may be stale)
+      try {
+        tokenRef.current = await getToken();
+      } catch (_) {}
+      // Verify status against DB in the background (JWT/cache may be stale) —
+      // login already wrote a fresh status to AsyncStorage above, so initial
+      // render trusts that instead of waiting on this network round trip.
+      // Any drift (e.g. admin approved/disabled the account while the app
+      // was open) still lands via setUserStatus once this resolves.
       try {
         const res = await authApiAxios({ method: "get", url: "/auth/status" });
         const liveStatus = res.data?.status;
@@ -1048,12 +1060,11 @@ export default function HomeScreen({ navigation, route }) {
           if (raw) {
             const user = JSON.parse(raw);
             user.status = liveStatus;
+            userRef.current = user;
             await AsyncStorage.setItem("user", JSON.stringify(user));
           }
         }
       } catch (_) {}
-      // Status is now definitively known — safe to render
-      setStatusLoaded(true);
     })();
   }, []);
 
@@ -1117,7 +1128,7 @@ export default function HomeScreen({ navigation, route }) {
     try {
       const cached = await AsyncStorage.getItem(CHANDA_PENDING_KEY);
       if (cached) setChandaPending(parseInt(cached, 10) || 0);
-      const token = await getToken();
+      const token = tokenRef.current || (await getToken());
       const response = await apiAxios({
         method: "get",
         url: "/user/chanda-summary",
@@ -1159,15 +1170,21 @@ export default function HomeScreen({ navigation, route }) {
     }, [fetchUnreadCount, fetchChandaPending, fetchDeenUnread])
   );
 
+  // fetchUnreadCount/fetchChandaPending/fetchDeenUnread are intentionally NOT
+  // called here — useFocusEffect below already runs them on Home's first
+  // focus (which coincides with this first mount) and on every focus after.
+  // Calling them again here used to fire each of those three requests twice
+  // back-to-back on every login, doubling the post-login request burst.
   useEffect(() => {
     fetchPrayerTimes();
-    fetchUnreadCount();
-    fetchChandaPending();
-    fetchDeenUnread();
 
     let active = true;
 
-    (async () => {
+    // Deferred past the initial paint/interactions so it doesn't compete
+    // with the fetches above for the same just-woken (possibly cold-start)
+    // backend connection.
+    const wsTask = InteractionManager.runAfterInteractions(async () => {
+      if (!active) return;
       try {
         const wsUrl = await getWsUrl("/ws/prayer");
         if (!active) return;
@@ -1185,7 +1202,7 @@ export default function HomeScreen({ navigation, route }) {
           } catch (e) {}
         };
       } catch {}
-    })();
+    });
 
     const pollInterval = setInterval(() => {
       fetchPrayerTimes();
@@ -1195,6 +1212,7 @@ export default function HomeScreen({ navigation, route }) {
 
     return () => {
       active = false;
+      wsTask.cancel();
       clearInterval(pollInterval);
       if (wsRef.current) wsRef.current.close();
     };
@@ -1245,9 +1263,12 @@ export default function HomeScreen({ navigation, route }) {
         const token = await getFcmToken(fcm);
         logger.log("[FCM] Device token acquired:", token ? `${token.slice(0, 8)}…` : null);
         if (token) {
-          const userRaw = await AsyncStorage.getItem("user");
-          const userObj = userRaw ? JSON.parse(userRaw) : null;
-          await registerFcmToken(token, userObj?.role);
+          let userObj = userRef.current;
+          if (!userObj) {
+            const userRaw = await AsyncStorage.getItem("user");
+            userObj = userRaw ? JSON.parse(userRaw) : null;
+          }
+          await registerFcmToken(token, userObj?.role, tokenRef.current);
           await subscribeRoleTopics(fcm, userObj?.role);
         }
       } catch (e) {
@@ -1326,9 +1347,16 @@ export default function HomeScreen({ navigation, route }) {
       unsubOpen = onNotificationOpenedApp(fcm, () => {});
     };
 
-    setupNotifications().catch((e) => logger.log("[FCM ERROR] setupNotifications:", e));
+    // Deferred past the initial paint/interactions — FCM permission prompts,
+    // topic subscriptions and device registration are independent of the
+    // login flow and shouldn't compete with the prayer/announcements/chanda
+    // fetches for the same just-woken backend connection.
+    const notificationsTask = InteractionManager.runAfterInteractions(() => {
+      setupNotifications().catch((e) => logger.log("[FCM ERROR] setupNotifications:", e));
+    });
 
     return () => {
+      notificationsTask.cancel();
       unsubMessage();
       unsubOpen();
       unsubTokenRefresh();
@@ -1461,7 +1489,7 @@ export default function HomeScreen({ navigation, route }) {
     );
   }
 
-  if (!statusLoaded || loading) {
+  if (loading) {
     return (
       <View style={s.container}>
         <View style={s.loadingContainer}>

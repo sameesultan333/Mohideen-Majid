@@ -102,7 +102,13 @@ export async function getBaseUrl(options = {}) {
     return cachedBaseUrl;
   }
 
-  if (!forceRefresh && resolvingPromise) {
+  // Reuse an in-flight resolution regardless of forceRefresh: Home mounts
+  // fire several requests at once, and if the backend is cold-starting they
+  // tend to fail around the same time. Without this, each failed call ran
+  // its own serial /health probe (up to HEALTH_TIMEOUT_MS each) even though
+  // they were all asking the same question at the same moment — they now
+  // share one probe instead of stacking N of them back-to-back.
+  if (resolvingPromise) {
     return resolvingPromise;
   }
 
