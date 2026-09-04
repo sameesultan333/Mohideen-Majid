@@ -16,6 +16,7 @@ import com.facebook.react.ReactNativeHost
 import com.facebook.react.ReactPackage
 import com.facebook.react.defaults.DefaultReactNativeHost
 import com.facebook.soloader.SoLoader
+import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
 class MainApplication : Application(), ReactApplication {
@@ -24,6 +25,14 @@ class MainApplication : Application(), ReactApplication {
     private const val DEFAULT_CHANNEL_ID = "default_channel_id"
     private const val ADHAN_CHANNEL_ID   = "prayer_adhan"
     private const val IQAMAH_CHANNEL_ID  = "prayer_iqamah"
+
+    // Prayer sync moved from hourly to once-daily (battery + Samsung Device
+    // Care crash report — see PrayerSyncWorker/PrayerSyncService comments).
+    // Anchored to an early-morning window when the phone is asleep and
+    // unlikely to be in active use.
+    private const val PRAYER_SYNC_PREFS         = "prayer_sync_prefs"
+    private const val PRAYER_SYNC_MIGRATED_KEY  = "migrated_to_daily_v1"
+    private const val PRAYER_SYNC_WINDOW_HOUR   = 3 // 3 AM device-local time
   }
 
   private val mReactNativeHost: ReactNativeHost =
@@ -53,18 +62,51 @@ class MainApplication : Application(), ReactApplication {
     schedulePrayerSyncWorker()
   }
 
+  /**
+   * Was hourly — a Samsung Device Care crash report plus the desire to cut
+   * background battery use moved this to once daily, anchored to ~3 AM
+   * local time. The worker still does a cheap `/prayer/version` check first
+   * and only downloads the full schedule when it changed (PrayerSyncTask.js);
+   * only the WAKE-UP frequency changed, not that logic.
+   *
+   * Migration is one-shot (REPLACE once, guarded by a SharedPreferences
+   * flag, then KEEP forever after) rather than recomputing+re-enqueuing on
+   * every onCreate(): onCreate() runs on EVERY process start, including
+   * ones triggered by this very worker, so recomputing "next 3 AM from now"
+   * every time and always re-enqueuing would keep sliding the actual sync
+   * time later each time the app happens to be opened before it fires.
+   * REPLACE-once forces existing installs off the old hourly schedule;
+   * KEEP after that leaves the already-anchored time alone.
+   */
   private fun schedulePrayerSyncWorker() {
     val constraints = Constraints.Builder()
       .setRequiredNetworkType(NetworkType.CONNECTED)
       .build()
-    val request = PeriodicWorkRequestBuilder<PrayerSyncWorker>(1, TimeUnit.HOURS)
+    val request = PeriodicWorkRequestBuilder<PrayerSyncWorker>(24, TimeUnit.HOURS)
+      .setInitialDelay(millisUntilNextWindow(PRAYER_SYNC_WINDOW_HOUR), TimeUnit.MILLISECONDS)
       .setConstraints(constraints)
       .build()
-    WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-      "prayer_sync",
-      ExistingPeriodicWorkPolicy.UPDATE,
-      request
-    )
+
+    val prefs = getSharedPreferences(PRAYER_SYNC_PREFS, Context.MODE_PRIVATE)
+    val policy = if (prefs.getBoolean(PRAYER_SYNC_MIGRATED_KEY, false)) {
+      ExistingPeriodicWorkPolicy.KEEP
+    } else {
+      prefs.edit().putBoolean(PRAYER_SYNC_MIGRATED_KEY, true).apply()
+      ExistingPeriodicWorkPolicy.REPLACE
+    }
+    WorkManager.getInstance(this).enqueueUniquePeriodicWork("prayer_sync", policy, request)
+  }
+
+  private fun millisUntilNextWindow(hourOfDay: Int): Long {
+    val now = Calendar.getInstance()
+    val target = Calendar.getInstance().apply {
+      set(Calendar.HOUR_OF_DAY, hourOfDay)
+      set(Calendar.MINUTE, 0)
+      set(Calendar.SECOND, 0)
+      set(Calendar.MILLISECOND, 0)
+      if (before(now)) add(Calendar.DAY_OF_MONTH, 1)
+    }
+    return target.timeInMillis - now.timeInMillis
   }
 
   private fun createNotificationChannel() {

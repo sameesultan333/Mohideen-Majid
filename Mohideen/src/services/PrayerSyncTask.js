@@ -1,6 +1,8 @@
 /**
  * HeadlessJS task: PrayerSyncTask
- * Runs every 1 h via WorkManager (even when app is closed/killed).
+ * Runs once daily (~3 AM local time) via WorkManager (even when app is
+ * closed/killed) — was hourly; moved to daily for battery/crash-risk
+ * reasons (see MainApplication.kt schedulePrayerSyncWorker).
  * Checks schedule version → downloads full times only if changed → reschedules alarms.
  */
 import { AppRegistry, Platform } from 'react-native';

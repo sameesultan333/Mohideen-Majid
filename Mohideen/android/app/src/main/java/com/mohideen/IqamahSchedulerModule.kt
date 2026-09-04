@@ -36,7 +36,12 @@ class IqamahSchedulerModule(reactContext: ReactApplicationContext)
         val ctx = reactApplicationContext
         val soundUri = android.net.Uri.parse("android.resource://${ctx.packageName}/raw/adhan")
         val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        // getLaunchIntentForPackage can return null on some OEM states (matches
+        // the null-guard already used in IqamahWorker.kt for the same call) —
+        // PendingIntent.getActivity with a null Intent is a crash risk on some
+        // Android versions, not a hypothetical one worth leaving unguarded.
         val launchIntent = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)
+            ?.apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP }
         val pi = PendingIntent.getActivity(ctx, 0, launchIntent, PendingIntent.FLAG_IMMUTABLE)
         // CATEGORY_ALARM so the adhan can sound through Do Not Disturb — for a
         // call to prayer that's the intended behavior. The volume stream is
