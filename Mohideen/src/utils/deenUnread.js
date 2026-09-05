@@ -40,10 +40,13 @@ async function getMemberUnreadCounts() {
     const readHadithIds = readHadiths ? JSON.parse(readHadiths) : [];
     const readQuestionIds = readQuestions ? JSON.parse(readQuestions) : [];
 
+    // /hadith is public; /questions requires auth (get_current_user) — this
+    // used to call it via the auth-less apiAxios, so it 401'd on every call
+    // and the unread count silently always excluded questions.
     const [hadithRes, questionsRes] = await Promise.all(
       [
         apiAxios({ method: "get", url: "/hadith" }),
-        apiAxios({ method: "get", url: "/questions" }),
+        authApiAxios({ method: "get", url: "/questions" }),
       ].map((p) => p.catch(() => ({ data: [] })))
     );
 

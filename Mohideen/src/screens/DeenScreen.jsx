@@ -11,7 +11,7 @@ import { useTranslation } from "react-i18next";
 import { useFocusEffect } from "@react-navigation/native";
 import Svg, { Path, Circle, Rect, Line, Defs, LinearGradient, Stop } from "react-native-svg";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { apiAxios } from "../config/server";
+import { apiAxios, authApiAxios } from "../config/server";
 import BottomNav from "../components/BottomNav";
 import { useBottomNavHeight } from "../hooks/useSafeArea";
 import { getPendingQuestionCount, IMAM_LIKE_ROLES } from "../utils/deenUnread";
@@ -275,10 +275,13 @@ export default function DeenScreen({ navigation, route }) {
         const readHadithIds = readHadiths ? JSON.parse(readHadiths) : [];
         const readQuestionIds = readQuestions ? JSON.parse(readQuestions) : [];
 
-        // Fetch hadiths and questions to count unread
+        // Fetch hadiths and questions to count unread. /hadith is public;
+        // /questions requires auth — this used to call it via the auth-less
+        // apiAxios, so it 401'd every time and questions were silently
+        // excluded from the unread count.
         const [hadithRes, questionsRes] = await Promise.all([
           apiAxios({ method: "get", url: "/hadith" }),
-          apiAxios({ method: "get", url: "/questions" })
+          authApiAxios({ method: "get", url: "/questions" })
         ].map(p => p.catch(() => ({ data: [] }))));
 
         const hadiths = hadithRes.data || [];
