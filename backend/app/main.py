@@ -205,8 +205,41 @@ def _repair_stale_sequences() -> None:
         log.warning("[db] sequence repair skipped: %s", exc)
 
 
+def _connect_with_retry(fn, *, attempts=3, delay_seconds=2):
+    """
+    Run a startup DB operation with retries for transient connection drops.
+
+    Production has seen worker boot crash outright on
+    "SSL connection has been closed unexpectedly" — a momentary hiccup
+    talking to Render's managed Postgres (proxy-level connection reset, or
+    the DB briefly restarting), not a real, sustained outage. Gunicorn would
+    already restart the worker on an uncaught exception here, but every
+    worker hits this same startup path at nearly the same moment, so a
+    shared transient blip could crash-loop several of them at once instead
+    of just riding it out. A few immediate retries cost nothing when the
+    connection is healthy and turn a one-off blip into a non-event; a
+    genuinely down database still fails after exhausting attempts, which is
+    the correct, visible behavior — this doesn't paper over a real outage.
+    """
+    import time
+    last_exc = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return fn()
+        except Exception as exc:
+            last_exc = exc
+            if attempt < attempts:
+                import logging as _l
+                _l.getLogger(__name__).warning(
+                    "[db] startup connection attempt %s/%s failed (%s) — retrying in %ss",
+                    attempt, attempts, exc, delay_seconds,
+                )
+                time.sleep(delay_seconds)
+    raise last_exc
+
+
 _repair_missing_primary_keys()
-models.Base.metadata.create_all(bind=engine)
+_connect_with_retry(lambda: models.Base.metadata.create_all(bind=engine))
 # After create_all, so a table created on this very boot is included.
 _repair_stale_sequences()
 
