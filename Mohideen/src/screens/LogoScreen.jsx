@@ -23,7 +23,19 @@ import { colors } from "../config/theme";
 const { width } = Dimensions.get("window");
 
 // ─── Timing budget ───────────────────────────────────────────────
-const MIN_DISPLAY_MS = 3000; // let the animation breathe, feels premium
+// Was 3000. This is a floor, not a duration: the auth check (decideRoute)
+// runs in parallel and usually resolves in a few hundred ms, so the app sat
+// on the splash doing nothing for the remainder — dead time on every single
+// launch, before the user could even reach the login form. Measured on a
+// physical device: splash still up at 3.5s, login form only at 5.5s.
+//
+// 1800 is chosen against the animation timeline below, not picked at random:
+// the mark lands at ~1000ms (t1 200 + 800), the divider at ~1400ms (t2 900 +
+// 500) and the title at ~1850ms (t3 1300 + 550). Exiting at 1800ms + the
+// 320ms fade lets every meaningful element land; only the decorative shimmer
+// (t4, starts 1900ms) is cut. Going much below this starts the fade-out
+// before the title has appeared, which looks broken rather than fast.
+const MIN_DISPLAY_MS = 1800;
 const MAX_DISPLAY_MS = 4800; // hard safety ceiling (< 5000ms requirement)
 const FADE_OUT_MS = 320;
 

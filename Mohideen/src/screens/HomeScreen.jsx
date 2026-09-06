@@ -995,6 +995,9 @@ export default function HomeScreen({ navigation, route }) {
   // their own AsyncStorage/Keychain read during the post-login burst.
   const userRef = useRef(null);
   const tokenRef = useRef(null);
+  // Mirrors the userRole state so fetchDeenUnread can stay identity-stable —
+  // see the comment on fetchDeenUnread below.
+  const userRoleRef = useRef(null);
 
   // Keyed to the user's own calendar day. toISOString() gave the UTC date, so in
   // India the day only turned over at 05:30 and a Fajr marked at 5 AM was filed
@@ -1033,9 +1036,18 @@ export default function HomeScreen({ navigation, route }) {
         if (userData) {
           const user = JSON.parse(userData);
           userRef.current = user;
+          const role = user.role || null;
+          const roleChanged = userRoleRef.current !== role;
+          userRoleRef.current = role;
           setUserName(user.name || "");
-          setUserRole(user.role || null);
+          setUserRole(role);
           setUserStatus(user.status || "ACTIVE");
+          // The Deen badge is role-sensitive (imam/admin also count pending
+          // questions). fetchDeenUnread may already have run with a null role
+          // via the focus effect, so refresh just that one count now that the
+          // real role is known — instead of letting a state change invalidate
+          // the shared callbacks and re-fire the whole request burst.
+          if (roleChanged && role) fetchDeenUnread();
         } else {
           setUserStatus("ACTIVE");
         }
@@ -1066,6 +1078,13 @@ export default function HomeScreen({ navigation, route }) {
         }
       } catch (_) {}
     })();
+    // fetchDeenUnread is deliberately not in this dependency array. It is
+    // declared further down the component body, so naming it here would be a
+    // temporal-dead-zone ReferenceError — the array is evaluated during render,
+    // before that const is initialized, whereas the call above runs inside an
+    // async callback after mount. It is identity-stable (useCallback with []),
+    // so there is nothing for this effect to react to anyway.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -1146,11 +1165,25 @@ export default function HomeScreen({ navigation, route }) {
     } catch (_) {}
   }, []);
 
+  // Reads the role from a ref, NOT from the `userRole` state, and therefore
+  // keeps a stable identity for the life of the screen.
+  //
+  // This used to be `[userRole]`. `userRole` starts null and is set a moment
+  // later from AsyncStorage, so this callback's identity changed once on every
+  // single mount — and it sits in the dependency array of BOTH the badge
+  // useFocusEffect and the prayer/WebSocket mount effect below. That one state
+  // change therefore re-fired /announcements/, /user/chanda-summary, /hadith
+  // and /questions a second time, AND tore down and re-ran the prayer effect:
+  // a second /prayer/ request racing the first one that still gates the
+  // loading spinner, plus a WebSocket cancel/close/reconnect cycle. Reading
+  // the role from a ref removes the identity change entirely; the effect below
+  // refreshes the Deen count once the real role is known, so imam/admin
+  // pending-question counts are still correct.
   const fetchDeenUnread = useCallback(async () => {
-    const count = await getDeenUnreadCount(userRole);
+    const count = await getDeenUnreadCount(userRoleRef.current);
     setDeenUnread(count);
     await AsyncStorage.setItem("badge_Deen", String(count)).catch(() => {});
-  }, [userRole]);
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -1167,11 +1200,21 @@ export default function HomeScreen({ navigation, route }) {
   // could still show the old badge count for up to 30s. Home never
   // unmounts on the stack (it's below every pushed screen), so re-run the
   // fetch on every focus, not just once.
+  // These three drive badge counts only — none of them gates what the user
+  // sees. Running them immediately meant five requests (/announcements/,
+  // /user/chanda-summary, /hadith, /questions, and /questions/pending for
+  // staff roles) hit the backend at the same instant as /prayer/, which is
+  // the one call the loading spinner actually waits on. Deferring past the
+  // first interaction frame lets the gating request have the connection to
+  // itself; the badges land a few hundred ms later, which is invisible.
   useFocusEffect(
     useCallback(() => {
-      fetchUnreadCount();
-      fetchChandaPending();
-      fetchDeenUnread();
+      const task = InteractionManager.runAfterInteractions(() => {
+        fetchUnreadCount();
+        fetchChandaPending();
+        fetchDeenUnread();
+      });
+      return () => task.cancel();
     }, [fetchUnreadCount, fetchChandaPending, fetchDeenUnread])
   );
 
