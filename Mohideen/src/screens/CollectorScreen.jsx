@@ -460,6 +460,13 @@ export default function CollectorScreen({ navigation, route }) {
 
   const [role, setRole] = useState(null);
   const [roleChecked, setRoleChecked] = useState(false);
+  // Reentrancy guards — plain refs, not state, because they must block a
+  // second call synchronously (before React commits any re-render), not
+  // just disable a button after the fact. See flushQueue/doSubmitChanda.
+  const flushingRef = useRef(false);
+  const submittingRef = useRef(false);
+  const monthFetchIdRef = useRef(0);
+  const latestMonthsMemberIdRef = useRef(null);
 
   const [members, setMembers] = useState([]);
   const [search, setSearch] = useState("");
@@ -561,19 +568,30 @@ export default function CollectorScreen({ navigation, route }) {
   }, [cacheKey]);
 
   const fetchMembers = useCallback(async (silent = false) => {
+    // Tapping the month arrows quickly fires a new request for each month
+    // before the previous one resolves. Network responses can arrive out of
+    // order, so without this guard a stale response for a month the user has
+    // already navigated away from can land last and silently overwrite the
+    // list with the wrong month's data. requestedMonth is captured now, at
+    // call time, not read back from state later (selectedMonth may have
+    // already moved on by the time this resolves).
+    const requestedMonth = selectedMonth;
+    const requestId = ++monthFetchIdRef.current;
     if (!silent) setFetching(true);
     try {
-      const res = await authApiFetch(`/chanda/members?month=${selectedMonth}&include_history=true`);
+      const res = await authApiFetch(`/chanda/members?month=${requestedMonth}&include_history=true`);
       const data = await res.json();
       const list = Array.isArray(data) ? data : [];
+      if (requestId !== monthFetchIdRef.current) return; // superseded by a newer request
       setMembers(list);
       setIsOffline(false);
       setLastSync(new Date());
       AsyncStorage.setItem(cacheKey, JSON.stringify({ data: list, timestamp: new Date().toISOString() })).catch(() => {});
     } catch (e) {
+      if (requestId !== monthFetchIdRef.current) return;
       setIsOffline(true);
     } finally {
-      setFetching(false);
+      if (requestId === monthFetchIdRef.current) setFetching(false);
     }
   }, [selectedMonth, cacheKey]);
 
@@ -595,23 +613,35 @@ export default function CollectorScreen({ navigation, route }) {
   };
 
   const flushQueue = useCallback(async () => {
-    const queue = await getQueue();
-    if (queue.length === 0) return;
-    const remaining = [];
-    for (const payload of queue) {
-      try {
-        const res = await authApiFetch("/chanda/collect", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        if (!res.ok) remaining.push(payload);
-      } catch {
-        remaining.push(payload);
+    // flushQueue is triggered independently by a 30s interval, manual sync,
+    // and pull-to-refresh — with no guard, two of those firing close together
+    // both read the same offline queue and both re-POST every payload in it,
+    // double-submitting real chanda payments. This ref blocks a second call
+    // outright (not state — a state flag wouldn't be set until after the
+    // first `await`, leaving the same gap it's meant to close).
+    if (flushingRef.current) return;
+    flushingRef.current = true;
+    try {
+      const queue = await getQueue();
+      if (queue.length === 0) return;
+      const remaining = [];
+      for (const payload of queue) {
+        try {
+          const res = await authApiFetch("/chanda/collect", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) remaining.push(payload);
+        } catch {
+          remaining.push(payload);
+        }
       }
+      await setQueue(remaining);
+      if (remaining.length < queue.length) fetchMembers(true);
+    } finally {
+      flushingRef.current = false;
     }
-    await setQueue(remaining);
-    if (remaining.length < queue.length) fetchMembers(true);
   }, [fetchMembers]);
 
   useEffect(() => {
@@ -694,6 +724,17 @@ export default function CollectorScreen({ navigation, route }) {
 
   // Live updates: when admin changes a monthly amount or a payment is verified, refresh
   useEffect(() => {
+    // This effect re-runs on every fetchMembers identity change, i.e. every
+    // selectedMonth change (fetchMembers is keyed on it) — rapid month
+    // navigation tears this down and reconnects. `connect` awaits
+    // getToken()/getWsUrl() BEFORE assigning `ws`, so if cleanup runs while
+    // those are still pending, `if (ws) ws.close()` sees null and does
+    // nothing — the socket created a moment later is then orphaned with no
+    // cleanup ever able to close it, and its onmessage handler keeps calling
+    // the stale fetchMembers closure bound to the OLD month. `cancelled`
+    // closes that gap by checking right before the socket is created (and
+    // before scheduling a reconnect) instead of only checking `ws` itself.
+    let cancelled = false;
     let ws = null;
     let retryTimeout = null;
     const REFRESH_EVENTS = new Set([
@@ -704,6 +745,7 @@ export default function CollectorScreen({ navigation, route }) {
       try {
         const token = await getToken();
         const url = await getWsUrl(`/ws/finance?token=${token}`);
+        if (cancelled) return;
         ws = new WebSocket(url);
         ws.onmessage = (e) => {
           try {
@@ -713,12 +755,13 @@ export default function CollectorScreen({ navigation, route }) {
         };
         ws.onerror = () => {};
         ws.onclose = () => {
-          retryTimeout = setTimeout(connect, 10000);
+          if (!cancelled) retryTimeout = setTimeout(connect, 10000);
         };
       } catch {}
     };
     connect();
     return () => {
+      cancelled = true;
       if (ws) ws.close();
       if (retryTimeout) clearTimeout(retryTimeout);
     };
@@ -758,15 +801,23 @@ export default function CollectorScreen({ navigation, route }) {
   }, []);
 
   const fetchAvailableMonths = useCallback(async (memberId, silent = false) => {
+    // Guards against closing the sheet and reopening it for a different
+    // member before the first member's request resolves — without this, the
+    // stale response can land after the second fetch starts and overwrite
+    // the second member's months with the first member's data.
+    latestMonthsMemberIdRef.current = memberId;
     if (!silent) setAvailableMonthsLoading(true);
     try {
       const res = await authApiFetch(`/chanda/available-months/${memberId}?future=12`);
       if (res.ok) {
         const data = await res.json();
+        if (latestMonthsMemberIdRef.current !== memberId) return;
         setAvailableMonths(data);
       }
     } catch {}
-    finally { setAvailableMonthsLoading(false); }
+    finally {
+      if (latestMonthsMemberIdRef.current === memberId) setAvailableMonthsLoading(false);
+    }
   }, []);
 
   // Pull-to-refresh inside the payment sheet — re-fetches this member's
@@ -827,6 +878,13 @@ export default function CollectorScreen({ navigation, route }) {
   }, [proofImage]);
 
   const doSubmitChanda = useCallback(async (finalAmount, paymentToken) => {
+    // The confirm-modal button that calls this has no `disabled` prop, and
+    // setConfirmVisible(false) doesn't hide the modal synchronously — a fast
+    // double-tap fires this twice before the fade-out completes. Block a
+    // second call outright rather than relying on the `loading` state flag,
+    // which doesn't flip until after this function has already started.
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     const months_list = Array.from(selectedMonthKeys).sort();
 
     const payload = {
@@ -878,16 +936,24 @@ export default function CollectorScreen({ navigation, route }) {
     } catch (err) {
       const isNetworkFailure = err instanceof TypeError || /network/i.test(err.message || "");
       if (isNetworkFailure) {
-        const queue = await getQueue();
-        queue.push(payload);
-        await setQueue(queue);
-        Alert.alert(t("collector.alertSavedOfflineTitle"), t("collector.alertSavedOfflineMsg"));
-        closeModal();
+        try {
+          const queue = await getQueue();
+          queue.push(payload);
+          await setQueue(queue);
+          Alert.alert(t("collector.alertSavedOfflineTitle"), t("collector.alertSavedOfflineMsg"));
+          closeModal();
+        } catch {
+          // Storage itself failed (full/corrupt) — the payment was neither
+          // sent nor queued. Say so rather than silently swallowing it via
+          // an unhandled rejection, which previously left no trace at all.
+          Alert.alert(t("collector.alertFailedTitle"), t("collector.alertSomethingWrong"));
+        }
       } else {
         Alert.alert(t("collector.alertFailedTitle"), err.message || t("collector.alertSomethingWrong"));
       }
     } finally {
       setLoading(false);
+      submittingRef.current = false;
     }
   }, [selectedMonthKeys, selected, method, transactionRef, collectedDate, notes, uploadScreenshot, refreshTodayTotals, closeModal, fetchMembers]);
 
@@ -909,6 +975,11 @@ export default function CollectorScreen({ navigation, route }) {
     const finalAmount = Number(String(amount || "").replace(/[^0-9.]/g, ""));
     if (!finalAmount) return Alert.alert(t("collector.alertEnterAmount"));
     if (method === "upi" && !proofImage) return Alert.alert(t("collector.alertUploadUpi"));
+    // Same reentrancy guard as doSubmitChanda — `loading` doesn't flip until
+    // after this function is already running, leaving a window for a fast
+    // double-tap on the submit button to fire two POSTs.
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     try {
       setLoading(true);
       let imageUrl = null;
@@ -938,6 +1009,7 @@ export default function CollectorScreen({ navigation, route }) {
       Alert.alert(t("collector.alertFailedTitle"), err.message || t("collector.alertSomethingWrong"));
     } finally {
       setLoading(false);
+      submittingRef.current = false;
     }
   }, [amount, method, proofImage, uploadScreenshot, selected, notes, paymentType, selectedFund, funds, refreshTodayTotals, closeModal, fetchMembers]);
 
@@ -1640,7 +1712,8 @@ export default function CollectorScreen({ navigation, route }) {
                     <Text allowFontScaling={false} style={{ color: H.textDark, fontWeight: "700", fontSize: 14 }}>Cancel</Text>
                   </AnimatedPressable>
                   <AnimatedPressable
-                    style={{ flex: 2, backgroundColor: H.gold, borderRadius: 10, paddingVertical: 13, alignItems: "center" }}
+                    style={{ flex: 2, backgroundColor: H.gold, borderRadius: 10, paddingVertical: 13, alignItems: "center", opacity: loading ? 0.6 : 1 }}
+                    disabled={loading}
                     onPress={() => { setConfirmVisible(false); doSubmitChanda(confirmPayload.finalAmount, confirmPayload.token); }}
                   >
                     <Text allowFontScaling={false} style={{ color: H.headerDeep, fontWeight: "800", fontSize: 14 }}>Confirm & Submit</Text>

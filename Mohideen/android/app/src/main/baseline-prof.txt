@@ -1,0 +1,34 @@
+# Baseline Profile — app's own startup-critical classes.
+#
+# Hand-authored: no Macrobenchmark module exists in this project (generating
+# one requires a separate :macrobenchmark Gradle module plus a rooted/AOSP
+# emulator image to actually run it, which this environment doesn't have).
+# This is deliberately conservative — it lists only the classes that are
+# certain to execute on every cold start (Application/Activity entry points
+# and the one custom native module registered at boot), not a guess at deep
+# React Native/Hermes internals.
+#
+# This is safe by construction: ART resolves each line against the compiled
+# dex at install/dexopt time and silently ignores anything it can't match
+# (a renamed method, a wrong descriptor). A wrong or stale entry here can
+# never crash the app or change behavior — worst case it's simply a no-op.
+#
+# AGP already merges BASELINE PROFILES SHIPPED BY LIBRARY AARs (verified:
+# build/intermediates/merged_art_profile/release/baseline-prof.txt contains
+# ~1300 lines contributed by androidx.appcompat, androidx.work, etc.) — this
+# file adds the app's OWN code, which those library profiles don't cover.
+#
+# H = hot, S = startup, P = post-startup (ART profile flag conventions).
+HSPLcom/mohideen/MainApplication;-><init>()V
+HSPLcom/mohideen/MainApplication;->onCreate()V
+HSPLcom/mohideen/MainApplication;->createNotificationChannel()V
+HSPLcom/mohideen/MainApplication;->schedulePrayerSyncWorker()V
+HSPLcom/mohideen/MainApplication;->millisUntilNextWindow(I)J
+HSPLcom/mohideen/MainApplication;->getReactNativeHost()Lcom/facebook/react/ReactNativeHost;
+HSPLcom/mohideen/MainActivity;-><init>()V
+HSPLcom/mohideen/MainActivity;->onCreate(Landroid/os/Bundle;)V
+HSPLcom/mohideen/MainActivity;->getMainComponentName()Ljava/lang/String;
+HSPLcom/mohideen/MainActivity;->createReactActivityDelegate()Lcom/facebook/react/ReactActivityDelegate;
+HSPLcom/mohideen/IqamahSchedulerPackage;-><init>()V
+HSPLcom/mohideen/IqamahSchedulerModule;-><init>(Lcom/facebook/react/bridge/ReactApplicationContext;)V
+HSPLcom/mohideen/IqamahSchedulerModule;->getName()Ljava/lang/String;

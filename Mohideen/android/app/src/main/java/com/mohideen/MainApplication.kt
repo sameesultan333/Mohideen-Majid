@@ -127,6 +127,20 @@ class MainApplication : Application(), ReactApplication {
       nm.deleteNotificationChannel(IQAMAH_CHANNEL_ID)
       nm.deleteNotificationChannel(DEFAULT_CHANNEL_ID)
       prefs.edit().putInt("channel_version", CHANNEL_VERSION).apply()
+    } else if (nm.getNotificationChannel(ADHAN_CHANNEL_ID) != null &&
+               nm.getNotificationChannel(IQAMAH_CHANNEL_ID) != null &&
+               nm.getNotificationChannel(DEFAULT_CHANNEL_ID) != null) {
+      // Every createNotificationChannel() call below is a blocking binder IPC
+      // to NotificationManagerService, paid again on every single process
+      // start (including ones woken just to run a headless FCM/WorkManager
+      // task) even though re-creating an already-identical channel is a
+      // documented no-op. Skipping is only safe when BOTH the version check
+      // above found nothing to migrate AND all three channels are confirmed
+      // to still exist — the explicit null-check matters because a user can
+      // delete a channel manually from system notification settings, and if
+      // that ever happens this still falls through to recreate it below
+      // rather than silently leaving Adhan/Iqamah with no channel to post to.
+      return
     }
 
     val notifColor = getColor(R.color.notification_color)

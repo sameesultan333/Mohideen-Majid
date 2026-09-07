@@ -203,17 +203,34 @@ async function tryRefreshToken() {
   if (_refreshing) return _refreshing;
   _refreshing = (async () => {
     const refreshToken = await getRefreshToken();
-    if (!refreshToken) throw new Error('No refresh token');
-    const baseUrl = await getBaseUrl();
-    const res = await axios({
-      method: 'post',
-      url: `${baseUrl}/auth/refresh`,
-      headers: { 'X-Refresh-Token': refreshToken },
-      timeout: DEFAULT_TIMEOUT_MS,
-    });
-    await saveToken(res.data.access_token);
-    if (res.data.refresh_token) await saveRefreshToken(res.data.refresh_token);
-    return res.data.access_token;
+    if (!refreshToken) {
+      // No refresh token was ever stored — this is a genuinely logged-out
+      // state, not a network hiccup.
+      const err = new Error('No refresh token');
+      err.sessionInvalid = true;
+      throw err;
+    }
+    try {
+      // Routed through apiAxios (not raw axios) so a cold Render instance
+      // gets the same retry-with-fresh-base-URL treatment every other
+      // request already has, instead of one bare 30s attempt.
+      const res = await apiAxios({
+        method: 'post',
+        url: '/auth/refresh',
+        headers: { 'X-Refresh-Token': refreshToken },
+      });
+      await saveToken(res.data.access_token);
+      if (res.data.refresh_token) await saveRefreshToken(res.data.refresh_token);
+      return res.data.access_token;
+    } catch (error) {
+      // A real response from the server (e.g. 401 "session expired or
+      // revoked") means the refresh token is actually invalid — that's a
+      // genuine logout. No response at all (timeout, cold start, the phone
+      // being briefly offline) is a transient failure: the refresh token
+      // itself was never rejected and must not be thrown away for it.
+      if (error?.response) error.sessionInvalid = true;
+      throw error;
+    }
   })().finally(() => { _refreshing = null; });
   return _refreshing;
 }
@@ -254,9 +271,15 @@ export async function authApiFetch(path, init = {}) {
     const newToken = await tryRefreshToken();
     const retryHeaders = { ...(init.headers || {}), Authorization: `Bearer ${newToken}` };
     return apiFetch(path, { ...init, headers: retryHeaders });
-  } catch {
-    await clearSessionAndRedirect();
-    throw new Error('Session expired — please log in again');
+  } catch (refreshErr) {
+    if (refreshErr?.sessionInvalid) {
+      await clearSessionAndRedirect();
+      throw new Error('Session expired — please log in again');
+    }
+    // Refresh itself failed to even reach the server (cold start/offline) —
+    // the stored session is still perfectly valid, so don't throw it away
+    // over a transient network failure. Surface the original 401 instead.
+    throw new Error('Cannot reach server. Check your connection and try again.');
   }
 }
 
@@ -275,8 +298,13 @@ export async function authApiAxios(config) {
       const newToken = await tryRefreshToken();
       const retryHeaders = { ...(config.headers || {}), Authorization: `Bearer ${newToken}` };
       return await apiAxios({ ...config, headers: retryHeaders });
-    } catch {
-      await clearSessionAndRedirect();
+    } catch (refreshErr) {
+      if (refreshErr?.sessionInvalid) {
+        await clearSessionAndRedirect();
+      }
+      // Otherwise the refresh attempt itself just couldn't reach the server
+      // (cold start/offline) — keep the stored session intact and let this
+      // one request fail; the next successful call will refresh normally.
       throw error;
     }
   }

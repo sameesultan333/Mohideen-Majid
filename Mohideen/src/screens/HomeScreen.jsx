@@ -1067,11 +1067,11 @@ export default function HomeScreen({ navigation, route }) {
         const liveStatus = res.data?.status;
         if (liveStatus) {
           setUserStatus(liveStatus);
-          // Keep AsyncStorage in sync
-          const raw = await AsyncStorage.getItem("user");
-          if (raw) {
-            const user = JSON.parse(raw);
-            user.status = liveStatus;
+          // Keep AsyncStorage in sync. userRef.current already holds this
+          // same object (set earlier in this effect) — re-reading it back
+          // from AsyncStorage here was pure waste, not a freshness need.
+          if (userRef.current) {
+            const user = { ...userRef.current, status: liveStatus };
             userRef.current = user;
             await AsyncStorage.setItem("user", JSON.stringify(user));
           }
@@ -1185,14 +1185,24 @@ export default function HomeScreen({ navigation, route }) {
     await AsyncStorage.setItem("badge_Deen", String(count)).catch(() => {});
   }, []);
 
+  // No network calls here — this is native/bridge work (PushNotification
+  // channel setup, a cancel-all-then-reschedule pass over the local alarm
+  // cache, an AlarmManager permission check). It was previously running
+  // undeferred on mount, contending for the JS thread/bridge in the exact
+  // window where first paint and the /prayer/ response are also being
+  // handled. Deferred by one interaction frame — irrelevant for alarms that
+  // are scheduled minutes-to-hours ahead, and rescheduleOnLaunch's job
+  // (restoring alarms from local storage) still runs on every Home mount,
+  // just a beat later.
   useEffect(() => {
-    (async () => {
+    const task = InteractionManager.runAfterInteractions(async () => {
       try {
         await PrayerNotificationService.initialize();
         await PrayerNotificationService.rescheduleOnLaunch();
         await ensureExactAlarmPermission();
       } catch (_) {}
-    })();
+    });
+    return () => task.cancel();
   }, []);
 
   // Badges (announcements, chanda) were only refreshed on mount + a 30s
