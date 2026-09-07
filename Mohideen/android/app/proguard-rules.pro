@@ -17,15 +17,15 @@
 -keep class com.mohideen.** { *; }
 
 # ── OkHttp / Retrofit (used by RN internals) ──────────────────────────────────
-# The blanket `-keep class okhttp3/okio { *; }` was removed: both libraries
-# ship their own consumer-rules.pro inside their AARs (R8 applies those
-# automatically), and neither is used reflectively anywhere in this app —
-# only their own consumer rules are actually load-bearing. The blanket keep
-# was purely extra dead weight R8 couldn't shrink. -dontwarn stays: it only
-# suppresses build-time warnings about optional classes okhttp references
-# that aren't on this app's classpath, it has no effect on shrinking.
+# REVERTED: narrowing this to just -dontwarn (removing the blanket -keep)
+# broke minifyReleaseWithR8 on a clean build in this project's actual
+# toolchain/dependency graph, despite building fine once in a different
+# session. Restored to the original working rule rather than relying on a
+# result that didn't reproduce. Not worth the size win if it's this fragile.
 -dontwarn okhttp3.**
 -dontwarn okio.**
+-keep class okhttp3.** { *; }
+-keep class okio.** { *; }
 
 # ── Annotations ───────────────────────────────────────────────────────────────
 -dontwarn javax.annotation.**
