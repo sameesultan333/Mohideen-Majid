@@ -128,6 +128,7 @@ class AuditAction:
 
     # IMPORT
     EXCEL_IMPORTED        = "EXCEL_IMPORTED"
+    EXCEL_EXPORTED        = "EXCEL_EXPORTED"
 
 
 _ACTION_MODULE: dict[str, str] = {
@@ -175,6 +176,7 @@ _ACTION_MODULE: dict[str, str] = {
     "CASH_SUBMITTED": "Finance", "CASH_APPROVED": "Finance", "CASH_REJECTED": "Finance",
 
     "EXCEL_IMPORTED": "Finance",
+    "EXCEL_EXPORTED": "Finance",
 }
 
 

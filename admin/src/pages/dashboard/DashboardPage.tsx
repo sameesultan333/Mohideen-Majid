@@ -4,15 +4,16 @@ import {
   Wallet, HandCoins, Receipt, TrendingUp, Users,
   AlertTriangle, CheckCircle2,
   Clock, RefreshCw, ArrowRight, X, Image as ImageIcon,
-  WifiOff, RotateCcw,
+  WifiOff, RotateCcw, Download,
 } from "lucide-react";
 import { COLORS, TYPOGRAPHY } from "../../theme/colors";
 import {
-  getDashboard, getWeeklyCollections, getYearlyCollections,
+  getDashboard, getWeeklyCollections, getYearlyCollections, exportCurrentData, triggerDownload,
   type FinanceDashboard, type WeeklyCollectionDay,
 } from "../../api/chanda";
 import { getAccessToken } from "../../api/auth";
 import { cachedFetch, formatCacheAge } from "../../utils/offlineCache";
+import toast from "react-hot-toast";
 
 // ─── helpers ─────────────────────────────────────────────────────────
 const fmt = (n: number | null | undefined) =>
@@ -388,6 +389,7 @@ export default function DashboardPage() {
   const [selectedPayment, setSelectedPayment] = useState<any>(null);
   const [isOffline, setIsOffline] = useState(false);
   const [cacheTime, setCacheTime] = useState<number | null>(null);
+  const [exporting, setExporting] = useState(false);
   const loadDataRef = useRef<() => void>(() => {});
 
   async function loadData() {
@@ -398,6 +400,22 @@ export default function DashboardPage() {
       setCacheTime(result.cacheTime);
       setLastRefreshed(new Date());
     } catch {} finally { setLoading(false); }
+  }
+
+  async function handleExportData() {
+    try {
+      setExporting(true);
+      const blob = await exportCurrentData();
+      const today = new Date().toISOString().split('T')[0];
+      const filename = `mohideen_masjid_current_data_${today}.xlsx`;
+      triggerDownload(blob, filename);
+      toast.success("Data exported successfully!");
+    } catch (error) {
+      console.error("Export failed:", error);
+      toast.error("Failed to export data. Please try again.");
+    } finally {
+      setExporting(false);
+    }
   }
 
   useEffect(() => {
@@ -477,13 +495,31 @@ export default function DashboardPage() {
           </h1>
           <p style={{ margin: "3px 0 0", fontSize: 12, color: COLORS.textSecondary }}>{today}</p>
         </div>
-        <button onClick={() => { setLoading(true); loadData(); }}
-          style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 13px",
-            border: `1px solid ${COLORS.border}`, borderRadius: 10, background: COLORS.surface,
-            cursor: "pointer", fontSize: 12, color: COLORS.textSecondary }}>
-          <RefreshCw size={12} />
-          {lastRefreshed ? lastRefreshed.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "Refresh"}
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button 
+            onClick={handleExportData}
+            disabled={exporting}
+            style={{ 
+              display: "flex", alignItems: "center", gap: 6, padding: "7px 13px",
+              border: `1px solid ${COLORS.border}`, borderRadius: 10, 
+              background: exporting ? COLORS.primaryLight : COLORS.surface,
+              cursor: exporting ? "not-allowed" : "pointer", 
+              fontSize: 12, color: exporting ? COLORS.primary : COLORS.primary,
+              opacity: exporting ? 0.7 : 1,
+              fontWeight: 600
+            }}
+          >
+            <Download size={12} />
+            {exporting ? "Exporting..." : "Export Data"}
+          </button>
+          <button onClick={() => { setLoading(true); loadData(); }}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 13px",
+              border: `1px solid ${COLORS.border}`, borderRadius: 10, background: COLORS.surface,
+              cursor: "pointer", fontSize: 12, color: COLORS.textSecondary }}>
+            <RefreshCw size={12} />
+            {lastRefreshed ? lastRefreshed.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "Refresh"}
+          </button>
+        </div>
       </div>
 
       {/* ── Offline indicator ── */}

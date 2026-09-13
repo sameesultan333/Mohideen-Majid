@@ -2,12 +2,17 @@
 
 from datetime import datetime, timedelta
 from typing import Optional
+from io import BytesIO
 
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from openpyxl.utils import get_column_letter
 
 from app import models, schemas
 from app.database import SessionLocal
@@ -2343,7 +2348,289 @@ async def assign_collector(
                         body="A collector has been assigned to your family.",
                         data={"type": "collector_assigned"})
         except Exception:
-            pass
+            pass  # Notification failure shouldn't break the assignment
 
-    db.commit()
-    return {"message": "Collector assignment updated"}
+    return {"message": f"Collector {'assigned to' if collector_id else 'removed from'} family {head.name}"}
+
+
+# ─────────────────────────────────────────────────────────────
+# EXPORT CURRENT DATA
+# ─────────────────────────────────────────────────────────────
+
+@router.get("/export-current-data")
+async def export_current_data(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    """
+    Export current live database data as a formatted Excel file.
+    Includes users/families and their payment information with actual dates.
+    """
+    try:
+        # Generate filename with current date
+        from datetime import date
+        today = date.today()
+        filename = f"mohideen_masjid_current_data_{today.strftime('%Y-%m-%d')}.xlsx"
+
+        # Create workbook
+        wb = Workbook()
+        
+        # Remove default sheet
+        if "Sheet" in wb.sheetnames:
+            wb.remove(wb["Sheet"])
+
+        # ─── USERS/FAMILIES SHEET ───
+        users_sheet = wb.create_sheet("Users & Families", 0)
+        
+        # Headers for users sheet - matching import structure
+        user_headers = [
+            "Chanda Number", "Head Name", "Phone", "Address", "Zone", "Street",
+            "Monthly Chanda Amount", "Is Registered", "Registration Date",
+            "Is Active", "User ID", "User Name", "User Phone", "User Status",
+            "Assigned Collector ID", "Assigned Collector Name"
+        ]
+        
+        # Write headers with styling
+        _write_styled_header(users_sheet, user_headers)
+        
+        # Query families and their associated users
+        families = db.query(models.ApprovedHead).filter(
+            models.ApprovedHead.is_deleted.is_(False)
+        ).all()
+        
+        user_row = 2  # Start from row 2 (after header)
+        for family in families:
+            # Get associated user if exists
+            user = db.query(models.User).filter_by(family_id=family.id).first()
+            collector = None
+            if family.collector_id:
+                collector = db.query(models.User).filter_by(id=family.collector_id).first()
+            
+            # Format dates
+            reg_date = family.registration_date.strftime("%Y-%m-%d") if family.registration_date else ""
+            
+            # Write family data
+            users_sheet.append([
+                family.chanda_no or "",
+                family.name or "",
+                family.phone or "",
+                family.address or "",
+                family.zone or "",
+                family.street or "",
+                family.monthly_amount or 0,
+                "Yes" if family.is_registered else "No",
+                reg_date,
+                "Yes" if family.is_active else "No",
+                user.id if user else "",
+                user.name if user else "",
+                user.phone if user else "",
+                user.status if user else "",
+                family.collector_id if family.collector_id else "",
+                collector.name if collector else ""
+            ])
+            user_row += 1
+        
+        # Auto-fit columns
+        _auto_fit_columns(users_sheet)
+
+        # ─── PAYMENTS/CHANDA SHEET ───
+        payments_sheet = wb.create_sheet("Chanda Payments", 1)
+        
+        # Headers for payments sheet
+        payment_headers = [
+            "Payment ID", "Receipt ID", "Chanda Number", "Head Name", "Amount",
+            "Payment Method", "Payment Date", "Collected Date", "Status",
+            "Collected By", "Verified By", "Verified At", "Purpose",
+            "Months Covered", "Transaction Reference", "Notes",
+            "Payment Source", "Receipt Status", "Rollback Status"
+        ]
+        
+        _write_styled_header(payments_sheet, payment_headers)
+        
+        # Query all payment entries
+        payments = db.query(models.PaymentEntry).all()
+        
+        payment_row = 2
+        for payment in payments:
+            # Get family information
+            head = db.query(models.ApprovedHead).filter_by(id=payment.head_id).first()
+            
+            # Format dates - preserve actual payment dates
+            created_date = payment.created_at.strftime("%Y-%m-%d %H:%M:%S") if payment.created_at else ""
+            collected_date = payment.collected_at.strftime("%Y-%m-%d") if payment.collected_at else ""
+            verified_date = payment.verified_at.strftime("%Y-%m-%d %H:%M:%S") if payment.verified_at else ""
+            
+            # Format covered months as string
+            covered_months_str = ", ".join(payment.covered_months) if payment.covered_months else ""
+            
+            payments_sheet.append([
+                payment.id or "",
+                payment.receipt_id or "",
+                head.chanda_no if head else "",
+                head.name if head else "",
+                payment.amount or 0,
+                payment.method or "",
+                created_date,
+                collected_date,
+                payment.status or "",
+                payment.collected_by or "",
+                payment.verified_by or "",
+                verified_date,
+                payment.purpose or "",
+                covered_months_str,
+                payment.transaction_ref or "",
+                payment.notes or "",
+                payment.payment_source or "",
+                payment.receipt_status or "",
+                payment.rollback_status or ""
+            ])
+            payment_row += 1
+        
+        _auto_fit_columns(payments_sheet)
+
+        # ─── CHANDA COLLECTIONS SHEET ───
+        collections_sheet = wb.create_sheet("Chanda Collections", 2)
+        
+        collection_headers = [
+            "Collection ID", "Chanda Number", "Head Name", "Month",
+            "Amount Due", "Total Paid", "Status", "Is Advance",
+            "Rate Snapshot", "Created At"
+        ]
+        
+        _write_styled_header(collections_sheet, collection_headers)
+        
+        # Query all chanda collections
+        collections = db.query(models.ChandaCollection).all()
+        
+        collection_row = 2
+        for collection in collections:
+            head = db.query(models.ApprovedHead).filter_by(id=collection.head_id).first()
+            created_date = collection.created_at.strftime("%Y-%m-%d") if collection.created_at else ""
+            
+            collections_sheet.append([
+                collection.id or "",
+                head.chanda_no if head else "",
+                head.name if head else "",
+                collection.month or "",
+                collection.amount_due or 0,
+                collection.total_paid or 0,
+                collection.status or "",
+                "Yes" if collection.is_advance else "No",
+                collection.rate_snapshot or 0,
+                created_date
+            ])
+            collection_row += 1
+        
+        _auto_fit_columns(collections_sheet)
+
+        # ─── DONATIONS SHEET ───
+        donations_sheet = wb.create_sheet("Donations", 3)
+        
+        donation_headers = [
+            "Donation ID", "Receipt ID", "Donor Name", "Donor Type",
+            "Phone", "Chanda Number", "Amount", "Method",
+            "Donation Date", "Purpose", "Fund", "Recorded By",
+            "Notes", "Receipt Image", "Collector ID", "Submission ID"
+        ]
+        
+        _write_styled_header(donations_sheet, donation_headers)
+        
+        # Query all donations
+        donations = db.query(models.Donation).all()
+        
+        donation_row = 2
+        for donation in donations:
+            head = db.query(models.ApprovedHead).filter_by(id=donation.head_id).first()
+            fund = db.query(models.Fund).filter_by(id=donation.fund_id).first()
+            donation_date = donation.donation_date.strftime("%Y-%m-%d") if donation.donation_date else ""
+            
+            donations_sheet.append([
+                donation.id or "",
+                donation.receipt_id or "",
+                donation.donor_name or "",
+                donation.donor_type or "",
+                donation.phone or "",
+                head.chanda_no if head else "",
+                donation.amount or 0,
+                donation.method or "",
+                donation_date,
+                donation.purpose or "",
+                fund.name if fund else "",
+                donation.recorded_by or "",
+                donation.note or "",
+                donation.receipt_image or "",
+                donation.collector_id or "",
+                donation.submission_id or ""
+            ])
+            donation_row += 1
+        
+        _auto_fit_columns(donations_sheet)
+
+        # Save to BytesIO
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        # Log the export action
+        await log_action(
+            db, AuditAction.EXCEL_EXPORTED, "approved_heads", 0,
+            actor=current_user, request=request,
+            description="Admin exported current database data",
+            new_values={"filename": filename, "families_count": len(families), "payments_count": len(payments)}
+        )
+
+        # Return as downloadable file
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+
+
+def _write_styled_header(sheet, headers):
+    """Write styled header row to Excel sheet."""
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    thin_border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    
+    for col_num, header in enumerate(headers, 1):
+        cell = sheet.cell(row=1, column=col_num, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = thin_border
+    
+    # Freeze header row
+    sheet.freeze_panes = "A2"
+    
+    # Enable auto-filter
+    sheet.auto_filter.ref = f"A1:{get_column_letter(len(headers))}1"
+
+
+def _auto_fit_columns(sheet):
+    """Auto-fit column widths based on content."""
+    for column in sheet.columns:
+        max_length = 0
+        column_letter = get_column_letter(column[0].column)
+        
+        for cell in column:
+            try:
+                if cell.value:
+                    max_length = max(max_length, len(str(cell.value)))
+            except:
+                pass
+        
+        # Set width with some padding
+        adjusted_width = min(max_length + 2, 50)  # Cap at 50 to prevent too wide columns
+        sheet.column_dimensions[column_letter].width = adjusted_width

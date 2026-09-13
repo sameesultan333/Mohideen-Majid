@@ -318,6 +318,13 @@ export async function downloadFamilyStatementExcel(familyId: number) {
   return response.data as Blob;
 }
 
+export async function exportCurrentData() {
+  const response = await api.get("/admin/export-current-data", {
+    responseType: "blob",
+  });
+  return response.data as Blob;
+}
+
 /* ==========================================================
    HELPERS
    ========================================================== */
