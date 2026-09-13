@@ -407,12 +407,12 @@ export default function DashboardPage() {
       setExporting(true);
       const blob = await exportCurrentData();
       const today = new Date().toISOString().split('T')[0];
-      const filename = `mohideen_masjid_current_data_${today}.xlsx`;
+      const filename = `mohideen_masjid_chanda_report_${today}.xlsx`;
       triggerDownload(blob, filename);
-      toast.success("Data exported successfully!");
+      toast.success("Chanda Collection Report exported successfully!");
     } catch (error) {
       console.error("Export failed:", error);
-      toast.error("Failed to export data. Please try again.");
+      toast.error("Failed to export report. Please try again.");
     } finally {
       setExporting(false);
     }
@@ -510,7 +510,7 @@ export default function DashboardPage() {
             }}
           >
             <Download size={12} />
-            {exporting ? "Exporting..." : "Export Data"}
+            {exporting ? "Exporting..." : "Export Chanda Report"}
           </button>
           <button onClick={() => { setLoading(true); loadData(); }}
             style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 13px",

@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta
 from typing import Optional
 from io import BytesIO
+import re
 
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
@@ -2354,8 +2355,55 @@ async def assign_collector(
 
 
 # ─────────────────────────────────────────────────────────────
-# EXPORT CURRENT DATA
+# CHANDA COLLECTION REPORT EXPORT
 # ─────────────────────────────────────────────────────────────
+
+def _get_zone_order_key(zone: str | None) -> tuple:
+    """
+    Returns a sort key for zones in the desired order:
+    1. Shops / Commercial
+    2. Numbered blocks (1st Block, 2nd Block, etc.) in numerical order
+    3. Remaining zones alphabetically
+    """
+    if not zone:
+        return (3, "")  # No zone goes last
+    
+    zone_lower = zone.lower().strip()
+    
+    # Priority 1: Shops / Commercial
+    if "shop" in zone_lower or "commercial" in zone_lower:
+        return (1, "")
+    
+    # Priority 2: Numbered blocks
+    block_match = re.search(r'(\d+)\s*(?:st|nd|rd|th)?\s*block', zone_lower)
+    if block_match:
+        block_num = int(block_match.group(1))
+        return (2, block_num)
+    
+    # Priority 3: Alphabetical for remaining zones
+    return (3, zone_lower)
+
+def _get_house_order_key(address: str | None, chanda_no: str) -> tuple:
+    """
+    Extract house/shop number for sorting within zones.
+    Tries to find numeric patterns in address or chanda_no.
+    """
+    if not address:
+        address = ""
+    
+    # Try to extract number from address
+    # Look for patterns like "H-101", "101", "Shop 01", "No. 5/B1", etc.
+    number_match = re.search(r'(\d+)', address)
+    if number_match:
+        return (0, int(number_match.group(1)))
+    
+    # Fallback to chanda_no
+    chanda_match = re.search(r'(\d+)', chanda_no)
+    if chanda_match:
+        return (1, int(chanda_match.group(1)))
+    
+    # Last resort: alphabetical by address
+    return (2, address.lower())
 
 @router.get("/export-current-data")
 async def export_current_data(
@@ -2364,14 +2412,15 @@ async def export_current_data(
     current_user=Depends(require_admin),
 ):
     """
-    Export current live database data as a formatted Excel file.
-    Includes users/families and their payment information with actual dates.
+    Export Chanda Collection Report as a formatted Excel file.
+    Focuses on monthly payment status organized by zone, not user account data.
     """
     try:
-        # Generate filename with current date
         from datetime import date
+        from collections import defaultdict
+        
         today = date.today()
-        filename = f"mohideen_masjid_current_data_{today.strftime('%Y-%m-%d')}.xlsx"
+        filename = f"mohideen_masjid_chanda_report_{today.strftime('%Y-%m-%d')}.xlsx"
 
         # Create workbook
         wb = Workbook()
@@ -2380,192 +2429,175 @@ async def export_current_data(
         if "Sheet" in wb.sheetnames:
             wb.remove(wb["Sheet"])
 
-        # ─── USERS/FAMILIES SHEET ───
-        users_sheet = wb.create_sheet("Users & Families", 0)
+        # ─── DETERMINE MONTH RANGE ───
+        # Find the earliest and latest months with data
+        earliest_month = db.query(func.min(models.ChandaCollection.month)).scalar()
+        latest_month = db.query(func.max(models.ChandaCollection.month)).scalar()
         
-        # Headers for users sheet - matching import structure
-        user_headers = [
-            "Chanda Number", "Head Name", "Phone", "Address", "Zone", "Street",
-            "Monthly Chanda Amount", "Is Registered", "Registration Date",
-            "Is Active", "User ID", "User Name", "User Phone", "User Status",
-            "Assigned Collector ID", "Assigned Collector Name"
-        ]
+        # Default to Jan 2026 if no data
+        if not earliest_month:
+            earliest_month = "2026-01"
+        if not latest_month:
+            latest_month = today.strftime("%Y-%m")
         
-        # Write headers with styling
-        _write_styled_header(users_sheet, user_headers)
+        # Generate month headers from earliest to latest
+        month_headers = []
+        current = earliest_month
+        while current <= latest_month:
+            month_headers.append(current)
+            # Increment month
+            year, month = map(int, current.split('-'))
+            month += 1
+            if month > 12:
+                month = 1
+                year += 1
+            current = f"{year}-{month:02d}"
+
+        # ─── SHEET 1: CHANDA COLLECTION ───
+        collection_sheet = wb.create_sheet("Chanda Collection", 0)
         
-        # Query families and their associated users
+        # Headers
+        main_headers = ["Zone", "House/Shop No.", "Name", "Phone"] + month_headers + ["Last Paid Month"]
+        _write_styled_header(collection_sheet, main_headers)
+        
+        # Query all active families
         families = db.query(models.ApprovedHead).filter(
             models.ApprovedHead.is_deleted.is_(False)
         ).all()
         
-        user_row = 2  # Start from row 2 (after header)
-        for family in families:
-            # Get associated user if exists
-            user = db.query(models.User).filter_by(family_id=family.id).first()
-            collector = None
-            if family.collector_id:
-                collector = db.query(models.User).filter_by(id=family.collector_id).first()
+        # Sort families by zone, then by house number
+        def family_sort_key(family):
+            zone_key = _get_zone_order_key(family.zone)
+            house_key = _get_house_order_key(family.address, family.chanda_no)
+            return (zone_key, house_key)
+        
+        sorted_families = sorted(families, key=family_sort_key)
+        
+        # Build payment lookup: (head_id, month) -> amount_paid
+        payment_lookup = defaultdict(dict)
+        collections = db.query(models.ChandaCollection).all()
+        for collection in collections:
+            payment_lookup[collection.head_id][collection.month] = collection.total_paid
+        
+        # Find last paid month for each family
+        last_paid_months = {}
+        for head_id, months in payment_lookup.items():
+            paid_months = [month for month, amount in months.items() if amount > 0]
+            if paid_months:
+                last_paid_months[head_id] = max(paid_months)
+        
+        # Write data rows
+        row = 2
+        for family in sorted_families:
+            # Extract house/shop number from address or chanda_no
+            house_number = family.address or family.chanda_no
             
-            # Format dates
-            reg_date = family.registration_date.strftime("%Y-%m-%d") if family.registration_date else ""
+            # Get payments for each month
+            month_payments = []
+            for month in month_headers:
+                amount = payment_lookup.get(family.id, {}).get(month, 0)
+                month_payments.append(f"₹{amount:.0f}" if amount > 0 else "")
             
-            # Write family data
-            users_sheet.append([
-                family.chanda_no or "",
-                family.name or "",
-                family.phone or "",
-                family.address or "",
+            # Get last paid month
+            last_paid = last_paid_months.get(family.id, "")
+            
+            collection_sheet.append([
                 family.zone or "",
-                family.street or "",
-                family.monthly_amount or 0,
-                "Yes" if family.is_registered else "No",
-                reg_date,
-                "Yes" if family.is_active else "No",
-                user.id if user else "",
-                user.name if user else "",
-                user.phone if user else "",
-                user.status if user else "",
-                family.collector_id if family.collector_id else "",
-                collector.name if collector else ""
-            ])
-            user_row += 1
+                house_number,
+                family.name,
+                family.phone or ""
+            ] + month_payments + [last_paid])
+            row += 1
         
-        # Auto-fit columns
-        _auto_fit_columns(users_sheet)
+        _auto_fit_columns(collection_sheet)
 
-        # ─── PAYMENTS/CHANDA SHEET ───
-        payments_sheet = wb.create_sheet("Chanda Payments", 1)
+        # ─── SHEET 2: PAYMENT DETAILS ───
+        payment_sheet = wb.create_sheet("Payment Details", 1)
         
-        # Headers for payments sheet
-        payment_headers = [
-            "Payment ID", "Receipt ID", "Chanda Number", "Head Name", "Amount",
-            "Payment Method", "Payment Date", "Collected Date", "Status",
-            "Collected By", "Verified By", "Verified At", "Purpose",
-            "Months Covered", "Transaction Reference", "Notes",
-            "Payment Source", "Receipt Status", "Rollback Status"
+        payment_detail_headers = [
+            "Zone", "House/Shop No.", "Name", "Payment Month", "Amount",
+            "Payment Date", "Payment Method", "Verification Status", "Receipt/Reference"
         ]
+        _write_styled_header(payment_sheet, payment_detail_headers)
         
-        _write_styled_header(payments_sheet, payment_headers)
-        
-        # Query all payment entries
+        # Query all payment entries with family info
         payments = db.query(models.PaymentEntry).all()
         
         payment_row = 2
         for payment in payments:
-            # Get family information
             head = db.query(models.ApprovedHead).filter_by(id=payment.head_id).first()
+            if not head:
+                continue
             
-            # Format dates - preserve actual payment dates
-            created_date = payment.created_at.strftime("%Y-%m-%d %H:%M:%S") if payment.created_at else ""
-            collected_date = payment.collected_at.strftime("%Y-%m-%d") if payment.collected_at else ""
-            verified_date = payment.verified_at.strftime("%Y-%m-%d %H:%M:%S") if payment.verified_at else ""
+            # Get the actual collection month from coverage_map or collection
+            payment_month = ""
+            if payment.coverage_map:
+                # Use the first month from coverage map
+                payment_month = min(payment.coverage_map.keys()) if payment.coverage_map else ""
+            elif payment.collection_id:
+                collection = db.query(models.ChandaCollection).filter_by(id=payment.collection_id).first()
+                if collection:
+                    payment_month = collection.month
             
-            # Format covered months as string
-            covered_months_str = ", ".join(payment.covered_months) if payment.covered_months else ""
+            # Format payment date - use collected_at if available, else created_at
+            payment_date = ""
+            if payment.collected_at:
+                payment_date = payment.collected_at.strftime("%d-%b-%Y")
+            elif payment.created_at:
+                payment_date = payment.created_at.strftime("%d-%b-%Y")
             
-            payments_sheet.append([
-                payment.id or "",
-                payment.receipt_id or "",
-                head.chanda_no if head else "",
-                head.name if head else "",
-                payment.amount or 0,
+            house_number = head.address or head.chanda_no
+            
+            payment_sheet.append([
+                head.zone or "",
+                house_number,
+                head.name,
+                payment_month,
+                f"₹{payment.amount:.0f}",
+                payment_date,
                 payment.method or "",
-                created_date,
-                collected_date,
                 payment.status or "",
-                payment.collected_by or "",
-                payment.verified_by or "",
-                verified_date,
-                payment.purpose or "",
-                covered_months_str,
-                payment.transaction_ref or "",
-                payment.notes or "",
-                payment.payment_source or "",
-                payment.receipt_status or "",
-                payment.rollback_status or ""
+                payment.receipt_id or payment.transaction_ref or ""
             ])
             payment_row += 1
         
-        _auto_fit_columns(payments_sheet)
+        _auto_fit_columns(payment_sheet)
 
-        # ─── CHANDA COLLECTIONS SHEET ───
-        collections_sheet = wb.create_sheet("Chanda Collections", 2)
+        # ─── SHEET 3: SUMMARY ───
+        summary_sheet = wb.create_sheet("Summary", 2)
         
-        collection_headers = [
-            "Collection ID", "Chanda Number", "Head Name", "Month",
-            "Amount Due", "Total Paid", "Status", "Is Advance",
-            "Rate Snapshot", "Created At"
-        ]
+        summary_headers = ["Zone", "Total Families/Shops"] + month_headers + ["Total Collected"]
+        _write_styled_header(summary_sheet, summary_headers)
         
-        _write_styled_header(collections_sheet, collection_headers)
+        # Group by zone
+        zone_data = defaultdict(lambda: {"count": 0, "monthly": defaultdict(float)})
         
-        # Query all chanda collections
-        collections = db.query(models.ChandaCollection).all()
-        
-        collection_row = 2
-        for collection in collections:
-            head = db.query(models.ApprovedHead).filter_by(id=collection.head_id).first()
-            created_date = collection.created_at.strftime("%Y-%m-%d") if collection.created_at else ""
+        for family in families:
+            zone = family.zone or "No Zone"
+            zone_data[zone]["count"] += 1
             
-            collections_sheet.append([
-                collection.id or "",
-                head.chanda_no if head else "",
-                head.name if head else "",
-                collection.month or "",
-                collection.amount_due or 0,
-                collection.total_paid or 0,
-                collection.status or "",
-                "Yes" if collection.is_advance else "No",
-                collection.rate_snapshot or 0,
-                created_date
-            ])
-            collection_row += 1
+            # Add payments for each month
+            for month in month_headers:
+                amount = payment_lookup.get(family.id, {}).get(month, 0)
+                zone_data[zone]["monthly"][month] += amount
         
-        _auto_fit_columns(collections_sheet)
-
-        # ─── DONATIONS SHEET ───
-        donations_sheet = wb.create_sheet("Donations", 3)
+        # Sort zones by the same order as main sheet
+        sorted_zones = sorted(zone_data.keys(), key=_get_zone_order_key)
         
-        donation_headers = [
-            "Donation ID", "Receipt ID", "Donor Name", "Donor Type",
-            "Phone", "Chanda Number", "Amount", "Method",
-            "Donation Date", "Purpose", "Fund", "Recorded By",
-            "Notes", "Receipt Image", "Collector ID", "Submission ID"
-        ]
-        
-        _write_styled_header(donations_sheet, donation_headers)
-        
-        # Query all donations
-        donations = db.query(models.Donation).all()
-        
-        donation_row = 2
-        for donation in donations:
-            head = db.query(models.ApprovedHead).filter_by(id=donation.head_id).first()
-            fund = db.query(models.Fund).filter_by(id=donation.fund_id).first()
-            donation_date = donation.donation_date.strftime("%Y-%m-%d") if donation.donation_date else ""
+        # Write summary rows
+        summary_row = 2
+        for zone in sorted_zones:
+            data = zone_data[zone]
+            monthly_totals = [f"₹{data['monthly'][month]:.0f}" for month in month_headers]
+            total_collected = sum(data['monthly'].values())
             
-            donations_sheet.append([
-                donation.id or "",
-                donation.receipt_id or "",
-                donation.donor_name or "",
-                donation.donor_type or "",
-                donation.phone or "",
-                head.chanda_no if head else "",
-                donation.amount or 0,
-                donation.method or "",
-                donation_date,
-                donation.purpose or "",
-                fund.name if fund else "",
-                donation.recorded_by or "",
-                donation.note or "",
-                donation.receipt_image or "",
-                donation.collector_id or "",
-                donation.submission_id or ""
-            ])
-            donation_row += 1
+            summary_sheet.append([
+                zone,
+                data["count"]
+            ] + monthly_totals + [f"₹{total_collected:.0f}"])
+            summary_row += 1
         
-        _auto_fit_columns(donations_sheet)
+        _auto_fit_columns(summary_sheet)
 
         # Save to BytesIO
         output = BytesIO()
@@ -2576,8 +2608,8 @@ async def export_current_data(
         await log_action(
             db, AuditAction.EXCEL_EXPORTED, "approved_heads", 0,
             actor=current_user, request=request,
-            description="Admin exported current database data",
-            new_values={"filename": filename, "families_count": len(families), "payments_count": len(payments)}
+            description="Admin exported Chanda Collection Report",
+            new_values={"filename": filename, "families_count": len(families), "months_exported": len(month_headers)}
         )
 
         # Return as downloadable file
