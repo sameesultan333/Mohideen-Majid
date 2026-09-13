@@ -2383,27 +2383,27 @@ def _get_zone_order_key(zone: str | None) -> tuple:
     # Priority 3: Alphabetical for remaining zones
     return (3, zone_lower)
 
-def _get_house_order_key(address: str | None, chanda_no: str) -> tuple:
+def _get_house_order_key(chanda_no: str, address: str | None) -> tuple:
     """
     Extract house/shop number for sorting within zones.
-    Tries to find numeric patterns in address or chanda_no.
+    Prioritizes chanda_no (numeric part) then address.
     """
+    # Try to extract number from chanda_no first
+    chanda_match = re.search(r'(\d+)', chanda_no)
+    if chanda_match:
+        return (0, int(chanda_match.group(1)))
+    
+    # Fallback to address
     if not address:
         address = ""
     
-    # Try to extract number from address
     # Look for patterns like "H-101", "101", "Shop 01", "No. 5/B1", etc.
     number_match = re.search(r'(\d+)', address)
     if number_match:
-        return (0, int(number_match.group(1)))
+        return (1, int(number_match.group(1)))
     
-    # Fallback to chanda_no
-    chanda_match = re.search(r'(\d+)', chanda_no)
-    if chanda_match:
-        return (1, int(chanda_match.group(1)))
-    
-    # Last resort: alphabetical by address
-    return (2, address.lower())
+    # Last resort: alphabetical by chanda_no
+    return (2, chanda_no.lower())
 
 @router.get("/export-current-data")
 async def export_current_data(
@@ -2457,7 +2457,7 @@ async def export_current_data(
         collection_sheet = wb.create_sheet("Chanda Collection", 0)
         
         # Headers
-        main_headers = ["Zone", "House/Shop No.", "Name", "Phone"] + month_headers + ["Last Paid Month"]
+        main_headers = ["Chanda Number", "Name", "Zone", "House/Shop No.", "Phone"] + month_headers
         _write_styled_header(collection_sheet, main_headers)
         
         # Query all active families
@@ -2468,7 +2468,7 @@ async def export_current_data(
         # Sort families by zone, then by house number
         def family_sort_key(family):
             zone_key = _get_zone_order_key(family.zone)
-            house_key = _get_house_order_key(family.address, family.chanda_no)
+            house_key = _get_house_order_key(family.chanda_no, family.address)
             return (zone_key, house_key)
         
         sorted_families = sorted(families, key=family_sort_key)
@@ -2502,9 +2502,10 @@ async def export_current_data(
             last_paid = last_paid_months.get(family.id, "")
             
             collection_sheet.append([
+                family.chanda_no or "",
+                family.name,
                 family.zone or "",
                 house_number,
-                family.name,
                 family.phone or ""
             ] + month_payments + [last_paid])
             row += 1
@@ -2515,7 +2516,7 @@ async def export_current_data(
         payment_sheet = wb.create_sheet("Payment Details", 1)
         
         payment_detail_headers = [
-            "Zone", "House/Shop No.", "Name", "Payment Month", "Amount",
+            "Chanda Number", "Name", "Zone", "House/Shop No.", "Payment Month", "Amount",
             "Payment Date", "Payment Method", "Verification Status", "Receipt/Reference"
         ]
         _write_styled_header(payment_sheet, payment_detail_headers)
@@ -2549,9 +2550,10 @@ async def export_current_data(
             house_number = head.address or head.chanda_no
             
             payment_sheet.append([
+                head.chanda_no or "",
+                head.name,
                 head.zone or "",
                 house_number,
-                head.name,
                 payment_month,
                 f"₹{payment.amount:.0f}",
                 payment_date,
