@@ -6,12 +6,13 @@
  */
 
 import React, { useState, useEffect, useMemo } from "react";
-import { View, Text, StyleSheet, ScrollView, StatusBar, Platform, Switch } from "react-native";
+import { View, Text, StyleSheet, ScrollView, StatusBar, Platform, Switch, Alert } from "react-native";
 import AnimatedPressable from "../components/AnimatedPressable";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Svg, { Path } from "react-native-svg";
 import { COLORS as C } from "../config/theme";
 import { useTranslation } from "react-i18next";
+import PrayerNotificationService from "../services/PrayerNotificationService";
 
 const NOTIF_SETTINGS_KEY = 'prayer_notification_settings';
 
@@ -211,6 +212,49 @@ export default function NotificationSettingsScreen({ navigation }) {
           ))}
         </View>
 
+        {Platform.OS === "android" && (
+          <>
+            <Text allowFontScaling={false} style={[styles.sectionTitle, { marginTop: 24 }]}>
+              Test notification sound
+            </Text>
+            <View style={styles.card}>
+              <AnimatedPressable
+                style={styles.testBtn}
+                onPress={async () => {
+                  await PrayerNotificationService.initialize();
+                  const ok = await PrayerNotificationService.testAdhanNotification();
+                  Alert.alert(ok ? "Test sent" : "Test failed", "Adhan should play now (alarm volume).");
+                }}
+              >
+                <Text allowFontScaling={false} style={styles.testBtnText}>Play test Adhan</Text>
+              </AnimatedPressable>
+              <AnimatedPressable
+                style={[styles.testBtn, { marginTop: 10 }]}
+                onPress={async () => {
+                  await PrayerNotificationService.initialize();
+                  const ok = await PrayerNotificationService.testIqamahNotification();
+                  Alert.alert(ok ? "Test sent" : "Test failed", "Iqamah chime should play now.");
+                }}
+              >
+                <Text allowFontScaling={false} style={styles.testBtnText}>Play test Iqamah</Text>
+              </AnimatedPressable>
+              <AnimatedPressable
+                style={[styles.testBtn, styles.testBtnSecondary, { marginTop: 10 }]}
+                onPress={async () => {
+                  await PrayerNotificationService.initialize();
+                  const ok = await PrayerNotificationService.testScheduledAdhanNotification();
+                  Alert.alert(
+                    ok ? "Alarm scheduled" : "Schedule failed",
+                    "Adhan should play in about 3 seconds (offline alarm path).",
+                  );
+                }}
+              >
+                <Text allowFontScaling={false} style={styles.testBtnTextSecondary}>Test scheduled alarm (3s)</Text>
+              </AnimatedPressable>
+            </View>
+          </>
+        )}
+
         <View style={{ height: 40 }} />
       </ScrollView>
     </View>
@@ -274,4 +318,18 @@ const styles = StyleSheet.create({
   prayerToggles: { flexDirection: "row", justifyContent: "space-between" },
   toggleCol: { alignItems: "center" },
   toggleLabel: { fontSize: 11, color: H.textMuted, fontWeight: "600", marginBottom: 4 },
+
+  testBtn: {
+    backgroundColor: H.gold,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  testBtnSecondary: {
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: H.gold,
+  },
+  testBtnText: { fontSize: 15, fontWeight: "700", color: H.headerDeep },
+  testBtnTextSecondary: { fontSize: 15, fontWeight: "600", color: H.goldDeep },
 });

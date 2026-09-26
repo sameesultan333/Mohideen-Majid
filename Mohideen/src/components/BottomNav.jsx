@@ -83,6 +83,8 @@ function buildTabs(rawRole, rawRoles, t) {
       { screen: "Donation", type: "donate",    label: t("nav.donate") },
       { screen: "Editable", type: "editable",  label: t("nav.edit") },
       { screen: "Collector",type: "collector", label: t("nav.collect") },
+      { screen: "CollectorHistory", type: "history", label: t("nav.history") },
+      { screen: "CollectorDashboard", type: "dashboard", label: t("nav.dashboard") },
       { screen: "Profile",  type: "profile",   label: t("nav.profile") },
     ];
   }

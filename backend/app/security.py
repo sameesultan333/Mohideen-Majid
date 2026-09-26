@@ -175,15 +175,13 @@ def get_session(db: Session, refresh_token: str) -> models.UserSession:
     return session
 
 
-def rotate_session(db: Session, session: models.UserSession, session_days: int = None) -> str:
+def extend_session(db: Session, session: models.UserSession, session_days: int = None) -> None:
     days = session_days if session_days is not None else MOBILE_SESSION_DAYS
-    new_token = create_refresh_token()
-    session.refresh_token_hash = hash_refresh_token(new_token)
     session.last_used_at = datetime.utcnow()
     session.expires_at = datetime.utcnow() + timedelta(days=days)
     db.commit()
     db.refresh(session)
-    return new_token
+
 
 
 def revoke_session(db: Session, session: models.UserSession) -> None:

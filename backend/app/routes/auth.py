@@ -16,7 +16,7 @@ from app.security import (
     create_refresh_token,
     create_user_session,
     get_session,
-    rotate_session,
+    extend_session,
     revoke_session,
     revoke_all_sessions,
     set_refresh_cookie,
@@ -534,15 +534,16 @@ def refresh_token(
         clear_refresh_cookie(response)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Account is not active")
 
-    new_refresh = rotate_session(db, session, session_days=MOBILE_SESSION_DAYS)
+    session_days = ADMIN_SESSION_DAYS if session.login_type == "admin_login" else MOBILE_SESSION_DAYS
+    extend_session(db, session, session_days=session_days)
     access_token = create_access_token(
         user_id=user.id, role=user.role, session_id=session.id,
         status=user.status or UserStatus.ACTIVE, name=user.name,
     )
-    set_refresh_cookie(response, new_refresh, max_age_days=MOBILE_SESSION_DAYS)
+    set_refresh_cookie(response, token, max_age_days=session_days)
     return {
         "access_token": access_token,
-        "refresh_token": new_refresh,
+        "refresh_token": token,
         "token_type": "bearer",
         "user": {
             "id": user.id, "name": user.name,

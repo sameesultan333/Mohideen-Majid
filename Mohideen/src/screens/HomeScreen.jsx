@@ -1200,6 +1200,8 @@ export default function HomeScreen({ navigation, route }) {
         await PrayerNotificationService.initialize();
         await PrayerNotificationService.rescheduleOnLaunch();
         await ensureExactAlarmPermission();
+        // Test notification - uncomment to test in development
+        // await PrayerNotificationService.testImmediateNotification();
       } catch (_) {}
     });
     return () => task.cancel();

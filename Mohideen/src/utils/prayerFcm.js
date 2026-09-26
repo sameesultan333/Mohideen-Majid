@@ -8,13 +8,17 @@ const normalizePrayerKey = (prayerKey) => {
 };
 
 function showImmediateNotification({ channelId, title, message, soundName, settings, prayerKey, notifType }) {
+  // For adhan and iqamah, always play sound and vibrate
+  // This ensures notifications work offline and when backend is down
+  const isPrayerNotification = (notifType === 'adhan' || notifType === 'iqamah');
+
   PushNotification.localNotification({
     channelId,
     title,
     message,
-    playSound: settings.soundEnabled,
-    soundName: settings.soundEnabled ? soundName : undefined,
-    vibrate: settings.vibrationEnabled,
+    playSound: isPrayerNotification,
+    soundName: isPrayerNotification ? soundName : undefined,
+    vibrate: isPrayerNotification,
     smallIcon: 'ic_notification',
     color: '#D4AF37',
     userInfo: { prayerKey, type: notifType },
@@ -92,15 +96,19 @@ export async function handlePrayerFcmMessage(remoteMessage) {
     // Same dedup rule as adhan above.
     if (await localAlarmIsTrustworthy()) return true;
 
-    showImmediateNotification({
-      channelId: 'prayer_iqamah',
-      title: `${prayerName} Iqamah`,
-      message: 'Iqamah is starting — join the congregation.',
-      soundName: 'start_prayer',
-      settings,
-      prayerKey,
-      notifType,
-    });
+    if (Platform.OS === 'android' && NativeModules.IqamahScheduler?.showIqamahNow) {
+      NativeModules.IqamahScheduler.showIqamahNow(prayerName);
+    } else {
+      showImmediateNotification({
+        channelId: 'prayer_iqamah',
+        title: `${prayerName} Iqamah`,
+        message: 'Iqamah is starting — join the congregation.',
+        soundName: 'start_prayer',
+        settings,
+        prayerKey,
+        notifType,
+      });
+    }
 
     return true;
   }

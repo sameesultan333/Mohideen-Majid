@@ -19,7 +19,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import PushNotification from 'react-native-push-notification';
 import PushNotificationIOS from '@react-native-community/push-notification-ios';
-import { Platform } from 'react-native';
+import { NativeModules, Platform } from 'react-native';
 import { logger } from "../utils/logger";
 
 // Storage keys
@@ -37,8 +37,6 @@ const NOTIFICATION_TYPES = {
 const DEFAULT_SETTINGS = {
   adhanEnabled: true,
   iqamahEnabled: true,
-  soundEnabled: true,
-  vibrationEnabled: true,
   fajr: { adhan: true, iqamah: true },
   dhuhr: { adhan: true, iqamah: true },
   asr: { adhan: true, iqamah: true },
@@ -79,7 +77,12 @@ class PrayerNotificationService {
    * Must be called on app startup
    */
   async initialize() {
-    if (this.initialized) return;
+    if (this.initialized) {
+      logger.log('PrayerNotificationService already initialized');
+      return;
+    }
+
+    logger.log('Initializing PrayerNotificationService');
 
     // Configure PushNotification
     PushNotification.configure({
@@ -103,49 +106,31 @@ class PrayerNotificationService {
       requestPermissions: Platform.OS === 'ios',
     });
 
-    // Create notification channels (Android 8+)
-    // react-native-push-notification must own these channels for local notifications.
-    // Channel version: bump when sound/importance changes so old cached channels are replaced.
+    // Request permissions on Android explicitly
     if (Platform.OS === 'android') {
-      PushNotification.createChannel(
-        {
-          channelId: 'prayer_adhan',
-          channelName: 'Adhan',
-          channelDescription: 'Adhan call for each prayer',
-          soundName: 'adhan',
-          importance: 5, // IMPORTANCE_HIGH
-          vibrate: true,
-        },
-        () => {},
-      );
-      PushNotification.createChannel(
-        {
-          channelId: 'prayer_iqamah',
-          channelName: 'Iqamah / Prayer Started',
-          channelDescription: 'Congregation start reminder',
-          soundName: 'start_prayer',
-          importance: 5,
-          vibrate: true,
-        },
-        () => {},
-      );
-      PushNotification.createChannel(
-        {
-          channelId: 'default_channel_id',
-          channelName: 'General Notifications',
-          channelDescription: 'Announcements and updates from Mohideen Masjid',
-          soundName: 'default',
-          importance: 4,
-          vibrate: true,
-        },
-        () => {},
-      );
+      PushNotification.requestPermissions();
+      logger.log('Requested Android notification permissions');
+    }
+
+    // Create notification channels (Android 8+)
+    // IMPORTANT: Channels are now created in MainApplication.kt with proper
+    // USAGE_ALARM audio attributes. We no longer create them here to avoid
+    // overriding the native configuration which would break sound playback.
+    // The native channels have correct sound URIs and alarm stream settings.
+    if (Platform.OS === 'android') {
+      // Channels are created by MainApplication.kt with:
+      // - prayer_adhan: adhan.mp3 with USAGE_ALARM
+      // - prayer_iqamah: start_prayer.mp3 with USAGE_ALARM
+      // - default_channel_id: default notification sound
+      // We only use them here, not recreate them.
+      logger.log('Using native notification channels from MainApplication.kt');
     }
 
     // Load settings
     await this.loadSettings();
 
     this.initialized = true;
+    logger.log('PrayerNotificationService initialized successfully');
   }
 
   /**
@@ -271,7 +256,12 @@ class PrayerNotificationService {
    * Fires even when the server is down — stores times on device.
    */
   async scheduleNotifications(prayerTimes) {
-    if (!prayerTimes) return;
+    if (!prayerTimes) {
+      logger.log('No prayer times provided for scheduling');
+      return;
+    }
+
+    logger.log('Starting notification scheduling for prayer times');
 
     // Cancel all existing notifications first, then wait for OS to settle
     await this.cancelAllPrayerNotifications();
@@ -280,11 +270,15 @@ class PrayerNotificationService {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
+    logger.log(`Scheduling for today: ${today.toISOString()} and tomorrow: ${tomorrow.toISOString()}`);
+
     // Schedule for today and tomorrow only — no repeatType, so stale times never
     // linger after an admin updates the schedule. The app reschedules on launch
     // and whenever the backend pushes prayer_times_updated.
     await this.scheduleForDate(prayerTimes, today, 'today');
     await this.scheduleForDate(prayerTimes, tomorrow, 'tomorrow');
+
+    logger.log('Notification scheduling completed');
   }
 
   /**
@@ -385,7 +379,10 @@ class PrayerNotificationService {
       notificationDate.setHours(hours, minutes, 0, 0);
 
       // Skip if time has already passed
-      if (notificationDate <= new Date()) return;
+      if (notificationDate <= new Date()) {
+        logger.log(`Skipping ${type} for ${prayerName} - time has passed: ${notificationDate} vs ${new Date()}`);
+        return;
+      }
 
       const dateStr = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
       const id = this._stableId(prayerKey, type, dateStr);
@@ -403,22 +400,29 @@ class PrayerNotificationService {
         sound     = 'start_prayer';
       }
 
+      logger.log(`Scheduling ${type} for ${prayerName} at ${notificationDate.toISOString()} (channel: ${channelId}, sound: ${sound})`);
+
+      // For adhan and iqamah, always play sound and vibrate
+      // This ensures notifications work offline and when backend is down
       PushNotification.localNotificationSchedule({
         id,
         channelId,
         title,
         message,
         date: notificationDate,
+        allowWhileIdle: true,
         // No repeatType — times are re-scheduled on every app launch and
         // every prayer_times_updated push. repeatType:'day' caused ghost
         // notifications after time changes because Android keeps repeating
         // until the intent is explicitly cancelled.
-        soundName: this.settings.soundEnabled ? sound : undefined,
-        vibrate: this.settings.vibrationEnabled,
-        playSound: this.settings.soundEnabled,
+        soundName: sound,
+        vibrate: true,
+        playSound: true,
         smallIcon: 'ic_notification',
         color: '#D4AF37',
         userInfo: { prayerKey, type, prayerName, scheduledFor: notificationDate.toISOString() },
+        when: notificationDate.getTime(),
+        priority: 'high',
       });
     } catch (error) {
       logger.error(`Failed to schedule ${type} for ${prayerName}:`, error);
@@ -434,6 +438,89 @@ class PrayerNotificationService {
     if (prayerTimes) {
       await this.scheduleNotifications(prayerTimes);
       logger.log('Rescheduled prayer notifications on app launch');
+    } else {
+      logger.log('No prayer times found for rescheduling');
+    }
+  }
+
+  /**
+   * Test notification for debugging sound issues
+   */
+  /** Immediate native test — uses prayer_adhan channel sound (Android). */
+  async testAdhanNotification() {
+    try {
+      if (Platform.OS === 'android' && NativeModules.IqamahScheduler?.showTestAdhan) {
+        NativeModules.IqamahScheduler.showTestAdhan();
+        logger.log('Native test adhan notification posted');
+        return true;
+      }
+      PushNotification.localNotification({
+        channelId: 'prayer_adhan',
+        title: 'Test Adhan',
+        message: 'This is a test to verify adhan sound works',
+        soundName: 'adhan',
+        vibrate: true,
+        playSound: true,
+        smallIcon: 'ic_notification',
+        color: '#D4AF37',
+        priority: 'high',
+      });
+      return true;
+    } catch (error) {
+      logger.error('Failed to post test adhan notification:', error);
+      return false;
+    }
+  }
+
+  /** Immediate native test — uses prayer_iqamah channel sound (Android). */
+  async testIqamahNotification() {
+    try {
+      if (Platform.OS === 'android' && NativeModules.IqamahScheduler?.showTestIqamah) {
+        NativeModules.IqamahScheduler.showTestIqamah();
+        logger.log('Native test iqamah notification posted');
+        return true;
+      }
+      PushNotification.localNotification({
+        channelId: 'prayer_iqamah',
+        title: 'Test Iqamah',
+        message: 'This is a test to verify iqamah sound works',
+        soundName: 'start_prayer',
+        vibrate: true,
+        playSound: true,
+        smallIcon: 'ic_notification',
+        color: '#D4AF37',
+        priority: 'high',
+      });
+      return true;
+    } catch (error) {
+      logger.error('Failed to post test iqamah notification:', error);
+      return false;
+    }
+  }
+
+  /** Schedules a local alarm test in ~3s (validates RNPushNotificationPublisher). */
+  async testScheduledAdhanNotification() {
+    try {
+      const testDate = new Date(Date.now() + 3000);
+      logger.log('Scheduling test adhan alarm for:', testDate.toISOString());
+      PushNotification.localNotificationSchedule({
+        id: '999999',
+        channelId: 'prayer_adhan',
+        title: 'Scheduled Test Adhan',
+        message: 'AlarmManager path — should play adhan sound',
+        date: testDate,
+        allowWhileIdle: true,
+        soundName: 'adhan',
+        vibrate: true,
+        playSound: true,
+        smallIcon: 'ic_notification',
+        color: '#D4AF37',
+        priority: 'high',
+      });
+      return true;
+    } catch (error) {
+      logger.error('Failed to schedule test adhan alarm:', error);
+      return false;
     }
   }
 

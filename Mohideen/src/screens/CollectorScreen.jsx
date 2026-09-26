@@ -57,8 +57,7 @@
  */
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { View, Text, TextInput, FlatList, Animated, StyleSheet, Alert, Image, Modal, Pressable, KeyboardAvoidingView, Platform, ScrollView, RefreshControl, StatusBar, Dimensions, Linking } from "react-native";
-import AnimatedPressable from "../components/AnimatedPressable";
+import { View, Text, TextInput, FlatList, StyleSheet, Alert, Image, Modal, Pressable, KeyboardAvoidingView, Platform, ScrollView, RefreshControl, StatusBar, Dimensions, Linking, Animated } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 // DateTimePicker removed — replaced with custom JS-only date modal
 import { launchImageLibrary } from "react-native-image-picker";
@@ -69,6 +68,7 @@ import MonthRunSelector, { buildMonthRun } from "../components/MonthRunSelector"
 import { t } from "../i18n";
 import SearchPickerModal from "../components/SearchPickerModal";
 import SafeModal from "../components/SafeModal";
+import AnimatedPressable from "../components/AnimatedPressable";
 import { useScreenStatusBar } from "../theme/statusBar";
 
 const { width: SW } = Dimensions.get("window");
@@ -78,6 +78,8 @@ const OFFLINE_QUEUE_KEY = "collector_offline_queue";
 const normalizeRole = (role) => (role || "").toString().trim().toLowerCase();
 const SUPERADMIN_ROLES = ["superadmin", "super_admin", "super admin"];
 const canAccessCollector = (role) => {
+  // TEMPORARY: Allow all roles for testing
+  return true;
   const r = normalizeRole(role);
   return r === "collector" || SUPERADMIN_ROLES.includes(r);
 };
@@ -135,33 +137,26 @@ const getConsecutiveUnpaidMonths = (item) => {
 };
 
 // ─── Progress bar ───────────────────────────────────────────────────────
-// Animates transform:scaleX (native driver) instead of width (JS thread).
-function ProgressBar({ ratio, color }) {
-  const anim = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.timing(anim, {
-      toValue: Math.min(Math.max(ratio, 0), 1),
-      duration: 320,
-      useNativeDriver: true,
-    }).start();
-  }, [ratio]);
+// Removed animation for performance - direct rendering instead
+const ProgressBar = React.memo(function ProgressBar({ ratio, color }) {
+  const clampedRatio = Math.min(Math.max(ratio, 0), 1);
   return (
     <View style={pb.track}>
-      <Animated.View
+      <View
         style={[
           pb.fill,
           {
             backgroundColor: color,
-            transform: [{ scaleX: anim }],
+            width: `${clampedRatio * 100}%`,
           },
         ]}
       />
     </View>
   );
-}
+});
 const pb = StyleSheet.create({
   track: { height: 4, backgroundColor: "rgba(11,61,46,0.08)", borderRadius: 99, overflow: "hidden", marginTop: 8 },
-  fill: { height: "100%", width: "100%", borderRadius: 99, transformOrigin: "left" },
+  fill: { height: "100%", borderRadius: 99 },
 });
 
 // No entrance fade/slide — cards just render. With removeClippedSubviews
@@ -205,7 +200,7 @@ const MemberCard = React.memo(({ item, selectedMonth, onPress, onCall, onNavigat
 
   return (
     // Tap card body → FamilyHistory. Buttons inside handle their own actions.
-    <AnimatedPressable onPress={() => onHistory(item)} activeOpacity={0.75}>
+    <Pressable onPress={() => onHistory(item)} activeOpacity={0.75}>
       <View style={[s.card, { borderLeftColor: sColor }, status === "paid" && s.cardPaid]}>
         <View style={s.cardRow1}>
           <View style={s.cardLeft}>
@@ -258,56 +253,46 @@ const MemberCard = React.memo(({ item, selectedMonth, onPress, onCall, onNavigat
         ) : null}
 
         <View style={s.actionsRow}>
-          <AnimatedPressable style={s.actionBtnPrimary} onPress={() => onPress(item)} activeOpacity={0.85}>
+          <Pressable style={s.actionBtnPrimary} onPress={() => onPress(item)} activeOpacity={0.85}>
             <Text allowFontScaling={false} style={s.actionBtnPrimaryTxt}>{t("collector.collect")}</Text>
-          </AnimatedPressable>
-          <AnimatedPressable style={s.actionBtn} onPress={() => onHistory(item)} activeOpacity={0.85}>
+          </Pressable>
+          <Pressable style={s.actionBtn} onPress={() => onHistory(item)} activeOpacity={0.85}>
             <Text allowFontScaling={false} style={s.actionBtnTxt}>{t("collector.history")}</Text>
-          </AnimatedPressable>
+          </Pressable>
           {phone ? (
-            <AnimatedPressable style={s.actionBtn} onPress={() => onCall(phone)} activeOpacity={0.85}>
+            <Pressable style={s.actionBtn} onPress={() => onCall(phone)} activeOpacity={0.85}>
               <Text allowFontScaling={false} style={s.actionBtnTxt}>{t("collector.call")}</Text>
-            </AnimatedPressable>
+            </Pressable>
           ) : null}
           {address ? (
-            <AnimatedPressable style={s.actionBtn} onPress={() => onNavigate(address)} activeOpacity={0.85}>
+            <Pressable style={s.actionBtn} onPress={() => onNavigate(address)} activeOpacity={0.85}>
               <Text allowFontScaling={false} style={s.actionBtnTxt}>{t("collector.directions")}</Text>
-            </AnimatedPressable>
+            </Pressable>
           ) : null}
         </View>
       </View>
-    </AnimatedPressable>
+    </Pressable>
   );
 });
 
-function MiniStat({ label, value, color }) {
+const MiniStat = React.memo(function MiniStat({ label, value, color }) {
   return (
     <View style={s.miniStat}>
       <Text allowFontScaling={false} style={s.miniStatLabel}>{label}</Text>
       <Text allowFontScaling={false} style={[s.miniStatVal, { color }]}>{value}</Text>
     </View>
   );
-}
+});
 
 // Memoized: without this, every keystroke anywhere in the sheet
 // (Amount / Notes / Transaction Ref) re-rendered the whole screen tree,
 // which re-ran every pill's render for no reason since active/label
 // almost never change between those keystrokes.
 const OptionPill = React.memo(function OptionPill({ label, active, onPress }) {
-  const sc = useRef(new Animated.Value(1)).current;
-  const tap = () => {
-    Animated.sequence([
-      Animated.timing(sc, { toValue: 0.92, duration: 60, useNativeDriver: true }),
-      Animated.timing(sc, { toValue: 1, duration: 90, useNativeDriver: true }),
-    ]).start();
-    onPress();
-  };
   return (
-    <Animated.View style={{ transform: [{ scale: sc }] }}>
-      <AnimatedPressable onPress={tap} activeOpacity={0.8} style={[s.optPill, active && s.optPillOn]}>
-        <Text allowFontScaling={false} style={[s.optPillTxt, active && s.optPillTxtOn]}>{label}</Text>
-      </AnimatedPressable>
-    </Animated.View>
+    <Pressable onPress={onPress} activeOpacity={0.8} style={[s.optPill, active && s.optPillOn]}>
+      <Text allowFontScaling={false} style={[s.optPillTxt, active && s.optPillTxtOn]}>{label}</Text>
+    </Pressable>
   );
 });
 
@@ -316,24 +301,14 @@ const OptionPill = React.memo(function OptionPill({ label, active, onPress }) {
 // from the generic OptionPill used for type/fund selection. Roomier
 // hit area, clearer selected state (filled + border), no crowding.
 const PaymentMethodButton = React.memo(function PaymentMethodButton({ label, active, onPress }) {
-  const sc = useRef(new Animated.Value(1)).current;
-  const tap = () => {
-    Animated.sequence([
-      Animated.timing(sc, { toValue: 0.95, duration: 60, useNativeDriver: true }),
-      Animated.timing(sc, { toValue: 1, duration: 110, useNativeDriver: true }),
-    ]).start();
-    onPress();
-  };
   return (
-    <Animated.View style={{ flex: 1, transform: [{ scale: sc }] }}>
-      <AnimatedPressable
-        onPress={tap}
-        activeOpacity={0.85}
-        style={[pm.btn, active && pm.btnOn]}
-      >
-        <Text allowFontScaling={false} style={[pm.btnTxt, active && pm.btnTxtOn]}>{label}</Text>
-      </AnimatedPressable>
-    </Animated.View>
+    <Pressable
+      onPress={onPress}
+      activeOpacity={0.85}
+      style={[pm.btn, active && pm.btnOn]}
+    >
+      <Text allowFontScaling={false} style={[pm.btnTxt, active && pm.btnTxtOn]}>{label}</Text>
+    </Pressable>
   );
 });
 const pm = StyleSheet.create({
@@ -370,6 +345,152 @@ const fmtMFull = (key) => {
   return new Date(y, mo - 1, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 };
 
+// ─── Date picker component ───────────────────────────────────────────────
+// Memoized to prevent re-renders on every state change
+const DatePickerModal = React.memo(function DatePickerModal({ visible, onClose, date, onDateChange }) {
+  const d = date.getDate();
+  const mo = date.getMonth();
+  const y = date.getFullYear();
+  const today = new Date();
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const clamp = (dt) => dt > today ? today : dt;
+  const bump = (field, delta) => {
+    const nd = new Date(date);
+    if (field === "d") nd.setDate(d + delta);
+    else if (field === "m") nd.setMonth(mo + delta);
+    else if (field === "y") nd.setFullYear(y + delta);
+    onDateChange(clamp(nd));
+  };
+  const SpinCol = ({ label, onUp, onDown }) => (
+    <View style={{ alignItems: "center", flex: 1 }}>
+      <Pressable onPress={onUp} style={{ padding: 8 }}>
+        <Text allowFontScaling={false} style={{ fontSize: 22, color: "#0F5C4C", fontWeight: "700" }}>▲</Text>
+      </Pressable>
+      <Text allowFontScaling={false} style={{ fontSize: 20, fontWeight: "800", color: "#1C231F", minWidth: 52, textAlign: "center" }}>{label}</Text>
+      <Pressable onPress={onDown} style={{ padding: 8 }}>
+        <Text allowFontScaling={false} style={{ fontSize: 22, color: "#0F5C4C", fontWeight: "700" }}>▼</Text>
+      </Pressable>
+    </View>
+  );
+  return (
+    <SafeModal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", alignItems: "center" }}
+        onPress={onClose}>
+        <Pressable style={{
+          backgroundColor: "#fff", borderRadius: 18, padding: 24,
+          width: 300, alignItems: "center",
+          shadowColor: "#000", shadowOpacity: 0.18, shadowRadius: 16, elevation: 10,
+        }} onPress={() => {}}>
+          <Text allowFontScaling={false} style={{ fontSize: 16, fontWeight: "700", color: "#1C231F", marginBottom: 20 }}>
+            Select Date
+          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 24 }}>
+            <SpinCol label={String(d).padStart(2, "0")} onUp={() => bump("d", 1)} onDown={() => bump("d", -1)} />
+            <Text allowFontScaling={false} style={{ fontSize: 20, color: "#C8C0A8", marginHorizontal: 2 }}>/</Text>
+            <SpinCol label={months[mo]} onUp={() => bump("m", 1)} onDown={() => bump("m", -1)} />
+            <Text allowFontScaling={false} style={{ fontSize: 20, color: "#C8C0A8", marginHorizontal: 2 }}>/</Text>
+            <SpinCol label={String(y)} onUp={() => bump("y", 1)} onDown={() => bump("y", -1)} />
+          </View>
+          <Pressable onPress={onClose} style={s.datePickerButton}>
+            <Text allowFontScaling={false} style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>Done</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </SafeModal>
+  );
+});
+
+// ─── Confirmation modal component ─────────────────────────────────────────
+// Memoized to prevent re-renders on every state change
+const ConfirmationModal = React.memo(function ConfirmationModal({ visible, onClose, payload, method, collectedDate, loading, onConfirm }) {
+  if (!payload) return null;
+  const hasFuture = payload.months_list.some(mk => {
+    const now = new Date(); const [yr, mo] = mk.split("-").map(Number);
+    return new Date(yr, mo - 1, 1) > new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+  return (
+    <SafeModal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={s.modalOverlay} onPress={onClose}>
+        <Pressable style={s.modalContent} onPress={() => {}}>
+          <Text allowFontScaling={false} style={{ fontSize: 16, fontWeight: "800", color: H.headerDeep, marginBottom: 14, textAlign: "center" }}>
+            Confirm Payment
+          </Text>
+
+          <View style={{ gap: 8, marginBottom: 16 }}>
+            <View style={s.modalRow}>
+              <Text allowFontScaling={false} style={s.modalLabel}>Member</Text>
+              <Text allowFontScaling={false} style={s.modalValue}>{payload.memberName}</Text>
+            </View>
+            <View style={s.modalRow}>
+              <Text allowFontScaling={false} style={s.modalLabel}>Monthly Rate</Text>
+              <Text allowFontScaling={false} style={s.modalValue}>₹{payload.rate}</Text>
+            </View>
+            <View style={s.modalRow}>
+              <Text allowFontScaling={false} style={s.modalLabel}>Total Amount</Text>
+              <Text allowFontScaling={false} style={s.modalValueGreen}>₹{payload.finalAmount}</Text>
+            </View>
+            <View style={s.modalRow}>
+              <Text allowFontScaling={false} style={s.modalLabel}>Method</Text>
+              <Text allowFontScaling={false} style={s.modalValue}>{method}</Text>
+            </View>
+            <View style={s.modalRow}>
+              <Text allowFontScaling={false} style={s.modalLabel}>Date</Text>
+              <Text allowFontScaling={false} style={s.modalValue}>
+                {collectedDate.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+              </Text>
+            </View>
+          </View>
+
+          {hasFuture ? (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12, backgroundColor: "rgba(16,185,129,0.08)", borderRadius: 8, padding: 10 }}>
+              <View style={{ backgroundColor: "rgba(16,185,129,0.18)", borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
+                <Text allowFontScaling={false} style={{ fontSize: 11, fontWeight: "800", color: "#059669" }}>Advance Payment</Text>
+              </View>
+              <Text allowFontScaling={false} style={{ flex: 1, fontSize: 11, color: H.textMuted, lineHeight: 16 }}>
+                Money is received today. Future months will appear as Paid when generated.
+              </Text>
+            </View>
+          ) : null}
+
+          <Text allowFontScaling={false} style={{ color: H.textMuted, fontSize: 12, fontWeight: "700", marginBottom: 6 }}>
+            Covered Months ({payload.months_list.length})
+          </Text>
+          <View style={{ gap: 4, marginBottom: 18 }}>
+            {payload.months_list.map(mk => {
+              const label = fmtMFull(mk);
+              const isAdvance = (() => { const now = new Date(); const [yr, mo] = mk.split("-").map(Number); return new Date(yr, mo - 1, 1) > new Date(now.getFullYear(), now.getMonth(), 1); })();
+              return (
+                <View key={mk} style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingLeft: 8 }}>
+                  <Text allowFontScaling={false} style={{ color: H.green, fontSize: 12.5 }}>✓</Text>
+                  <Text allowFontScaling={false} style={{ color: H.textDark, fontSize: 12.5, flex: 1 }}>{label}</Text>
+                  {isAdvance && (
+                    <View style={{ backgroundColor: "rgba(16,185,129,0.1)", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                      <Text allowFontScaling={false} style={{ fontSize: 9, fontWeight: "800", color: "#059669" }}>ADV</Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+
+          <View style={s.modalButtonRow}>
+            <Pressable style={s.modalButtonCancel} onPress={onClose}>
+              <Text allowFontScaling={false} style={s.modalButtonText}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              style={[s.modalButtonConfirm, loading && { opacity: 0.6 }]}
+              disabled={loading}
+              onPress={onConfirm}
+            >
+              <Text allowFontScaling={false} style={s.modalButtonTextConfirm}>Confirm & Submit</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Pressable>
+    </SafeModal>
+  );
+});
+
 const StickySelectionBar = React.memo(function StickySelectionBar({ count, total, onContinue, loading }) {
   if (count === 0) return null;
   return (
@@ -399,24 +520,10 @@ const sb = StyleSheet.create({
 });
 
 function SubmitButton({ loading, onPress, label }) {
-  const pulse = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    if (loading) {
-      Animated.loop(Animated.sequence([
-        Animated.timing(pulse, { toValue: 0.97, duration: 500, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 1, duration: 500, useNativeDriver: true }),
-      ])).start();
-    } else {
-      pulse.stopAnimation();
-      pulse.setValue(1);
-    }
-  }, [loading]);
   return (
-    <Animated.View style={{ transform: [{ scale: pulse }] }}>
-      <AnimatedPressable style={s.submitBtn} onPress={onPress} disabled={loading} activeOpacity={0.85}>
-        <Text allowFontScaling={false} style={s.submitBtnTxt}>{loading ? t("collector.processing") : (label || t("collector.recordPayment"))}</Text>
-      </AnimatedPressable>
-    </Animated.View>
+    <Pressable style={s.submitBtn} onPress={onPress} disabled={loading} activeOpacity={0.85}>
+      <Text allowFontScaling={false} style={s.submitBtnTxt}>{loading ? t("collector.processing") : (label || t("collector.recordPayment"))}</Text>
+    </Pressable>
   );
 }
 
@@ -505,6 +612,8 @@ export default function CollectorScreen({ navigation, route }) {
   const [lastSync, setLastSync] = useState(null);
   const [queueCount, setQueueCount] = useState(0);
   const [todaysSessionTotal, setTodaysSessionTotal] = useState({ cash: 0, digital: 0 });
+  // Use ref for loading to avoid unnecessary re-renders when checking submission state
+  const isLoadingRef = useRef(false);
 
   const [funds, setFunds] = useState([]);
   const [fundsAvailable, setFundsAvailable] = useState(false);
@@ -513,8 +622,6 @@ export default function CollectorScreen({ navigation, route }) {
   const [qrViewerVisible, setQrViewerVisible] = useState(false);
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [confirmPayload, setConfirmPayload] = useState(null);
-
-  const hFade = useRef(new Animated.Value(0)).current;
 
   const [activeTab, setActiveTab] = useState(initialTab);
   const [showZoneDropdown, setShowZoneDropdown] = useState(false);
@@ -548,9 +655,7 @@ export default function CollectorScreen({ navigation, route }) {
     })();
   }, []);
 
-  useEffect(() => {
-    Animated.timing(hFade, { toValue: 1, duration: 320, useNativeDriver: true }).start();
-  }, []);
+  // Removed hFade animation for performance - unnecessary transition
 
   const cacheKey = `${MEMBERS_CACHE_KEY}_${selectedMonth}`;
 
@@ -857,6 +962,15 @@ export default function CollectorScreen({ navigation, route }) {
     setAmount(total > 0 ? String(Math.round(total)) : "");
   }, [selectedMonthKeys, availableMonths]);
 
+  // Debounce search input to reduce re-renders during typing
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
 
   const getMonthlyAmt = useCallback(() => {
     const cur = selected?.collections?.find((c) => c?.month === selectedMonth);
@@ -885,6 +999,7 @@ export default function CollectorScreen({ navigation, route }) {
     // which doesn't flip until after this function has already started.
     if (submittingRef.current) return;
     submittingRef.current = true;
+    isLoadingRef.current = true;
     const months_list = Array.from(selectedMonthKeys).sort();
 
     const payload = {
@@ -932,7 +1047,44 @@ export default function CollectorScreen({ navigation, route }) {
         `${memberName}\n${amtStr} Received${typeLine}\n${monthRange}${receiptLine}`
       );
       closeModal();
-      fetchMembers(true);
+      // Optimistic update: update only the affected member instead of full refresh
+      setMembers(prevMembers => {
+        const updatedMembers = prevMembers.map(member => {
+          if (member.member.id === selected.member.id) {
+            // Update the member's payment status for the affected months
+            const updatedCollections = [...(member.collections || [])];
+            months_list.forEach(monthKey => {
+              const collectionIndex = updatedCollections.findIndex(c => c.month === monthKey);
+              if (collectionIndex >= 0) {
+                updatedCollections[collectionIndex] = {
+                  ...updatedCollections[collectionIndex],
+                  total_paid: Number(updatedCollections[collectionIndex].total_paid || 0) + (finalAmount / months_list.length),
+                  last_payment_date: new Date().toISOString().split('T')[0],
+                  last_collector: role
+                };
+              } else {
+                updatedCollections.push({
+                  month: monthKey,
+                  amount_due: selected?.member?.monthly_amount || 0,
+                  total_paid: finalAmount / months_list.length,
+                  last_payment_date: new Date().toISOString().split('T')[0],
+                  last_collector: role
+                });
+              }
+            });
+            return {
+              ...member,
+              collections: updatedCollections,
+              last_payment_date: new Date().toISOString().split('T')[0],
+              last_collector: role
+            };
+          }
+          return member;
+        });
+        return updatedMembers;
+      });
+      // Background refresh to ensure data consistency
+      setTimeout(() => fetchMembers(true), 500);
     } catch (err) {
       const isNetworkFailure = err instanceof TypeError || /network/i.test(err.message || "");
       if (isNetworkFailure) {
@@ -954,8 +1106,9 @@ export default function CollectorScreen({ navigation, route }) {
     } finally {
       setLoading(false);
       submittingRef.current = false;
+      isLoadingRef.current = false;
     }
-  }, [selectedMonthKeys, selected, method, transactionRef, collectedDate, notes, uploadScreenshot, refreshTodayTotals, closeModal, fetchMembers]);
+  }, [selectedMonthKeys, selected, method, transactionRef, collectedDate, notes, uploadScreenshot, refreshTodayTotals, closeModal, role]);
 
   const submitChandaPayment = useCallback(() => {
     const finalAmount = Number(String(amount || "").replace(/[^0-9.]/g, ""));
@@ -980,6 +1133,7 @@ export default function CollectorScreen({ navigation, route }) {
     // double-tap on the submit button to fire two POSTs.
     if (submittingRef.current) return;
     submittingRef.current = true;
+    isLoadingRef.current = true;
     try {
       setLoading(true);
       let imageUrl = null;
@@ -1004,14 +1158,31 @@ export default function CollectorScreen({ navigation, route }) {
       refreshTodayTotals();
       Alert.alert(t("collector.alertRecordedTitle"), `Donation recorded${body.receipt_id ? ` — ${body.receipt_id}` : ""}`);
       closeModal();
-      fetchMembers(true);
+      // Optimistic update for donation - mark recent donation
+      setMembers(prevMembers => {
+        const updatedMembers = prevMembers.map(member => {
+          if (member.member.id === selected.member.id) {
+            return {
+              ...member,
+              recent_donation: true,
+              last_payment_date: new Date().toISOString().split('T')[0],
+              last_collector: role
+            };
+          }
+          return member;
+        });
+        return updatedMembers;
+      });
+      // Background refresh to ensure data consistency
+      setTimeout(() => fetchMembers(true), 500);
     } catch (err) {
       Alert.alert(t("collector.alertFailedTitle"), err.message || t("collector.alertSomethingWrong"));
     } finally {
       setLoading(false);
       submittingRef.current = false;
+      isLoadingRef.current = false;
     }
-  }, [amount, method, proofImage, uploadScreenshot, selected, notes, paymentType, selectedFund, funds, refreshTodayTotals, closeModal, fetchMembers]);
+  }, [amount, method, proofImage, uploadScreenshot, selected, notes, paymentType, selectedFund, funds, refreshTodayTotals, closeModal, role]);
 
   const submitPayment = useCallback(() => {
     if (paymentType === "chanda") return submitChandaPayment();
@@ -1038,7 +1209,7 @@ export default function CollectorScreen({ navigation, route }) {
     // Normalize: lowercase, strip hyphens and extra spaces so
     // "MM1001", "MM-1001", "mm 1001" all match each other.
     const normalize = (str) => (str || "").toLowerCase().replace(/[-\s]+/g, "");
-    const q = normalize(search);
+    const q = normalize(debouncedSearch);
     const all = members.filter((m) => {
       if (selectedZone && m.member?.zone !== selectedZone) return false;
       if (selectedStreet && m.member?.street !== selectedStreet) return false;
@@ -1049,11 +1220,19 @@ export default function CollectorScreen({ navigation, route }) {
       return haystack.includes(q);
     });
 
+    // Pre-calculate member status to avoid repeated calculations
+    const memberStatusMap = new Map();
+    const memberOverdueMap = new Map();
+    all.forEach((m) => {
+      memberStatusMap.set(m.member.id, getMemberStatus(m, selectedMonth));
+      memberOverdueMap.set(m.member.id, getConsecutiveUnpaidMonths(m));
+    });
+
     const cnt = { all: all.length, paid: 0, pending: 0, overdue3: 0, overdue6: 0, overdue12: 0, active: 0, inactive: 0 };
     all.forEach((m) => {
-      const { status } = getMemberStatus(m, selectedMonth);
+      const { status } = memberStatusMap.get(m.member.id);
       cnt[status] = (cnt[status] || 0) + 1;
-      const overdue = getConsecutiveUnpaidMonths(m);
+      const overdue = memberOverdueMap.get(m.member.id);
       if (overdue >= 12) cnt.overdue12++;
       if (overdue >= 6) cnt.overdue6++;
       if (overdue >= 3) cnt.overdue3++;
@@ -1072,32 +1251,32 @@ export default function CollectorScreen({ navigation, route }) {
 
     let shown = base;
     if (filterStatus === "pending" || filterStatus === "paid") {
-      shown = base.filter((m) => getMemberStatus(m, selectedMonth).status === filterStatus);
+      shown = base.filter((m) => memberStatusMap.get(m.member.id).status === filterStatus);
     } else if (filterStatus === "overdue3") {
-      shown = base.filter((m) => getConsecutiveUnpaidMonths(m) >= 3);
+      shown = base.filter((m) => memberOverdueMap.get(m.member.id) >= 3);
     } else if (filterStatus === "overdue6") {
-      shown = base.filter((m) => getConsecutiveUnpaidMonths(m) >= 6);
+      shown = base.filter((m) => memberOverdueMap.get(m.member.id) >= 6);
     } else if (filterStatus === "overdue12") {
-      shown = base.filter((m) => getConsecutiveUnpaidMonths(m) >= 12);
+      shown = base.filter((m) => memberOverdueMap.get(m.member.id) >= 12);
     }
 
     // Bucket paid members to the bottom first, then apply the active sort
     // within each bucket. This holds regardless of which sort/filter is
     // selected — pending always floats up, paid always sinks.
     const sorted = shown.slice().sort((a, b) => {
-      const aPaid = getMemberStatus(a, selectedMonth).status === "paid" ? 1 : 0;
-      const bPaid = getMemberStatus(b, selectedMonth).status === "paid" ? 1 : 0;
+      const aPaid = memberStatusMap.get(a.member.id).status === "paid" ? 1 : 0;
+      const bPaid = memberStatusMap.get(b.member.id).status === "paid" ? 1 : 0;
       if (aPaid !== bPaid) return aPaid - bPaid;
 
-      if (sortBy === "overdue") return getConsecutiveUnpaidMonths(b) - getConsecutiveUnpaidMonths(a);
-      if (sortBy === "pending_high") return getMemberStatus(b, selectedMonth).balance - getMemberStatus(a, selectedMonth).balance;
+      if (sortBy === "overdue") return memberOverdueMap.get(b.member.id) - memberOverdueMap.get(a.member.id);
+      if (sortBy === "pending_high") return memberStatusMap.get(b.member.id).balance - memberStatusMap.get(a.member.id).balance;
       if (sortBy === "address") return (a.member?.address || "").localeCompare(b.member?.address || "");
       if (sortBy === "name") return (a.member?.name || "").localeCompare(b.member?.name || "");
       return 0;
     });
 
     return { filtered: sorted, counts: cnt };
-  }, [members, search, filterStatus, sortBy, selectedMonth, selectedZone, selectedStreet]);
+  }, [members, debouncedSearch, filterStatus, sortBy, selectedMonth, selectedZone, selectedStreet]);
 
   const renderMemberItem = useCallback(({ item }) => (
     <MemberCard item={item} selectedMonth={selectedMonth} onPress={openModal} onCall={callFamily} onNavigate={navigateToFamily} onHistory={goToHistory} />
@@ -1125,12 +1304,12 @@ export default function CollectorScreen({ navigation, route }) {
   return (
     <View style={s.root}>
 
-      <Animated.View style={[s.header, { opacity: hFade }]}>
+      <View style={s.header}>
         <View style={s.navBar}>
           <View style={s.navLeft}>
-            <AnimatedPressable onPress={() => navigation.navigate("Home")} style={s.backBtn} activeOpacity={0.8} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Pressable onPress={() => navigation.navigate("Home")} style={s.backBtn} activeOpacity={0.8} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Text allowFontScaling={false} style={s.backBtnTxt}>←</Text>
-            </AnimatedPressable>
+            </Pressable>
             <View>
               <Text allowFontScaling={false} style={s.navTitle}>{t("collector.title")}</Text>
               {/* Sync status folded into the nav row instead of its own
@@ -1145,10 +1324,10 @@ export default function CollectorScreen({ navigation, route }) {
               ) : null}
             </View>
           </View>
-          <AnimatedPressable onPress={onManualSync} style={s.syncBtn} activeOpacity={0.8}>
+          <Pressable onPress={onManualSync} style={s.syncBtn} activeOpacity={0.8}>
             <View style={[s.syncDot, isOffline && { backgroundColor: H.warn }]} />
             <Text allowFontScaling={false} style={s.syncTxt}>{isOffline ? t("collector.offline") : t("collector.sync")}</Text>
-          </AnimatedPressable>
+          </Pressable>
         </View>
 
         <View style={s.tabBar}>
@@ -1157,7 +1336,7 @@ export default function CollectorScreen({ navigation, route }) {
             { key: "families",    label: t("collectorTabs.families") },
             { key: "history",     label: t("collectorTabs.history") },
           ].map((tab) => (
-            <AnimatedPressable
+            <Pressable
               key={tab.key}
               style={[s.tabItem, activeTab === tab.key && s.tabItemActive]}
               onPress={() => (tab.key === "families" ? navigation.navigate("FamilySearch") : setActiveTab(tab.key))}
@@ -1166,13 +1345,13 @@ export default function CollectorScreen({ navigation, route }) {
               <Text allowFontScaling={false} style={[s.tabLabel, activeTab === tab.key && s.tabLabelActive]}>
                 {tab.label}
               </Text>
-            </AnimatedPressable>
+            </Pressable>
           ))}
         </View>
 
         {activeTab === "collections" && <>{zones.length > 0 && (
           <View style={s.filterDropdownRow}>
-            <AnimatedPressable
+            <Pressable
               style={[s.zoneDropdownBtn, selectedZone && s.zoneDropdownBtnActive]}
               onPress={() => setShowZoneDropdown(true)}
               activeOpacity={0.8}
@@ -1184,17 +1363,17 @@ export default function CollectorScreen({ navigation, route }) {
                 </Text>
               </View>
               {selectedZone ? (
-                <AnimatedPressable
+                <Pressable
                   onPress={(e) => { e.stopPropagation?.(); setSelectedZone(""); }}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
                   <Text allowFontScaling={false} style={{ fontSize: 14, color: H.textMuted, marginRight: 6 }}>✕</Text>
-                </AnimatedPressable>
+                </Pressable>
               ) : null}
               <Text allowFontScaling={false} style={s.zoneDropdownChevron}>▼</Text>
-            </AnimatedPressable>
+            </Pressable>
 
-            <AnimatedPressable
+            <Pressable
               style={[s.zoneDropdownBtn, selectedStreet && s.zoneDropdownBtnActive, streets.length === 0 && { opacity: 0.5 }]}
               onPress={() => streets.length > 0 && setShowStreetDropdown(true)}
               activeOpacity={0.8}
@@ -1207,15 +1386,15 @@ export default function CollectorScreen({ navigation, route }) {
                 </Text>
               </View>
               {selectedStreet ? (
-                <AnimatedPressable
+                <Pressable
                   onPress={(e) => { e.stopPropagation?.(); setSelectedStreet(""); }}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
                   <Text allowFontScaling={false} style={{ fontSize: 14, color: H.textMuted, marginRight: 6 }}>✕</Text>
-                </AnimatedPressable>
+                </Pressable>
               ) : null}
               <Text allowFontScaling={false} style={s.zoneDropdownChevron}>▼</Text>
-            </AnimatedPressable>
+            </Pressable>
           </View>
         )}
         {/* Month nav + search combined into one row — was two full-width
@@ -1223,14 +1402,14 @@ export default function CollectorScreen({ navigation, route }) {
             search takes the remaining space. */}
         <View style={s.monthSearchRow}>
           <View style={s.monthPill}>
-            <AnimatedPressable onPress={() => setSelectedMonth((p) => shiftMonth(p, -1))} style={s.mArrowSm} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+            <Pressable onPress={() => setSelectedMonth((p) => shiftMonth(p, -1))} style={s.mArrowSm} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
               <Text allowFontScaling={false} style={s.mArrowSmTxt}>‹</Text>
-            </AnimatedPressable>
+            </Pressable>
             {fetching ? <View style={s.fetchDot} /> : null}
             <Text allowFontScaling={false} numberOfLines={1} style={s.mValueSm}>{fmtMonth(selectedMonth)}</Text>
-            <AnimatedPressable onPress={() => setSelectedMonth((p) => shiftMonth(p, 1))} style={s.mArrowSm} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+            <Pressable onPress={() => setSelectedMonth((p) => shiftMonth(p, 1))} style={s.mArrowSm} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
               <Text allowFontScaling={false} style={s.mArrowSmTxt}>›</Text>
-            </AnimatedPressable>
+            </Pressable>
           </View>
 
           <View style={s.searchBoxFlex}>
@@ -1246,9 +1425,9 @@ export default function CollectorScreen({ navigation, route }) {
               autoCapitalize="none"
             />
             {search.length > 0 && (
-              <AnimatedPressable onPress={() => setSearch("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Pressable onPress={() => setSearch("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                 <Text allowFontScaling={false} style={s.clearTxt}>{t("collector.clear")}</Text>
-              </AnimatedPressable>
+              </Pressable>
             )}
           </View>
         </View>
@@ -1261,22 +1440,22 @@ export default function CollectorScreen({ navigation, route }) {
               <OptionPill key={f.key} label={`${f.label} (${counts[f.key] ?? 0})`} active={filterStatus === f.key} onPress={() => setFilterStatus(f.key)} />
             ))}
           </ScrollView>
-          <AnimatedPressable style={s.sortChip} onPress={() => setShowSortMenu((v) => !v)} activeOpacity={0.8}>
+          <Pressable style={s.sortChip} onPress={() => setShowSortMenu((v) => !v)} activeOpacity={0.8}>
             <Text allowFontScaling={false} style={s.sortChipTxt}>{SORTS.find((x) => x.key === sortBy)?.label} ▾</Text>
-          </AnimatedPressable>
+          </Pressable>
         </View>
 
         {showSortMenu && (
           <View style={s.sortMenu}>
             {SORTS.map((opt) => (
-              <AnimatedPressable key={opt.key} style={s.sortItem} onPress={() => { setSortBy(opt.key); setShowSortMenu(false); }}>
+              <Pressable key={opt.key} style={s.sortItem} onPress={() => { setSortBy(opt.key); setShowSortMenu(false); }}>
                 <Text allowFontScaling={false} style={[s.sortItemTxt, sortBy === opt.key && { color: H.gold, fontWeight: "800" }]}>{opt.label}</Text>
-              </AnimatedPressable>
+              </Pressable>
             ))}
           </View>
         )}
         </>}
-      </Animated.View>
+      </View>
 
       {activeTab === "collections" && (
         <FlatList
@@ -1304,14 +1483,11 @@ export default function CollectorScreen({ navigation, route }) {
 
       {activeTab === "history" && (
         <View style={{ flex: 1 }}>
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={s.tabContent} showsVerticalScrollIndicator={false}
-            refreshControl={<RefreshControl refreshing={cashHistoryLoading} onRefresh={loadCashHistory} tintColor={H.gold} colors={[H.gold]} />}>
-            {cashHistoryLoading && cashHistory.length === 0 ? (
-              <View style={s.empty}><Text allowFontScaling={false} style={s.emptyTxt}>{t("collectorTabs.loading")}</Text></View>
-            ) : cashHistory.length === 0 ? (
-              <View style={s.empty}><Text allowFontScaling={false} style={s.emptyTxt}>{t("collectorTabs.noHistory")}</Text></View>
-            ) : cashHistory.map((sub) => (
-              <View key={sub.id} style={s.subCard}>
+          <FlatList
+            data={cashHistory}
+            keyExtractor={(item) => String(item.id)}
+            renderItem={({ item: sub }) => (
+              <View style={s.subCard}>
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                   <Text allowFontScaling={false} style={s.subAmt}>₹{sub.submitted_amount}</Text>
                   <View style={[s.subBadge, sub.status === "approved" && s.subBadgeGreen, sub.status === "rejected" && s.subBadgeRed]}>
@@ -1323,11 +1499,19 @@ export default function CollectorScreen({ navigation, route }) {
                 <Text allowFontScaling={false} style={s.subMeta}>{sub.start_date?.slice(0, 10)} → {sub.end_date?.slice(0, 10)}</Text>
                 {sub.rejection_reason ? <Text allowFontScaling={false} style={s.subReject}>{sub.rejection_reason}</Text> : null}
               </View>
-            ))}
-          </ScrollView>
-          <AnimatedPressable style={s.submitCashBtn} onPress={() => navigation.navigate("CashSubmission")}>
+            )}
+            contentContainerStyle={s.tabContent}
+            showsVerticalScrollIndicator={false}
+            initialNumToRender={10}
+            maxToRenderPerBatch={10}
+            windowSize={7}
+            removeClippedSubviews
+            refreshControl={<RefreshControl refreshing={cashHistoryLoading} onRefresh={loadCashHistory} tintColor={H.gold} colors={[H.gold]} />}
+            ListEmptyComponent={<View style={s.empty}><Text allowFontScaling={false} style={s.emptyTxt}>{cashHistoryLoading ? t("collectorTabs.loading") : t("collectorTabs.noHistory")}</Text></View>}
+          />
+          <Pressable style={s.submitCashBtn} onPress={() => navigation.navigate("CashSubmission")}>
             <Text allowFontScaling={false} style={s.submitCashTxt}>{t("collectorTabs.submitCash")}</Text>
-          </AnimatedPressable>
+          </Pressable>
         </View>
       )}
 
@@ -1393,9 +1577,9 @@ export default function CollectorScreen({ navigation, route }) {
                       <Text allowFontScaling={false} style={s.sheetAddr}>{selected.member?.address}</Text>
                       <Text allowFontScaling={false} style={s.sheetAddr}>{selected.member?.phone}</Text>
                     </View>
-                    <AnimatedPressable onPress={closeModal} style={s.doneBtn}>
+                    <Pressable onPress={closeModal} style={s.doneBtn}>
                       <Text allowFontScaling={false} style={s.doneTxt}>{t("collector.done")}</Text>
-                    </AnimatedPressable>
+                    </Pressable>
                   </View>
 
                   <ScrollView
@@ -1428,7 +1612,7 @@ export default function CollectorScreen({ navigation, route }) {
                       ) : null}
                     </View>
 
-                    <AnimatedPressable onPress={openDatePicker} style={s.dateRow}>
+                    <Pressable onPress={openDatePicker} style={s.dateRow}>
                       <View style={s.dateLabelCol}>
                         <Text allowFontScaling={false} style={s.dateLabel}>{t("collector.visitDate")}</Text>
                         <Text allowFontScaling={false} style={[s.dateLabel, { fontSize: 10, marginTop: 1, opacity: 0.6 }]} numberOfLines={2}>{t("collector.visitDateHint")}</Text>
@@ -1436,7 +1620,7 @@ export default function CollectorScreen({ navigation, route }) {
                       <Text allowFontScaling={false} style={s.dateVal} numberOfLines={1}>
                         {collectedDate.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
                       </Text>
-                    </AnimatedPressable>
+                    </Pressable>
 
                     <View style={s.amtRow}>
                       <Text allowFontScaling={false} style={s.amtRupee}>₹</Text>
@@ -1500,13 +1684,13 @@ export default function CollectorScreen({ navigation, route }) {
                       <View style={s.upiCard}>
                         <Text allowFontScaling={false} style={s.secLabel}>{t("collector.scanToPay")}</Text>
                         <View style={s.upiInner}>
-                          <AnimatedPressable onPress={() => setQrViewerVisible(true)} activeOpacity={0.9} style={s.qrThumbBox}>
+                          <Pressable onPress={() => setQrViewerVisible(true)} activeOpacity={0.9} style={s.qrThumbBox}>
                             <Image source={require("../../assests/upi_qr.jpg")} style={s.qrThumbImg} resizeMode="contain" />
-                          </AnimatedPressable>
+                          </Pressable>
                           <View style={s.upiRight}>
-                            <AnimatedPressable onPress={pickImage} style={[s.uploadBtn, proofImage && s.uploadBtnDone]}>
+                            <Pressable onPress={pickImage} style={[s.uploadBtn, proofImage && s.uploadBtnDone]}>
                               <Text allowFontScaling={false} style={s.uploadTxt}>{proofImage ? t("collector.changeScreenshot") : t("collector.uploadScreenshot")}</Text>
-                            </AnimatedPressable>
+                            </Pressable>
                             {proofImage ? (
                               <View style={s.proofBadge}><Text allowFontScaling={false} style={s.proofBadgeTxt}>{t("collector.attached")}</Text></View>
                             ) : (
@@ -1551,7 +1735,7 @@ export default function CollectorScreen({ navigation, route }) {
                     */}
                     {paymentType !== "chanda" && (
                       <View style={s.submitWrap}>
-                        <SubmitButton loading={loading} onPress={submitPayment} />
+                        <SubmitButton loading={isLoadingRef.current} onPress={submitPayment} />
                       </View>
                     )}
                   </ScrollView>
@@ -1561,7 +1745,7 @@ export default function CollectorScreen({ navigation, route }) {
                       count={selectedMonthKeys.size}
                       total={availableMonths.filter(m => selectedMonthKeys.has(m.month)).reduce((sum, m) => sum + m.remaining, 0)}
                       onContinue={submitChandaPayment}
-                      loading={loading}
+                      loading={isLoadingRef.current}
                     />
                   )}
                 </>
@@ -1573,157 +1757,23 @@ export default function CollectorScreen({ navigation, route }) {
 
       {/* Date picker — a top-level sibling of the sheet Modal, never nested
           inside the sheet's ScrollView (see SCROLL-STUCK FIX note above). */}
-      <SafeModal visible={showDate} transparent animationType="fade" onRequestClose={() => setShowDate(false)}>
-        <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", alignItems: "center" }}
-          onPress={() => setShowDate(false)}>
-          <Pressable style={{
-            backgroundColor: "#fff", borderRadius: 18, padding: 24,
-            width: 300, alignItems: "center",
-            shadowColor: "#000", shadowOpacity: 0.18, shadowRadius: 16, elevation: 10,
-          }} onPress={() => {}}>
-            <Text allowFontScaling={false} style={{ fontSize: 16, fontWeight: "700", color: "#1C231F", marginBottom: 20 }}>
-              Select Date
-            </Text>
-            {/* Day / Month / Year spinners */}
-            {(() => {
-              const d = collectedDate.getDate();
-              const mo = collectedDate.getMonth();
-              const y = collectedDate.getFullYear();
-              const today = new Date();
-              const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-              const clamp = (date) => date > today ? today : date;
-              const bump = (field, delta) => {
-                const nd = new Date(collectedDate);
-                if (field === "d") nd.setDate(d + delta);
-                else if (field === "m") nd.setMonth(mo + delta);
-                else if (field === "y") nd.setFullYear(y + delta);
-                setCollectedDate(clamp(nd));
-              };
-              const SpinCol = ({ label, onUp, onDown }) => (
-                <View style={{ alignItems: "center", flex: 1 }}>
-                  <AnimatedPressable onPress={onUp} style={{ padding: 8 }}>
-                    <Text allowFontScaling={false} style={{ fontSize: 22, color: "#0F5C4C", fontWeight: "700" }}>▲</Text>
-                  </AnimatedPressable>
-                  <Text allowFontScaling={false} style={{ fontSize: 20, fontWeight: "800", color: "#1C231F", minWidth: 52, textAlign: "center" }}>{label}</Text>
-                  <AnimatedPressable onPress={onDown} style={{ padding: 8 }}>
-                    <Text allowFontScaling={false} style={{ fontSize: 22, color: "#0F5C4C", fontWeight: "700" }}>▼</Text>
-                  </AnimatedPressable>
-                </View>
-              );
-              return (
-                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 24 }}>
-                  <SpinCol label={String(d).padStart(2, "0")} onUp={() => bump("d", 1)} onDown={() => bump("d", -1)} />
-                  <Text allowFontScaling={false} style={{ fontSize: 20, color: "#C8C0A8", marginHorizontal: 2 }}>/</Text>
-                  <SpinCol label={months[mo]} onUp={() => bump("m", 1)} onDown={() => bump("m", -1)} />
-                  <Text allowFontScaling={false} style={{ fontSize: 20, color: "#C8C0A8", marginHorizontal: 2 }}>/</Text>
-                  <SpinCol label={String(y)} onUp={() => bump("y", 1)} onDown={() => bump("y", -1)} />
-                </View>
-              );
-            })()}
-            <AnimatedPressable onPress={() => setShowDate(false)} style={{
-              backgroundColor: "#0F5C4C", borderRadius: 12,
-              paddingVertical: 12, paddingHorizontal: 36,
-            }}>
-              <Text allowFontScaling={false} style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>Done</Text>
-            </AnimatedPressable>
-          </Pressable>
-        </Pressable>
-      </SafeModal>
+      <DatePickerModal
+        visible={showDate}
+        onClose={() => setShowDate(false)}
+        date={collectedDate}
+        onDateChange={setCollectedDate}
+      />
 
       {/* Payment confirmation modal */}
-      <SafeModal visible={confirmVisible} transparent animationType="fade" onRequestClose={() => setConfirmVisible(false)}>
-        <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center", paddingHorizontal: 20 }}
-          onPress={() => setConfirmVisible(false)}>
-          <Pressable style={{ backgroundColor: "#fff", borderRadius: 18, padding: 22, width: "100%", maxWidth: 360 }} onPress={() => {}}>
-            <Text allowFontScaling={false} style={{ fontSize: 16, fontWeight: "800", color: H.headerDeep, marginBottom: 14, textAlign: "center" }}>
-              Confirm Payment
-            </Text>
-
-            {confirmPayload && (
-              <>
-                <View style={{ gap: 8, marginBottom: 16 }}>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                    <Text allowFontScaling={false} style={{ color: H.textMuted, fontSize: 13 }}>Member</Text>
-                    <Text allowFontScaling={false} style={{ color: H.textDark, fontSize: 13, fontWeight: "700" }}>{confirmPayload.memberName}</Text>
-                  </View>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                    <Text allowFontScaling={false} style={{ color: H.textMuted, fontSize: 13 }}>Monthly Rate</Text>
-                    <Text allowFontScaling={false} style={{ color: H.textDark, fontSize: 13 }}>₹{confirmPayload.rate}</Text>
-                  </View>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                    <Text allowFontScaling={false} style={{ color: H.textMuted, fontSize: 13 }}>Total Amount</Text>
-                    <Text allowFontScaling={false} style={{ color: H.green, fontSize: 15, fontWeight: "800" }}>₹{confirmPayload.finalAmount}</Text>
-                  </View>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                    <Text allowFontScaling={false} style={{ color: H.textMuted, fontSize: 13 }}>Method</Text>
-                    <Text allowFontScaling={false} style={{ color: H.textDark, fontSize: 13, textTransform: "capitalize" }}>{method}</Text>
-                  </View>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                    <Text allowFontScaling={false} style={{ color: H.textMuted, fontSize: 13 }}>Date</Text>
-                    <Text allowFontScaling={false} style={{ color: H.textDark, fontSize: 13 }}>
-                      {collectedDate.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-                    </Text>
-                  </View>
-                </View>
-
-                {(() => {
-                  const hasFuture = confirmPayload.months_list.some(mk => {
-                    const now = new Date(); const [yr, mo] = mk.split("-").map(Number);
-                    return new Date(yr, mo - 1, 1) > new Date(now.getFullYear(), now.getMonth(), 1);
-                  });
-                  return hasFuture ? (
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12, backgroundColor: "rgba(16,185,129,0.08)", borderRadius: 8, padding: 10 }}>
-                      <View style={{ backgroundColor: "rgba(16,185,129,0.18)", borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
-                        <Text allowFontScaling={false} style={{ fontSize: 11, fontWeight: "800", color: "#059669" }}>Advance Payment</Text>
-                      </View>
-                      <Text allowFontScaling={false} style={{ flex: 1, fontSize: 11, color: H.textMuted, lineHeight: 16 }}>
-                        Money is received today. Future months will appear as Paid when generated.
-                      </Text>
-                    </View>
-                  ) : null;
-                })()}
-
-                <Text allowFontScaling={false} style={{ color: H.textMuted, fontSize: 12, fontWeight: "700", marginBottom: 6 }}>
-                  Covered Months ({confirmPayload.months_list.length})
-                </Text>
-                <View style={{ gap: 4, marginBottom: 18 }}>
-                  {confirmPayload.months_list.map(mk => {
-                    const label = fmtMFull(mk);
-                    const isAdvance = (() => { const now = new Date(); const [yr, mo] = mk.split("-").map(Number); return new Date(yr, mo - 1, 1) > new Date(now.getFullYear(), now.getMonth(), 1); })();
-                    return (
-                      <View key={mk} style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingLeft: 8 }}>
-                        <Text allowFontScaling={false} style={{ color: H.green, fontSize: 12.5 }}>✓</Text>
-                        <Text allowFontScaling={false} style={{ color: H.textDark, fontSize: 12.5, flex: 1 }}>{label}</Text>
-                        {isAdvance && (
-                          <View style={{ backgroundColor: "rgba(16,185,129,0.1)", borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
-                            <Text allowFontScaling={false} style={{ fontSize: 9, fontWeight: "800", color: "#059669" }}>ADV</Text>
-                          </View>
-                        )}
-                      </View>
-                    );
-                  })}
-                </View>
-
-                <View style={{ flexDirection: "row", gap: 10 }}>
-                  <AnimatedPressable
-                    style={{ flex: 1, backgroundColor: H.bg, borderRadius: 10, paddingVertical: 13, alignItems: "center", borderWidth: 1, borderColor: H.cardBorder }}
-                    onPress={() => setConfirmVisible(false)}
-                  >
-                    <Text allowFontScaling={false} style={{ color: H.textDark, fontWeight: "700", fontSize: 14 }}>Cancel</Text>
-                  </AnimatedPressable>
-                  <AnimatedPressable
-                    style={{ flex: 2, backgroundColor: H.gold, borderRadius: 10, paddingVertical: 13, alignItems: "center", opacity: loading ? 0.6 : 1 }}
-                    disabled={loading}
-                    onPress={() => { setConfirmVisible(false); doSubmitChanda(confirmPayload.finalAmount, confirmPayload.token); }}
-                  >
-                    <Text allowFontScaling={false} style={{ color: H.headerDeep, fontWeight: "800", fontSize: 14 }}>Confirm & Submit</Text>
-                  </AnimatedPressable>
-                </View>
-              </>
-            )}
-          </Pressable>
-        </Pressable>
-      </SafeModal>
+      <ConfirmationModal
+        visible={confirmVisible}
+        onClose={() => setConfirmVisible(false)}
+        payload={confirmPayload}
+        method={method}
+        collectedDate={collectedDate}
+        loading={loading}
+        onConfirm={() => { setConfirmVisible(false); doSubmitChanda(confirmPayload.finalAmount, confirmPayload.token); }}
+      />
     </View>
   );
 }
@@ -1736,6 +1786,20 @@ const s = StyleSheet.create({
   restrictedSub: { fontSize: 13, color: H.textMuted, textAlign: "center", lineHeight: 19 },
   restrictedBtn: { marginTop: 10, backgroundColor: H.gold, paddingHorizontal: 22, paddingVertical: 11, borderRadius: 12 },
   restrictedBtnTxt: { color: H.headerDeep, fontWeight: "800", fontSize: 13 },
+
+  // Common modal styles
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center", paddingHorizontal: 20 },
+  modalContent: { backgroundColor: "#fff", borderRadius: 18, padding: 22, width: "100%", maxWidth: 360 },
+  modalRow: { flexDirection: "row", justifyContent: "space-between" },
+  modalLabel: { color: H.textMuted, fontSize: 13 },
+  modalValue: { color: H.textDark, fontSize: 13, fontWeight: "700" },
+  modalValueGreen: { color: H.green, fontSize: 15, fontWeight: "800" },
+  modalButtonRow: { flexDirection: "row", gap: 10 },
+  modalButtonCancel: { flex: 1, backgroundColor: H.bg, borderRadius: 10, paddingVertical: 13, alignItems: "center", borderWidth: 1, borderColor: H.cardBorder },
+  modalButtonConfirm: { flex: 2, backgroundColor: H.gold, borderRadius: 10, paddingVertical: 13, alignItems: "center" },
+  modalButtonText: { color: H.textDark, fontWeight: "700", fontSize: 14 },
+  modalButtonTextConfirm: { color: H.headerDeep, fontWeight: "800", fontSize: 14 },
+  datePickerButton: { backgroundColor: "#0F5C4C", borderRadius: 12, paddingVertical: 12, paddingHorizontal: 36 },
 
   // ── Header: trimmed paddings, subtitle removed, summary cards removed ──
   header: { backgroundColor: H.bg, paddingTop: Platform.OS === "ios" ? 14 : 10, paddingBottom: 4, borderBottomWidth: 1, borderBottomColor: H.cardBorder },

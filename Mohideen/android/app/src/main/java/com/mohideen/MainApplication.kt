@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.app.Application
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
@@ -117,12 +118,13 @@ class MainApplication : Application(), ReactApplication {
     // Version key — bump CHANNEL_VERSION whenever sound/importance changes.
     // Android permanently caches channel settings; deleting and recreating is the
     // only way to apply new sounds without asking users to reinstall.
-    val CHANNEL_VERSION = 6
+    val CHANNEL_VERSION = 8
     val prefs = getSharedPreferences("channel_prefs", Context.MODE_PRIVATE)
     val installedVersion = prefs.getInt("channel_version", 0)
 
     if (installedVersion < CHANNEL_VERSION) {
       // Delete old channels so they get recreated with correct sounds
+      Log.i("MohideenNotify", "Migrating notification channels v$installedVersion -> v$CHANNEL_VERSION")
       nm.deleteNotificationChannel(ADHAN_CHANNEL_ID)
       nm.deleteNotificationChannel(IQAMAH_CHANNEL_ID)
       nm.deleteNotificationChannel(DEFAULT_CHANNEL_ID)
@@ -140,6 +142,7 @@ class MainApplication : Application(), ReactApplication {
       // delete a channel manually from system notification settings, and if
       // that ever happens this still falls through to recreate it below
       // rather than silently leaving Adhan/Iqamah with no channel to post to.
+      Log.d("MohideenNotify", "Notification channels already present (v$CHANNEL_VERSION)")
       return
     }
 
@@ -200,6 +203,12 @@ class MainApplication : Application(), ReactApplication {
       setSound(iqamahSound, alarmAudioAttrs)
       enableVibration(true)
       lightColor = notifColor
+      setBypassDnd(true)
     })
+
+    Log.i(
+      "MohideenNotify",
+      "Channels ready: adhan=$adhanSound iqamah=$iqamahSound (USAGE_ALARM, IMPORTANCE_HIGH)",
+    )
   }
 }

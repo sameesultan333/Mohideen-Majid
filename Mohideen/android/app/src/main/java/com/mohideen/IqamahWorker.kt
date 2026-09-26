@@ -4,6 +4,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.work.Worker
 import androidx.work.WorkerParameters
@@ -19,8 +20,8 @@ class IqamahWorker(context: Context, params: WorkerParameters) : Worker(context,
 
     override fun doWork(): Result {
         val prayerName = inputData.getString("prayer_name") ?: "Prayer"
-        val title      = "🕌 $prayerName Iqamah"
-        val body       = "Iqamah for $prayerName is starting now."
+        val title = "🕌 $prayerName Iqamah"
+        val body = "Iqamah for $prayerName is starting now."
 
         val nm = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE)
             as NotificationManager
@@ -29,18 +30,17 @@ class IqamahWorker(context: Context, params: WorkerParameters) : Worker(context,
             .getLaunchIntentForPackage(applicationContext.packageName)
             ?.apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP }
 
-        val pi = PendingIntent.getActivity(
-            applicationContext, 0, launchIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
+        val pi = launchIntent?.let {
+            PendingIntent.getActivity(
+                applicationContext, 0, it,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        }
 
-        val soundUri = android.net.Uri.parse(
-            "android.resource://${applicationContext.packageName}/raw/start_prayer"
+        val notification = NotificationCompat.Builder(
+            applicationContext,
+            IqamahSchedulerModule.IQAMAH_CHANNEL_ID,
         )
-        // CATEGORY_ALARM so iqamah sounds through Do Not Disturb too; the
-        // channel's AudioAttributes (USAGE_ALARM) govern the volume stream, so
-        // ordinary notifications cannot duck it. See IqamahSchedulerModule.showAdhanNow.
-        val notification = NotificationCompat.Builder(applicationContext, "prayer_iqamah")
             .setSmallIcon(R.drawable.ic_notification)
             .setColor(applicationContext.getColor(R.color.notification_color))
             .setContentTitle(title)
@@ -49,15 +49,11 @@ class IqamahWorker(context: Context, params: WorkerParameters) : Worker(context,
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(true)
-            .setContentIntent(pi)
-            .setSound(soundUri)
+            .apply { if (pi != null) setContentIntent(pi) }
             .build()
 
-        nm.notify(NOTIF_ID, notification)
+        nm.notify(IqamahSchedulerModule.IQAMAH_NOTIF_ID, notification)
+        Log.i("MohideenNotify", "IqamahWorker posted for $prayerName")
         return Result.success()
-    }
-
-    companion object {
-        const val NOTIF_ID = 9900
     }
 }

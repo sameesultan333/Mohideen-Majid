@@ -66,5 +66,32 @@
           android:resource="@color/notification_color"
           tools:replace="android:resource" />
 
+      <!-- react-native-push-notification: required for localNotificationSchedule() -->
+      <meta-data
+          android:name="com.dieam.reactnativepushnotification.notification_foreground"
+          android:value="false" />
+      <meta-data
+          android:name="com.dieam.reactnativepushnotification.notification_color"
+          android:resource="@color/notification_color" />
+      <meta-data
+          android:name="com.dieam.reactnativepushnotification.default_notification_channel_id"
+          android:value="default_channel_id" />
+
+      <receiver
+          android:name="com.dieam.reactnativepushnotification.modules.RNPushNotificationActions"
+          android:exported="false" />
+      <receiver
+          android:name="com.dieam.reactnativepushnotification.modules.RNPushNotificationPublisher"
+          android:exported="false" />
+      <receiver
+          android:name="com.dieam.reactnativepushnotification.modules.RNPushNotificationBootEventReceiver"
+          android:exported="true">
+          <intent-filter>
+              <action android:name="android.intent.action.BOOT_COMPLETED" />
+              <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+              <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+          </intent-filter>
+      </receiver>
+
     </application>
 </manifest>
