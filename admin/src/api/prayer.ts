@@ -32,6 +32,7 @@ export interface PrayerTimings {
   special: {
     ishraq: string;
     taraweeh: string;
+    taraweeh_enabled: boolean;
     sunset: string;
   };
 
@@ -65,6 +66,7 @@ export interface PrayerUpdatePayload {
 
   // Special
   taraweeh: string;
+  taraweeh_enabled: boolean;
   ishraq: string;
   sunset: string;
 

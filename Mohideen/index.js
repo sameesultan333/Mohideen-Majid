@@ -51,6 +51,10 @@ messaging().setBackgroundMessageHandler(async remoteMessage => {
           jummah:        data.jummah,
           jummah_iqamah: data.jummah_iqamah,
         },
+        special: {
+          taraweeh: data.taraweeh,
+          taraweeh_enabled: data.taraweeh_enabled === 'true',
+        },
       };
 
       await AsyncStorage.setItem('cached_prayer_timings', JSON.stringify({

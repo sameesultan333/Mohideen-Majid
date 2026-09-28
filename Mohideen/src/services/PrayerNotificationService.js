@@ -44,9 +44,10 @@ const DEFAULT_SETTINGS = {
   isha: { adhan: true, iqamah: true },
   sunrise: { adhan: false, iqamah: false },
   jummah: { adhan: true, iqamah: true },
+  taraweeh: { adhan: false, iqamah: true },
 };
 
-const PRAYER_KEYS = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha', 'sunrise', 'jummah'];
+const PRAYER_KEYS = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha', 'sunrise', 'jummah', 'taraweeh'];
 
 function normalizeSettings(raw) {
   const parsed = raw && typeof raw === 'object' ? raw : {};
@@ -241,6 +242,9 @@ class PrayerNotificationService {
    */
   async cancelAllPrayerNotifications() {
     try {
+      if (Platform.OS === 'android' && NativeModules.IqamahScheduler?.cancelPrayerEvents) {
+        NativeModules.IqamahScheduler.cancelPrayerEvents();
+      }
       PushNotification.cancelAllLocalNotifications();
       // Give the OS a moment to process cancellations before we schedule new ones.
       // Without this pause, newly-scheduled notifications occasionally fire immediately
@@ -306,9 +310,18 @@ class PrayerNotificationService {
       prayers.push({ key: 'jummah', name: "Jumu'ah" });
     }
 
+    // Taraweeh is an optional seasonal iqamah. The admin switch is carried
+    // with the cached schedule so disabling it cancels future local alarms.
+    if (prayerTimes?.special?.taraweeh_enabled && prayerTimes?.special?.taraweeh) {
+      prayers.push({ key: 'taraweeh', name: 'Taraweeh' });
+    }
+
     for (const prayer of prayers) {
-      const adhanTime  = prayerTimes?.adhan?.[prayer.key];
-      const iqamahTime = prayerTimes?.prayer?.[prayer.key];
+      const isTaraweeh = prayer.key === 'taraweeh';
+      const adhanTime  = isTaraweeh ? null : prayerTimes?.adhan?.[prayer.key];
+      const iqamahTime = isTaraweeh
+        ? prayerTimes?.special?.taraweeh
+        : prayerTimes?.prayer?.[prayer.key];
 
       if (!adhanTime && !iqamahTime) continue;
 
@@ -402,6 +415,17 @@ class PrayerNotificationService {
 
       logger.log(`Scheduling ${type} for ${prayerName} at ${notificationDate.toISOString()} (channel: ${channelId}, sound: ${sound})`);
 
+      const eventId = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}:${prayerKey}:${type}`;
+      if (Platform.OS === 'android' && NativeModules.IqamahScheduler?.schedulePrayerEvent) {
+        NativeModules.IqamahScheduler.schedulePrayerEvent(
+          prayerName,
+          type,
+          notificationDate.getTime(),
+          eventId,
+        );
+        return;
+      }
+
       // For adhan and iqamah, always play sound and vibrate
       // This ensures notifications work offline and when backend is down
       PushNotification.localNotificationSchedule({
@@ -418,6 +442,7 @@ class PrayerNotificationService {
         soundName: sound,
         vibrate: true,
         playSound: true,
+        insistent: true,
         smallIcon: 'ic_notification',
         color: '#D4AF37',
         userInfo: { prayerKey, type, prayerName, scheduledFor: notificationDate.toISOString() },
@@ -461,6 +486,7 @@ class PrayerNotificationService {
         soundName: 'adhan',
         vibrate: true,
         playSound: true,
+        insistent: true,
         smallIcon: 'ic_notification',
         color: '#D4AF37',
         priority: 'high',
@@ -487,6 +513,7 @@ class PrayerNotificationService {
         soundName: 'start_prayer',
         vibrate: true,
         playSound: true,
+        insistent: true,
         smallIcon: 'ic_notification',
         color: '#D4AF37',
         priority: 'high',
@@ -503,6 +530,15 @@ class PrayerNotificationService {
     try {
       const testDate = new Date(Date.now() + 3000);
       logger.log('Scheduling test adhan alarm for:', testDate.toISOString());
+      if (Platform.OS === 'android' && NativeModules.IqamahScheduler?.schedulePrayerEvent) {
+        NativeModules.IqamahScheduler.schedulePrayerEvent(
+          'Test',
+          NOTIFICATION_TYPES.ADHAN,
+          testDate.getTime(),
+          `test:${Date.now()}:adhan`,
+        );
+        return true;
+      }
       PushNotification.localNotificationSchedule({
         id: '999999',
         channelId: 'prayer_adhan',
@@ -513,6 +549,7 @@ class PrayerNotificationService {
         soundName: 'adhan',
         vibrate: true,
         playSound: true,
+        insistent: true,
         smallIcon: 'ic_notification',
         color: '#D4AF37',
         priority: 'high',

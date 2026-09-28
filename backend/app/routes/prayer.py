@@ -62,7 +62,7 @@ async def get_prayer(db: Session = Depends(get_db)):
             "adhan":   {"fajr": None, "dhuhr": None, "asr": None, "maghrib": None, "isha": None},
             "prayer":  {"fajr": None, "dhuhr": None, "asr": None, "maghrib": None,
                         "isha": None, "jummah": None, "jummah_iqamah": None},
-            "special": {"ishraq": None, "taraweeh": None, "sunset": None},
+            "special": {"ishraq": None, "taraweeh": None, "taraweeh_enabled": False, "sunset": None},
         }
 
     data = {
@@ -92,6 +92,7 @@ async def get_prayer(db: Session = Depends(get_db)):
         "special": {
             "ishraq":   prayer.ishraq,
             "taraweeh": prayer.taraweeh,
+            "taraweeh_enabled": bool(prayer.taraweeh_enabled),
             "sunset":   prayer.sunset,
         },
         "notes":      prayer.notes,
@@ -141,6 +142,7 @@ async def update_prayer(
         # Special
         prayer.ishraq = payload.ishraq
         prayer.taraweeh = payload.taraweeh
+        prayer.taraweeh_enabled = payload.taraweeh_enabled
         prayer.sunset = payload.sunset
 
         # Optional
@@ -175,6 +177,7 @@ async def update_prayer(
             jummah_iqamah=payload.jummah_iqamah,
 
             taraweeh=payload.taraweeh,
+            taraweeh_enabled=payload.taraweeh_enabled,
             ishraq=payload.ishraq,
             sunset=payload.sunset,
 
@@ -223,6 +226,7 @@ async def update_prayer(
         "special": {
             "ishraq":   prayer.ishraq,
             "taraweeh": prayer.taraweeh,
+            "taraweeh_enabled": bool(prayer.taraweeh_enabled),
             "sunset":   prayer.sunset,
         },
         "notes":      prayer.notes,

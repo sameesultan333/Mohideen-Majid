@@ -247,10 +247,9 @@ def job_prayer_notifications():
             ("maghrib", "Maghrib", timing.maghrib_adhan, timing.maghrib),
             ("isha",    "Isha",    timing.isha_adhan,    timing.isha),
         ]
-        # Taraweeh only runs during Ramadan — gated on the taraweeh time
-        # being configured at all (admin clears it outside Ramadan), so it
-        # never fires for the other 11 months.
-        if timing.taraweeh:
+        # Taraweeh is seasonal and explicitly controlled by the admin switch;
+        # keeping the time while switching it off must not send an FCM event.
+        if timing.taraweeh_enabled and timing.taraweeh:
             prayers.append(("taraweeh", "Taraweeh", None, timing.taraweeh))
 
         def _norm(t):

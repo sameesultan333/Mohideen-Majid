@@ -70,3 +70,5 @@ nul
 # ── Local-only backups of removed/orphaned files — kept on disk for
 #    reference, deliberately not part of the deployed repo ──────────────────
 archive/
+
+admin/.env.production

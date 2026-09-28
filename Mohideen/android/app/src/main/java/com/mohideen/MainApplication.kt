@@ -26,6 +26,7 @@ class MainApplication : Application(), ReactApplication {
     private const val DEFAULT_CHANNEL_ID = "default_channel_id"
     private const val ADHAN_CHANNEL_ID   = "prayer_adhan"
     private const val IQAMAH_CHANNEL_ID  = "prayer_iqamah"
+    private const val PRAYER_AUDIO_CHANNEL_ID = "prayer_audio_playback"
 
     // Prayer sync moved from hourly to once-daily (battery + Samsung Device
     // Care crash report — see PrayerSyncWorker/PrayerSyncService comments).
@@ -118,7 +119,7 @@ class MainApplication : Application(), ReactApplication {
     // Version key — bump CHANNEL_VERSION whenever sound/importance changes.
     // Android permanently caches channel settings; deleting and recreating is the
     // only way to apply new sounds without asking users to reinstall.
-    val CHANNEL_VERSION = 8
+    val CHANNEL_VERSION = 9
     val prefs = getSharedPreferences("channel_prefs", Context.MODE_PRIVATE)
     val installedVersion = prefs.getInt("channel_version", 0)
 
@@ -128,6 +129,7 @@ class MainApplication : Application(), ReactApplication {
       nm.deleteNotificationChannel(ADHAN_CHANNEL_ID)
       nm.deleteNotificationChannel(IQAMAH_CHANNEL_ID)
       nm.deleteNotificationChannel(DEFAULT_CHANNEL_ID)
+      nm.deleteNotificationChannel(PRAYER_AUDIO_CHANNEL_ID)
       prefs.edit().putInt("channel_version", CHANNEL_VERSION).apply()
     } else if (nm.getNotificationChannel(ADHAN_CHANNEL_ID) != null &&
                nm.getNotificationChannel(IQAMAH_CHANNEL_ID) != null &&
@@ -158,32 +160,16 @@ class MainApplication : Application(), ReactApplication {
       lightColor = notifColor
     })
 
-    // USAGE_ALARM, not USAGE_NOTIFICATION. The adhan is ~2-3 minutes long, and on
-    // the notification stream any WhatsApp/SMS arriving mid-adhan plays over it
-    // and Android ducks or cuts the adhan short. The alarm stream is not ducked
-    // by ordinary notification sounds, so the call to prayer plays through — the
-    // same treatment a clock alarm gets. It also follows the user's alarm volume
-    // rather than notification volume, which is what people expect for adhan.
-    val alarmAudioAttrs = android.media.AudioAttributes.Builder()
-      .setUsage(android.media.AudioAttributes.USAGE_ALARM)
-      .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
-      .build()
-
-    // Ordinary notification sound behaviour for everything that is not adhan.
-    val notifAudioAttrs = android.media.AudioAttributes.Builder()
-      .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
-      .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
-      .build()
-
-    // Adhan channel — custom sound: res/raw/adhan.mp3
-    val adhanSound = android.net.Uri.parse("android.resource://${packageName}/raw/adhan")
+    // Prayer channels are UI-only. PrayerAudioService owns playback and its
+    // USAGE_ALARM audio focus, so notification delivery cannot stop the audio.
     nm.createNotificationChannel(NotificationChannel(
       ADHAN_CHANNEL_ID,
       "Adhan",
       NotificationManager.IMPORTANCE_HIGH
     ).apply {
       description = "Adhan call for each prayer"
-      setSound(adhanSound, alarmAudioAttrs)
+      // Playback is owned by PrayerAudioService; this channel is UI only.
+      setSound(null, null)
       enableVibration(true)
       lightColor = notifColor
       // Ask to sound through Do Not Disturb. The system honours this only when
@@ -192,23 +178,32 @@ class MainApplication : Application(), ReactApplication {
       setBypassDnd(true)
     })
 
-    // Iqamah channel — custom sound: res/raw/start_prayer.mp3
-    val iqamahSound = android.net.Uri.parse("android.resource://${packageName}/raw/start_prayer")
     nm.createNotificationChannel(NotificationChannel(
       IQAMAH_CHANNEL_ID,
       "Iqamah / Prayer Started",
       NotificationManager.IMPORTANCE_HIGH
     ).apply {
       description = "Congregation start reminder"
-      setSound(iqamahSound, alarmAudioAttrs)
+      // Playback is owned by PrayerAudioService; this channel is UI only.
+      setSound(null, null)
       enableVibration(true)
       lightColor = notifColor
       setBypassDnd(true)
     })
 
+    nm.createNotificationChannel(NotificationChannel(
+      PRAYER_AUDIO_CHANNEL_ID,
+      "Prayer audio playback",
+      NotificationManager.IMPORTANCE_LOW,
+    ).apply {
+      description = "Silent foreground notification for Adhan and Iqamah audio"
+      setSound(null, null)
+      enableVibration(false)
+    })
+
     Log.i(
       "MohideenNotify",
-      "Channels ready: adhan=$adhanSound iqamah=$iqamahSound (USAGE_ALARM, IMPORTANCE_HIGH)",
+      "Channels ready: prayer UI channels and native audio playback channel",
     )
   }
 }

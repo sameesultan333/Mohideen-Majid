@@ -10,6 +10,7 @@ import AppNavigator from "./src/navigation/AppNavigator";
 import { navigationRef } from "./src/navigation/navigationRef";
 import { initializeI18n } from "./src/localization";
 import { syncPrayerTimesToLocalScheduler } from "./src/utils/prayerScheduleSync";
+import { handlePrayerFcmMessage } from "./src/utils/prayerFcm";
 
 LogBox.ignoreLogs([
   "react-native-video version 5.x is deprecated and not maintained anymore.",
@@ -34,6 +35,11 @@ export default function App() {
     const unsubscribe = onMessage(messaging(), async remoteMessage => {
       const data = remoteMessage.data || {};
 
+      // Foreground FCM messages do not pass through the background handler.
+      // Route prayer events through the same native audio path so an FCM
+      // delivery has identical sound/interruption behavior in every app state.
+      if (await handlePrayerFcmMessage(remoteMessage)) return;
+
       if (data.type === 'prayer_times_updated') {
         // Update cached prayer times
         try {
@@ -55,6 +61,10 @@ export default function App() {
               jummah:        data.jummah,
               jummah_iqamah: data.jummah_iqamah,
             },
+            special: {
+              taraweeh: data.taraweeh,
+              taraweeh_enabled: data.taraweeh_enabled === 'true',
+            },
           };
           await AsyncStorage.setItem('cached_prayer_timings', JSON.stringify({
             ...timetable,
@@ -66,8 +76,6 @@ export default function App() {
         }
       }
 
-      // prayer_notification FCM is ignored in foreground — local
-      // PrayerNotificationService alarms handle adhan/iqamah offline-first.
     });
 
     return unsubscribe;

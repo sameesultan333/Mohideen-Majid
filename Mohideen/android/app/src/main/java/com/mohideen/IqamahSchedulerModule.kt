@@ -1,8 +1,8 @@
 package com.mohideen
 
-import android.app.AlarmManager
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.app.AlarmManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -69,7 +69,8 @@ class IqamahSchedulerModule(reactContext: ReactApplicationContext)
     }
 
     @ReactMethod
-    fun showAdhanNow(prayerName: String) {
+    fun showAdhanNow(prayerName: String, eventId: String?) {
+        if (!startPrayerAudio(PrayerAudioService.TYPE_ADHAN, eventId ?: eventIdFor("now", prayerName, PrayerAudioService.TYPE_ADHAN), prayerName)) return
         postPrayerNotification(
             ADHAN_CHANNEL_ID,
             ADHAN_NOTIF_ID,
@@ -79,35 +80,26 @@ class IqamahSchedulerModule(reactContext: ReactApplicationContext)
     }
 
     @ReactMethod
-    fun showIqamahNow(prayerName: String) {
+    fun showIqamahNow(prayerName: String, eventId: String?) {
+        if (!startPrayerAudio(PrayerAudioService.TYPE_IQAMAH, eventId ?: eventIdFor("now", prayerName, PrayerAudioService.TYPE_IQAMAH), prayerName)) return
         postPrayerNotification(
             IQAMAH_CHANNEL_ID,
             IQAMAH_NOTIF_ID,
             "🕌 $prayerName Iqamah",
-            "Iqamah is starting — join the congregation.",
+            "Iqamah is starting - join the congregation.",
         )
     }
 
     /** Fire test Adhan notification immediately (channel sound). */
     @ReactMethod
     fun showTestAdhan() {
-        postPrayerNotification(
-            ADHAN_CHANNEL_ID,
-            TEST_ADHAN_NOTIF_ID,
-            "Test Adhan",
-            "If you hear the adhan, notification sound is working.",
-        )
+        startPrayerAudio(PrayerAudioService.TYPE_ADHAN, eventIdFor("test_${System.currentTimeMillis()}", "adhan", PrayerAudioService.TYPE_ADHAN), "Test")
     }
 
     /** Fire test Iqamah notification immediately (channel sound). */
     @ReactMethod
     fun showTestIqamah() {
-        postPrayerNotification(
-            IQAMAH_CHANNEL_ID,
-            TEST_IQAMAH_NOTIF_ID,
-            "Test Iqamah",
-            "If you hear the iqamah chime, notification sound is working.",
-        )
+        startPrayerAudio(PrayerAudioService.TYPE_IQAMAH, eventIdFor("test_${System.currentTimeMillis()}", "iqamah", PrayerAudioService.TYPE_IQAMAH), "Test")
     }
 
     @ReactMethod
@@ -130,6 +122,64 @@ class IqamahSchedulerModule(reactContext: ReactApplicationContext)
                 ExistingWorkPolicy.REPLACE,
                 request
             )
+    }
+
+    @ReactMethod
+    fun schedulePrayerEvent(prayerName: String, type: String, epochMs: Double, eventId: String) {
+        val triggerAt = epochMs.toLong()
+        if (triggerAt <= System.currentTimeMillis()) return
+        val ctx = reactApplicationContext
+        val intent = Intent(ctx, PrayerAlarmReceiver::class.java).apply {
+            putExtra(EXTRA_EVENT_ID, eventId)
+            putExtra(EXTRA_TYPE, type)
+            putExtra("prayer_name", prayerName)
+        }
+        val requestCode = eventId.hashCode() and 0x7fffffff
+        val pendingIntent = PendingIntent.getBroadcast(
+            ctx, requestCode, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val alarmManager = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+            } else {
+                alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+            }
+        } catch (_: SecurityException) {
+            // Android 12+ can deny exact alarms. Keep the offline path alive
+            // with an idle-allowed inexact alarm rather than crashing scheduling.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+            } else {
+                alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+            }
+        }
+        val prefs = ctx.getSharedPreferences(PRAYER_ALARM_PREFS, Context.MODE_PRIVATE)
+        prefs.edit().putStringSet(
+            SCHEDULED_REQUEST_CODES,
+            (prefs.getStringSet(SCHEDULED_REQUEST_CODES, emptySet()) ?: emptySet()) + requestCode.toString(),
+        ).apply()
+    }
+
+    @ReactMethod
+    fun cancelPrayerEvents() {
+        val ctx = reactApplicationContext
+        val alarmManager = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val prefs = ctx.getSharedPreferences(PRAYER_ALARM_PREFS, Context.MODE_PRIVATE)
+        val codes = prefs.getStringSet(SCHEDULED_REQUEST_CODES, emptySet()) ?: emptySet()
+        codes.forEach { code ->
+            val intent = Intent(ctx, PrayerAlarmReceiver::class.java)
+            val pendingIntent = PendingIntent.getBroadcast(
+                ctx, code.toInt(), intent,
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
+            )
+            if (pendingIntent != null) {
+                alarmManager.cancel(pendingIntent)
+                pendingIntent.cancel()
+            }
+        }
+        prefs.edit().remove(SCHEDULED_REQUEST_CODES).apply()
     }
 
     @ReactMethod
@@ -167,5 +217,38 @@ class IqamahSchedulerModule(reactContext: ReactApplicationContext)
         const val IQAMAH_NOTIF_ID = 9900
         const val TEST_ADHAN_NOTIF_ID = 9902
         const val TEST_IQAMAH_NOTIF_ID = 9903
+        const val PRAYER_AUDIO_CHANNEL_ID = "prayer_audio_playback"
+        const val EXTRA_EVENT_ID = "event_id"
+        const val EXTRA_TYPE = "audio_type"
+        private const val PRAYER_ALARM_PREFS = "prayer_alarm_prefs"
+        private const val SCHEDULED_REQUEST_CODES = "scheduled_request_codes"
+
+        fun claimEvent(context: Context, eventId: String): Boolean {
+            val prefs = context.getSharedPreferences("prayer_event_dedup", Context.MODE_PRIVATE)
+            val now = System.currentTimeMillis()
+            val stored = prefs.getStringSet("claimed", emptySet()) ?: emptySet()
+            val fresh = stored.filter { it.substringAfterLast('|').toLongOrNull()?.let { ts -> now - ts < 172800000L } == true }.toMutableSet()
+            if (fresh.any { it.startsWith("$eventId|") }) return false
+            fresh.add("$eventId|$now")
+            prefs.edit().putStringSet("claimed", fresh).apply()
+            return true
+        }
+    }
+
+    private fun eventIdFor(prefix: String, prayerName: String, type: String) = "$prefix:${prayerName.lowercase()}:$type"
+
+    private fun startPrayerAudio(type: String, eventId: String, prayerName: String): Boolean {
+        if (!claimEvent(reactApplicationContext, eventId)) return false
+        val intent = Intent(reactApplicationContext, PrayerAudioService::class.java).apply {
+            putExtra(PrayerAudioService.EXTRA_TYPE, type)
+            putExtra(EXTRA_EVENT_ID, eventId)
+            putExtra(PrayerAudioService.EXTRA_PRAYER_NAME, prayerName)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            reactApplicationContext.startForegroundService(intent)
+        } else {
+            reactApplicationContext.startService(intent)
+        }
+        return true
     }
 }

@@ -43,7 +43,6 @@ import { apiAxios, authApiAxios, getWsUrl } from "../config/server";
 import { getToken, deleteToken, deleteRefreshToken } from "../utils/secureStorage";
 import { registerFcmToken, subscribeRoleTopics } from "../utils/fcmRegistration";
 import PrayerNotificationService from "../services/PrayerNotificationService";
-import { handlePrayerFcmMessage } from "../utils/prayerFcm";
 import { syncPrayerTimesToLocalScheduler } from "../utils/prayerScheduleSync";
 import { showGenericPush } from "../utils/genericPush";
 import { getDeenUnreadCount } from "../utils/deenUnread";
@@ -1367,13 +1366,15 @@ export default function HomeScreen({ navigation, route }) {
                 jummah:        data.jummah,
                 jummah_iqamah: data.jummah_iqamah,
               },
+              special: {
+                taraweeh: data.taraweeh,
+                taraweeh_enabled: data.taraweeh_enabled === 'true',
+              },
             };
             await PrayerNotificationService.savePrayerTimes(prayerTimes);
           } catch {}
           return;
         }
-        if (await handlePrayerFcmMessage(remoteMessage)) return;
-
         // Registration approved — unlock the home screen
         if (msgType === "registration_approved") {
           setUserStatus("ACTIVE");

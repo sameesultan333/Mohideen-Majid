@@ -36,6 +36,10 @@ export async function syncPrayerTimesToLocalScheduler(data) {
     await PrayerNotificationService.savePrayerTimes({
       adhan: data.adhan,
       prayer: data.prayer,
+      special: data.special || {
+        taraweeh: data.taraweeh || null,
+        taraweeh_enabled: data.taraweeh_enabled === true || data.taraweeh_enabled === 'true',
+      },
     });
     await AsyncStorage.setItem(PRAYER_SCHEDULE_VERSION_KEY, String(serverVersion));
   } catch (_) {}

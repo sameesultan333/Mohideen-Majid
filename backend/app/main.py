@@ -393,6 +393,8 @@ def ensure_columns():
         "ALTER TABLE prayer_timings ADD COLUMN IF NOT EXISTS jummah_iqamah VARCHAR",
         # prayer_timings — schedule version for phone-side change detection
         "ALTER TABLE prayer_timings ADD COLUMN IF NOT EXISTS schedule_version INTEGER DEFAULT 1",
+        # prayer_timings — explicit seasonal Taraweeh enable/disable switch
+        "ALTER TABLE prayer_timings ADD COLUMN IF NOT EXISTS taraweeh_enabled BOOLEAN DEFAULT FALSE",
 
         # finance_settings — new keys (logo, phone)
         "ALTER TABLE finance_settings ADD COLUMN IF NOT EXISTS key VARCHAR",

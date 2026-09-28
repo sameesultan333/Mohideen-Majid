@@ -40,6 +40,7 @@ def send_fcm_prayer_times_update(prayer) -> bool:
             "jummah":        prayer.jummah        or "",
             "jummah_iqamah": prayer.jummah_iqamah or "",
             "taraweeh":      prayer.taraweeh      or "",
+            "taraweeh_enabled": str(bool(prayer.taraweeh_enabled)).lower(),
             "sunrise":       prayer.sunrise       or "",
         }
         message = messaging.Message(

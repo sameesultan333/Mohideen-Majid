@@ -33,30 +33,11 @@ function showImmediateNotification({ channelId, title, message, soundName, setti
  * identical prayer+time, which is why both used to fire at once (duplicate
  * Adhan/Iqamah).
  *
- * The local alarm is the offline-capable, authoritative trigger. It only
- * needs the FCM push to stand in for it when the local alarm itself is
- * known to be unreliable: no SCHEDULE_EXACT_ALARM permission (Android 13+
- * silently degrades to an inexact alarm Doze can defer arbitrarily), or no
- * local schedule exists yet at all (e.g. first-ever launch before the first
- * sync completes). In every other case the local alarm already has it
- * covered, so the FCM-triggered instant notification is skipped.
+ * Both paths are allowed to reach the native service. The native event ID
+ * claim is the deduplication point, so whichever path arrives first plays the
+ * audio and the second path becomes a no-op. This keeps FCM useful when a
+ * device has no exact-alarm permission while preserving offline alarms.
  */
-async function localAlarmIsTrustworthy() {
-  try {
-    const [canScheduleExact, cachedTimes] = await Promise.all([
-      Platform.OS === 'android' && NativeModules.IqamahScheduler?.canScheduleExactAlarms
-        ? NativeModules.IqamahScheduler.canScheduleExactAlarms()
-        : true, // no such restriction on iOS
-      PrayerNotificationService.getPrayerTimes(),
-    ]);
-    return !!canScheduleExact && !!cachedTimes;
-  } catch {
-    // Can't confirm the local alarm is reliable — fall back to the FCM push
-    // rather than silently risk missing the Adhan.
-    return false;
-  }
-}
-
 export async function handlePrayerFcmMessage(remoteMessage) {
   const data = remoteMessage?.data || {};
   if (data.type !== 'prayer_notification') return false;
@@ -68,14 +49,13 @@ export async function handlePrayerFcmMessage(remoteMessage) {
   const prayerName = data.prayer_name || 'Prayer';
   const notifType = String(data.notif_type || '').toLowerCase();
   const prayerSettings = settings[prayerKey] || {};
+  const localDate = new Date();
+  const eventId = data.event_id || `${localDate.getFullYear()}-${String(localDate.getMonth() + 1).padStart(2, '0')}-${String(localDate.getDate()).padStart(2, '0')}:${prayerKey}:${notifType}`;
 
   if (notifType === 'adhan') {
     if (!settings.adhanEnabled || !prayerSettings.adhan) return true;
-    // The on-device alarm already covers this prayer — don't double-fire.
-    if (await localAlarmIsTrustworthy()) return true;
-
     if (Platform.OS === 'android' && NativeModules.IqamahScheduler?.showAdhanNow) {
-      NativeModules.IqamahScheduler.showAdhanNow(prayerName);
+      NativeModules.IqamahScheduler.showAdhanNow(prayerName, eventId);
     } else {
       showImmediateNotification({
         channelId: 'prayer_adhan',
@@ -93,11 +73,8 @@ export async function handlePrayerFcmMessage(remoteMessage) {
 
   if (notifType === 'iqamah') {
     if (!settings.iqamahEnabled || !prayerSettings.iqamah) return true;
-    // Same dedup rule as adhan above.
-    if (await localAlarmIsTrustworthy()) return true;
-
     if (Platform.OS === 'android' && NativeModules.IqamahScheduler?.showIqamahNow) {
-      NativeModules.IqamahScheduler.showIqamahNow(prayerName);
+      NativeModules.IqamahScheduler.showIqamahNow(prayerName, eventId);
     } else {
       showImmediateNotification({
         channelId: 'prayer_iqamah',

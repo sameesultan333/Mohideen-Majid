@@ -180,6 +180,7 @@ class PrayerUpdate(BaseModel):
     taraweeh: str
     ishraq: str
     sunset: str
+    taraweeh_enabled: bool = False
 
     # Optional
     notes: str | None = None

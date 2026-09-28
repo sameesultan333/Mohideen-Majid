@@ -600,6 +600,7 @@ class PrayerTiming(Base):
 
     # Special
     taraweeh = Column(String, nullable=True)
+    taraweeh_enabled = Column(Boolean, nullable=False, default=False)
     ishraq = Column(String, nullable=True)
     sunset = Column(String, nullable=False)
 

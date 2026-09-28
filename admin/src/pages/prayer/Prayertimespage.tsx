@@ -205,6 +205,7 @@ export default function PrayerTimesPage() {
         jummah_iqamah: prayer?.prayer?.jummah_iqamah ?? "",
         ishraq: prayer?.special?.ishraq ?? "",
         taraweeh: prayer?.special?.taraweeh ?? "",
+        taraweeh_enabled: prayer?.special?.taraweeh_enabled ?? false,
         sunset: prayer?.special?.sunset ?? "",
         notes: prayer?.notes ?? "",
       });
@@ -697,7 +698,38 @@ export default function PrayerTimesPage() {
 
           <EditSection title="Special" isMobile={isMobile}>
             <TimeInput label="Ishraq" value={form.ishraq} onChange={(v) => setForm({ ...form, ishraq: v })} isMobile={isMobile} period="AM" />
-            <TimeInput label="Taraweeh" value={form.taraweeh} onChange={(v) => setForm({ ...form, taraweeh: v })} onClear={() => setForm({ ...form, taraweeh: "" })} isMobile={isMobile} period="PM" />
+            <div
+              style={{
+                display: "flex",
+                alignItems: "flex-end",
+                gap: 12,
+                gridColumn: isMobile ? "auto" : "span 2",
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <TimeInput label="Taraweeh" value={form.taraweeh} onChange={(v) => setForm({ ...form, taraweeh: v })} onClear={() => setForm({ ...form, taraweeh: "" })} isMobile={isMobile} period="PM" />
+              </div>
+              <button
+                type="button"
+                aria-pressed={form.taraweeh_enabled}
+                onClick={() => setForm({ ...form, taraweeh_enabled: !form.taraweeh_enabled })}
+                style={{
+                  height: 50,
+                  minWidth: 112,
+                  padding: "0 14px",
+                  border: `1.5px solid ${form.taraweeh_enabled ? COLORS.primary : COLORS.border}`,
+                  borderRadius: 12,
+                  background: form.taraweeh_enabled ? COLORS.primaryLight : COLORS.background,
+                  color: form.taraweeh_enabled ? COLORS.primary : COLORS.textMuted,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Taraweeh {form.taraweeh_enabled ? "On" : "Off"}
+              </button>
+            </div>
             <TimeInput label="Sunset" value={form.sunset} onChange={(v) => setForm({ ...form, sunset: v })} isMobile={isMobile} period="PM" />
           </EditSection>
 
