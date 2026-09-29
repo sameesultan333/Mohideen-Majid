@@ -12,6 +12,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SERVICE = 'mohideen_auth_token';
 const REFRESH_SERVICE = 'mohideen_refresh_token';
+const LEGACY_REFRESH_KEY = 'refresh_token';
 
 /**
  * Save the JWT access token securely.
@@ -59,9 +60,27 @@ export async function saveRefreshToken(token) {
 export async function getRefreshToken() {
   try {
     const creds = await Keychain.getGenericPassword({ service: REFRESH_SERVICE });
-    return creds ? creds.password : null;
-  } catch {
+    if (creds && creds.password) return creds.password;
+
+    // Older builds did not consistently put the refresh token in Keychain.
+    // Migrate that value once so an app update does not force a new login.
+    const legacy = await AsyncStorage.getItem(LEGACY_REFRESH_KEY);
+    if (legacy) {
+      try {
+        await saveRefreshToken(legacy);
+        await AsyncStorage.removeItem(LEGACY_REFRESH_KEY);
+      } catch {
+        // The legacy value is still usable for this refresh attempt.
+      }
+      return legacy;
+    }
     return null;
+  } catch (error) {
+    // A temporary Keychain/Keystore error is not proof that the session was
+    // revoked. Let the auth layer preserve the session and retry later.
+    const legacy = await AsyncStorage.getItem(LEGACY_REFRESH_KEY);
+    if (legacy) return legacy;
+    throw error;
   }
 }
 

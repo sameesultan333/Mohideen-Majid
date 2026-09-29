@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   View,
   Animated,
@@ -16,8 +17,7 @@ import Svg, {
   Stop,
   G,
 } from "react-native-svg";
-import { getToken } from "../utils/secureStorage";
-import { authApiFetch } from "../config/server";
+import { restoreSession, authApiFetch } from "../config/server";
 import { colors } from "../config/theme";
 
 const { width } = Dimensions.get("window");
@@ -242,8 +242,16 @@ const LogoScreen = ({ navigation }) => {
 
     const decideRoute = async () => {
       try {
-        const token = await getToken();
-        if (!token) return "Login";
+        try {
+          await restoreSession();
+        } catch (sessionErr) {
+          // If the server is temporarily unreachable, keep a previously
+          // authenticated user in the app and let the normal retry paths run.
+          // A confirmed invalid refresh session still goes to Login.
+          if (sessionErr?.sessionInvalid) return "Login";
+          const cachedUser = await AsyncStorage.getItem("user");
+          return cachedUser ? "Home" : "Login";
+        }
         // Check live status — catches pending/rejected/disabled users
         try {
           const res = await authApiFetch("/auth/me");
@@ -253,8 +261,10 @@ const LogoScreen = ({ navigation }) => {
           if (me && me.status === "DISABLED") return "Login";
           if (me && me.must_change_password) return "ForceChangePassword";
         } catch (_) {
-          // If /me fails (offline or expired), fall through to Home so
-          // the app still opens — route guards handle edge cases
+          // If /me fails offline, fall through to Home so the app still opens.
+          // A confirmed invalid session must stay on Login; authApiFetch has
+          // already cleared the credentials and reset the navigation stack.
+          if (_?.sessionInvalid) return "Login";
         }
         return "Home";
       } catch (e) {

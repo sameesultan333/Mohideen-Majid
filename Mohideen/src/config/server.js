@@ -223,16 +223,25 @@ async function tryRefreshToken() {
       if (res.data.refresh_token) await saveRefreshToken(res.data.refresh_token);
       return res.data.access_token;
     } catch (error) {
-      // A real response from the server (e.g. 401 "session expired or
-      // revoked") means the refresh token is actually invalid — that's a
-      // genuine logout. No response at all (timeout, cold start, the phone
-      // being briefly offline) is a transient failure: the refresh token
-      // itself was never rejected and must not be thrown away for it.
-      if (error?.response) error.sessionInvalid = true;
+      // Only an explicit auth rejection means the refresh token is invalid.
+      // A 5xx/4xx service error, proxy response, or maintenance page must not
+      // turn a temporary backend problem into a local logout.
+      if ([401, 403].includes(error?.response?.status)) {
+        error.sessionInvalid = true;
+      }
       throw error;
     }
   })().finally(() => { _refreshing = null; });
   return _refreshing;
+}
+
+/**
+ * Return the stored access token, restoring it from the refresh session when
+ * the access-token entry was lost or cleared by the OS during an app update.
+ */
+export async function restoreSession() {
+  const token = await getToken();
+  return token || tryRefreshToken();
 }
 
 /**
@@ -249,20 +258,26 @@ async function clearSessionAndRedirect() {
 }
 
 /**
- * Like apiAxios but automatically attaches the stored JWT as Authorization header.
- * On 401, attempts one token refresh then retries. If refresh fails (or there
- * was no token to attach in the first place), the session is treated as
- * invalid: tokens are cleared and the app returns to Login.
+ * Like apiAxios but automatically attaches the stored JWT as Authorization
+ * header. On 401, attempts one token refresh then retries. Only a confirmed
+ * invalid refresh session clears tokens and returns the app to Login.
  */
 /**
  * Like apiFetch but auto-attaches the JWT and retries once after a token refresh on 401.
  * Use this everywhere you previously did apiFetch + manual Authorization header.
  */
 export async function authApiFetch(path, init = {}) {
-  const token = await getToken();
-  if (!token) {
-    await clearSessionAndRedirect();
-    throw new Error('Session expired — please log in again');
+  let token;
+  try {
+    token = await restoreSession();
+  } catch (sessionErr) {
+    if (sessionErr?.sessionInvalid) {
+      await clearSessionAndRedirect();
+      const expired = new Error('Session expired — please log in again');
+      expired.sessionInvalid = true;
+      throw expired;
+    }
+    throw new Error('Cannot reach server. Check your connection and try again.');
   }
   const headers = { ...(init.headers || {}), Authorization: `Bearer ${token}` };
   const res = await apiFetch(path, { ...init, headers });
@@ -274,7 +289,9 @@ export async function authApiFetch(path, init = {}) {
   } catch (refreshErr) {
     if (refreshErr?.sessionInvalid) {
       await clearSessionAndRedirect();
-      throw new Error('Session expired — please log in again');
+      const expired = new Error('Session expired — please log in again');
+      expired.sessionInvalid = true;
+      throw expired;
     }
     // Refresh itself failed to even reach the server (cold start/offline) —
     // the stored session is still perfectly valid, so don't throw it away
@@ -284,10 +301,17 @@ export async function authApiFetch(path, init = {}) {
 }
 
 export async function authApiAxios(config) {
-  const token = await getToken();
-  if (!token) {
-    await clearSessionAndRedirect();
-    throw new Error('Session expired — please log in again');
+  let token;
+  try {
+    token = await restoreSession();
+  } catch (sessionErr) {
+    if (sessionErr?.sessionInvalid) {
+      await clearSessionAndRedirect();
+      const expired = new Error('Session expired — please log in again');
+      expired.sessionInvalid = true;
+      throw expired;
+    }
+    throw new Error('Cannot reach server. Check your connection and try again.');
   }
   const headers = { ...(config.headers || {}), Authorization: `Bearer ${token}` };
   try {
@@ -301,6 +325,9 @@ export async function authApiAxios(config) {
     } catch (refreshErr) {
       if (refreshErr?.sessionInvalid) {
         await clearSessionAndRedirect();
+        const expired = new Error('Session expired — please log in again');
+        expired.sessionInvalid = true;
+        throw expired;
       }
       // Otherwise the refresh attempt itself just couldn't reach the server
       // (cold start/offline) — keep the stored session intact and let this

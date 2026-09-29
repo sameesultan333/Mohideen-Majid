@@ -9,11 +9,10 @@ import { View, Text, StyleSheet, FlatList, StatusBar, Platform, ActivityIndicato
 import AnimatedPressable from "../components/AnimatedPressable";
 import { useTranslation } from "react-i18next";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { getToken, deleteToken } from "../utils/secureStorage";
+import { authApiAxios, buildAbsoluteUrl, getWsUrl } from "../config/server";
 import Video from "react-native-video";
 import Slider from "@react-native-community/slider";
 import Svg, { Path, Rect, Defs, LinearGradient, Stop } from "react-native-svg";
-import { apiAxios, buildAbsoluteUrl, getWsUrl } from "../config/server";
 import BottomNav from "../components/BottomNav";
 import { useBottomNavHeight } from "../hooks/useSafeArea";
 import { COLORS as C } from "../config/theme";
@@ -622,22 +621,16 @@ export default function QAViewerScreen({ navigation, route }) {
       if (isRefresh) setRefreshing(true);
       setError(null);
 
-      const token = await getToken();
-      if (!token) throw new Error("No token");
-
-      const res = await apiAxios({
+      const res = await authApiAxios({
         method: "get",
         url: "/questions/",
-        headers: { Authorization: `Bearer ${token}` },
         timeout: 10000,
       });
 
       setQas(res.data || []);
     } catch (err) {
       logger.log("Fetch Error:", err);
-      if (err?.response?.status === 401) {
-        await deleteToken();
-        navigation?.replace?.("Login");
+      if (err?.sessionInvalid) {
         setError("Session expired. Please login again.");
         return;
       }

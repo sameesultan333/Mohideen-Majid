@@ -16,16 +16,25 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
+    ndkVersion "28.0.13004108"
+
     namespace "com.mohideen"
     compileSdkVersion rootProject.ext.compileSdkVersion
+
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging true
+        }
+    }
 
     defaultConfig {
         applicationId "com.mohideen"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 24
-        versionName "24.0"
+        versionCode 27
+        versionName "production 1"
     }
+
 
     signingConfigs {
         // Debug is signed with the RELEASE key when key.properties is present.
